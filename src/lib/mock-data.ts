@@ -30,7 +30,7 @@ export function createInitialSnapshot(): SessionSnapshot {
       {
         id: "p_money",
         kind: "MONEY",
-        title: "500 UAH",
+        title: "500 грн",
         remaining: 1,
         total: 1,
         weight: 1,
@@ -39,7 +39,7 @@ export function createInitialSnapshot(): SessionSnapshot {
         id: "p_prem3",
         kind: "PREMIUM",
         title: "Telegram Premium",
-        subtitle: "3 months",
+        subtitle: "3 месяца",
         remaining: 1,
         total: 1,
         weight: 1,
@@ -74,7 +74,7 @@ export function createInitialSnapshot(): SessionSnapshot {
       {
         id: "p_empty",
         kind: "EMPTY",
-        title: "Nothing this time",
+        title: "Пусто",
         remaining: 1980,
         total: 1980,
         weight: 1,
