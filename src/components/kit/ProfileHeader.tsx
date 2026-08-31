@@ -8,7 +8,10 @@ export function ProfileHeader({ user }: { user: User }) {
       <img src={user.avatarUrl ?? assets.mascot} alt="" width={768} height={1024} loading="lazy" className="size-14 shrink-0 rounded-full border border-glass-border object-cover" />
       <div className="min-w-0">
         <p className="truncate font-display text-base">{user.username}</p>
-        <StatusBadge className="mt-1.5" status={{ type: "custom", label: user.isParticipant ? "Активный участник" : "Наблюдатель", tone: user.isParticipant ? "pending" : "neutral" }} />
+        <StatusBadge
+          className="mt-1.5"
+          status={{ type: "custom", label: user.isParticipant ? "Активный участник" : "Наблюдатель", tone: user.isParticipant ? "pending" : "neutral" }}
+        />
       </div>
     </div>
   );
