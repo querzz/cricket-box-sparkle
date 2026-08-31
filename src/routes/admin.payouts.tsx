@@ -104,7 +104,7 @@ function AdminPayouts() {
           </div>
         </GlassCard>
 
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2.5 lg:hidden">
           {filtered.map((p) => (
             <PayoutCard key={p.id} payout={p} onStatus={setStatus} />
           ))}
@@ -113,13 +113,13 @@ function AdminPayouts() {
           )}
         </div>
 
-        <GlassCard className="hidden overflow-hidden px-0 py-0 md:block">
-          <div className="grid grid-cols-[.75fr_1fr_1.35fr_.65fr_1fr] gap-3 border-b border-glass-border px-4 py-3 text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+        <GlassCard className="hidden overflow-hidden px-0 py-0 lg:block">
+          <div className="grid grid-cols-[.8fr_1fr_1.4fr_.7fr_1.25fr] gap-3 border-b border-glass-border px-4 py-3 text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
             <span>Выплата</span><span>Пользователь</span><span>Приз</span><span>Тип</span><span>Действия</span>
           </div>
           <div className="divide-y divide-glass-border">
             {filtered.map((p) => (
-              <div key={p.id} className="grid grid-cols-[.75fr_1fr_1.35fr_.65fr_1fr] gap-3 px-4 py-4 md:items-center">
+              <div key={p.id} className="grid grid-cols-[.8fr_1fr_1.4fr_.7fr_1.25fr] gap-3 px-4 py-4 lg:items-center">
                 <div>
                   <p className="font-mono text-[11px] font-semibold">{p.id}</p>
                   <p className="mt-0.5 text-[9px] text-muted-foreground">{p.time}</p>
@@ -128,12 +128,12 @@ function AdminPayouts() {
                   <p className="text-sm font-semibold">{p.username}</p>
                   <p className="text-[9px] text-muted-foreground">ID {p.telegramId}</p>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold leading-snug">{p.prize}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold leading-snug break-words">{p.prize}</p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground">{p.amount}</p>
                 </div>
                 <div><TypeBadge type={p.type} /></div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Status status={p.status} />
                   <ActionButtons payout={p} onStatus={setStatus} />
                 </div>
