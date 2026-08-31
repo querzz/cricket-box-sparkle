@@ -2,6 +2,7 @@ import dns from "node:dns";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import pg from "pg";
 
 dns.setDefaultResultOrder("ipv4first");
 
@@ -24,6 +25,8 @@ loadEnv();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CricketBoxBot";
 const appUrl = process.env.APP_URL || "http://localhost:8081";
+const databaseUrl = process.env.DATABASE_URL;
+const { Client } = pg;
 
 if (!token) {
   console.error("TELEGRAM_BOT_TOKEN is missing in .env");
@@ -45,9 +48,7 @@ async function api(method, body = {}, retries = 5) {
       });
 
       const data = await response.json();
-      if (!data.ok) {
-        throw new Error(`${method}: ${data.description || "Telegram API error"}`);
-      }
+      if (!data.ok) throw new Error(`${method}: ${data.description || "Telegram API error"}`);
       return data.result;
     } catch (error) {
       lastError = error;
@@ -60,12 +61,33 @@ async function api(method, body = {}, retries = 5) {
   throw lastError;
 }
 
-function appButton() {
-  if (/^https:\/\//i.test(appUrl)) {
-    return { text: "🎁 Открыть CRICKET BOX", web_app: { url: appUrl } };
-  }
+function appButton(pathname = "") {
+  const base = appUrl.replace(/\/$/, "");
+  const url = `${base}${pathname}`;
+  if (/^https:\/\//i.test(url)) return { text: "🎁 Открыть CRICKET BOX", web_app: { url } };
+  return { text: "🌐 Открыть локальный CRICKET BOX", url };
+}
 
-  return { text: "🌐 Открыть локальный CRICKET BOX", url: appUrl };
+async function isAdmin(telegramId) {
+  if (!databaseUrl) return false;
+  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 3000 });
+  try {
+    await client.connect();
+    const result = await client.query("SELECT 1 FROM admins WHERE telegram_id = $1 AND is_active = TRUE LIMIT 1", [telegramId]);
+    return result.rowCount > 0;
+  } catch (error) {
+    console.warn(`Admin lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+function adminButton() {
+  const base = appUrl.replace(/\/$/, "");
+  const url = `${base}/admin`;
+  if (/^https:\/\//i.test(url)) return { text: "🛡 Админ-панель", web_app: { url } };
+  return { text: "🛡 Открыть админку", url };
 }
 
 async function main() {
@@ -80,11 +102,7 @@ async function main() {
   let offset = 0;
   while (true) {
     try {
-      const updates = await api("getUpdates", {
-        timeout: 25,
-        offset,
-        allowed_updates: ["message"],
-      });
+      const updates = await api("getUpdates", { timeout: 25, offset, allowed_updates: ["message"] });
 
       for (const update of updates) {
         offset = update.update_id + 1;
@@ -92,21 +110,34 @@ async function main() {
         if (!message?.chat?.id) continue;
 
         const text = message.text || "";
+        const telegramId = Number(message.from?.id ?? message.chat.id);
+
         if (text === "/id") {
           await api("sendMessage", {
             chat_id: message.chat.id,
-            text: `🆔 Твой Telegram ID: ${message.from?.id ?? message.chat.id}`,
+            text: `🆔 Твой Telegram ID: ${telegramId}`,
+          });
+          continue;
+        }
+
+        if (text === "/admin") {
+          const allowed = await isAdmin(telegramId);
+          await api("sendMessage", {
+            chat_id: message.chat.id,
+            text: allowed ? "🛡 Админ-панель готова к открытию." : "⛔ У этого Telegram-аккаунта нет доступа к админ-панели.",
+            reply_markup: allowed ? { inline_keyboard: [[adminButton()]] } : undefined,
           });
           continue;
         }
 
         if (text.startsWith("/start")) {
+          const buttons = [[appButton()]];
+          if (await isAdmin(telegramId)) buttons.push([adminButton()]);
+
           await api("sendMessage", {
             chat_id: message.chat.id,
             text: "🎁 CRICKET BOX\n\nРозыгрыши, призы и сезонные бонусы в одном месте.",
-            reply_markup: {
-              inline_keyboard: [[appButton()]],
-            },
+            reply_markup: { inline_keyboard: buttons },
           });
         }
       }
