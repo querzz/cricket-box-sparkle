@@ -68,6 +68,10 @@ function AdminDashboard() {
     return { winning, stars, premiumUnits, premiumCost, cashCost, planningCapacity: 2000 };
   }, [prizes]);
 
+  function scrollToSection(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function createSeason() {
     const cleanName = name.trim() || `CRICKET BOX #${String(seasons.length + 1).padStart(3, "0")}`;
     const season: AdminSeason = { id: `draft_${Date.now()}`, code: cleanName, state: "DRAFT", participants: 0, spins: 0, days: Math.max(1, days), paidPrice: Math.max(1, paidPrice), dailyFree };
@@ -101,9 +105,20 @@ function AdminDashboard() {
           <div className="mt-4 grid grid-cols-3 gap-2"><Metric label="Участники" value={String(current?.participants ?? 0)} /><Metric label="Прокрутки" value={String(current?.spins ?? 0)} /><Metric label="Награды" value={String(stats.winning)} /></div>
         </GlassCard>
 
-        <div className="grid grid-cols-2 gap-2.5"><ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} /><Link to="/admin/economics" className="block"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></Link><a href="#prize-pool" className="block h-full"><ActionCard icon={Gift} title="Призовой фонд" text={`${stats.winning} выигрышных исходов`} /></a><a href="#participants-preview" className="block h-full"><ActionCard icon={Users} title="Участники" text="Предпросмотр участников" /></a></div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} />
+          <Link to="/admin/economics" className="block"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></Link>
+          <ActionCard icon={Gift} title="Призовой фонд" text={`${stats.winning} выигрышных исходов`} onClick={() => scrollToSection("prize-pool")} />
+          <ActionCard icon={Users} title="Участники" text="Предпросмотр участников" onClick={() => scrollToSection("participants-preview")} />
+        </div>
 
-        <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Сезоны</h2><button type="button" onClick={() => setNewOpen(true)} className="text-[11px] text-primary-glow">+ Создать</button></div><GlassCard className="divide-y divide-glass-border overflow-hidden">{seasons.length === 0 && <div className="px-4 py-6 text-center text-xs text-muted-foreground">Сезонов пока нет.</div>}{seasons.map((season) => <button type="button" key={season.id} onClick={() => setSelectedId(season.id)} className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors ${current?.id === season.id ? "bg-primary/8" : ""}`}><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{season.code}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{season.days} дней · {season.paidPrice} ⭐ · бесплатная попытка: {season.dailyFree ? "вкл." : "выкл."}</p></div><StatusBadge status={{ type: "season", value: season.state }} /><ArrowRight className="size-4 text-muted-foreground" /></button>)}</GlassCard></section>
+        <section>
+          <div className="mb-2 flex items-center justify-between"><h2 className="section-label">Сезоны</h2><button type="button" onClick={() => setNewOpen(true)} className="text-[11px] text-primary-glow">+ Создать</button></div>
+          <GlassCard className="divide-y divide-glass-border overflow-hidden">
+            {seasons.length === 0 && <div className="px-4 py-6 text-center text-xs text-muted-foreground">Сезонов пока нет.</div>}
+            {seasons.map((season) => <button type="button" key={season.id} onClick={() => setSelectedId(season.id)} className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors ${current?.id === season.id ? "bg-primary/8" : ""}`}><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{season.code}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{season.days} дней · {season.paidPrice} ⭐ · бесплатная попытка: {season.dailyFree ? "вкл." : "выкл."}</p></div><StatusBadge status={{ type: "season", value: season.state }} /><ArrowRight className="size-4 text-muted-foreground" /></button>)}
+          </GlassCard>
+        </section>
 
         {current && <>
           <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Настройки сезона</h2><span className="text-[10px] text-muted-foreground">{current.state}</span></div><GlassCard className="space-y-3 px-4 py-4"><Row label="Название"><input value={current.code} onChange={(e) => updateCurrent({ code: e.target.value })} className="admin-input" /></Row><div className="grid grid-cols-2 gap-2"><Row label="Длительность"><input type="number" min={1} value={current.days} onChange={(e) => updateCurrent({ days: Number(e.target.value) || 1 })} className="admin-input" /></Row><Row label="Платная прокрутка"><input type="number" min={1} value={current.paidPrice} onChange={(e) => updateCurrent({ paidPrice: Number(e.target.value) || 1 })} className="admin-input" /></Row></div><label className="flex items-center justify-between rounded-xl border border-glass-border bg-muted/20 px-3 py-3"><span><span className="block text-sm font-semibold">1 бесплатная попытка в день</span><span className="text-[11px] text-muted-foreground">Без накопления</span></span><input type="checkbox" checked={current.dailyFree} onChange={(e) => updateCurrent({ dailyFree: e.target.checked })} /></label><PrimaryButton fullWidth variant="outline" onClick={() => alert("Черновик сохранён локально для предпросмотра.")}><Save className="size-4" /> Сохранить настройки</PrimaryButton></GlassCard></section>
@@ -120,6 +135,6 @@ function AdminDashboard() {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>; }
-function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick?: () => void }) { const inner = <GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard>; return onClick ? <button type="button" onClick={onClick} className="block h-full w-full text-left">{inner}</button> : inner; }
+function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick?: () => void }) { const inner = <GlassCard className="h-full px-3 py-3.5 cursor-pointer"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard>; return onClick ? <button type="button" onClick={onClick} className="block h-full w-full text-left">{inner}</button> : inner; }
 function Row({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>; }
 function stateAction(state: SeasonState) { switch (state) { case "DRAFT": return "Настройте и сохраните"; case "SCHEDULED": return "Ожидает старта"; case "ACTIVE": return "Идёт сейчас"; case "ENDING": return "Завершается"; case "CLOSED": return "Остановлен"; case "PAYOUT": return "Выдача призов"; default: return "В архиве"; } }
