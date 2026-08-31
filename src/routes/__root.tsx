@@ -53,7 +53,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
-  return <html lang="ru"><head><HeadContent /></head><body>{children}<Scripts /></body></html>;
+  return <html lang="ru"><head><HeadContent /><script src="https://telegram.org/js/telegram-web-app.js" /></head><body>{children}<Scripts /></body></html>;
 }
 
 function RootComponent() {
