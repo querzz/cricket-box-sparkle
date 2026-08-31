@@ -84,17 +84,17 @@ function AdminStatistics() {
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <MiniStat label="Новые участники" value={format(NEW_USERS.reduce((a, b) => a + b, 0))} />
-              <MiniStat label="Среднее прокруток/день" value={format(Math.round(SPINS.reduce((a, b) => a + b, 0) / SPINS.length))} />
+              <MiniStat label="Среднее прокруток в день" value={format(Math.round(SPINS.reduce((a, b) => a + b, 0) / SPINS.length))} />
             </div>
           </GlassCard>
         </section>
 
         <section>
-          <h2 className="section-label mb-2">Retention</h2>
+          <h2 className="section-label mb-2">Возврат пользователей</h2>
           <GlassCard className="grid grid-cols-3 gap-2 px-4 py-4">
-            <Retention label="D1" value="42%" />
-            <Retention label="D3" value="28%" />
-            <Retention label="D7" value="17%" />
+            <Retention label="1 день" value="42%" />
+            <Retention label="3 дня" value="28%" />
+            <Retention label="7 дней" value="17%" />
           </GlassCard>
         </section>
 
@@ -109,7 +109,7 @@ function AdminStatistics() {
         </section>
 
         <GlassCard className="px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-          Сейчас показатели демонстрационные. После подключения backend этот экран будет рассчитываться из реальных прокруток, участников, выплат, Stars и сезонов. Проценты воронки и retention тоже будут считаться из фактических событий.
+          Сейчас показатели демонстрационные. После подключения backend этот экран будет рассчитываться из реальных прокруток, участников, выплат, Stars и сезонов. Проценты воронки и возврата пользователей тоже будут считаться из фактических событий.
         </GlassCard>
       </div>
     </AppShell>
