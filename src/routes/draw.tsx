@@ -77,14 +77,19 @@ function DrawScreen() {
           </PrimaryButton>
           {price !== null && !ui.isFinished && <PrimaryButton variant="outline" fullWidth disabled={!ui.canSpin || busy || !canPay} onClick={() => void runSpin(true)}>Дополнительная прокрутка · {price} Stars</PrimaryButton>}
           <p className="text-center text-[11px] text-muted-foreground">
-            {ui.isFinished ? "Сезон завершён — попыток больше нет" : freeSpins > 0 ? `${freeSpins} бесплатн${freeSpins === 1 ? "ая попытка" : "ых попытки"}` : "Бесплатная попытка использована"}
+            {ui.isFinished
+              ? "Сезон завершён — попыток больше нет"
+              : freeSpins > 0
+                ? "Бесплатная попытка сегодня доступна"
+                : "Бесплатная попытка сегодня уже использована"}
           </p>
         </div>
       </GlassCard>
 
       <div className="mt-4 space-y-2.5">
         {!ui.canSpin && <NoticeBar tone="warning">{snapshot.user.isSubscribed ? ui.headline : "Подпишись на канал, чтобы участвовать."}</NoticeBar>}
-        {ui.canSpin && freeSpins <= 0 && !canPay && price !== null && <NoticeBar tone="danger">Бесплатная попытка использована. Нужно ещё {price - snapshot.stars.amount} Stars для платной прокрутки.</NoticeBar>}
+        {ui.canSpin && freeSpins <= 0 && !canPay && price !== null && <NoticeBar tone="danger">Бесплатная попытка сегодня уже использована. Нужно ещё {price - snapshot.stars.amount} Stars для платной прокрутки.</NoticeBar>}
+        {ui.canSpin && freeSpins <= 0 && (canPay || price === null) && !ui.isFinished && <NoticeBar>Следующая бесплатная попытка будет доступна завтра. Не забудь вернуться.</NoticeBar>}
         {starsFull && <NoticeBar tone="warning">Баланс Stars заполнен ({snapshot.stars.max}/{snapshot.stars.max}). Потрать Stars на дополнительные прокрутки, чтобы снова получать награды Stars.</NoticeBar>}
         <GlassCard className="px-4 py-3.5">
           {ui.isFinished ? (
