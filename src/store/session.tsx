@@ -44,6 +44,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setError(null);
     } else {
       setError(result.error);
+      // a failed session load leaves nothing to render — show the error state
+      setSnapshot(null);
     }
     setLoading(false);
   }, []);

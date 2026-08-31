@@ -42,10 +42,33 @@ function SettingsScreen() {
     resetSession,
   } = useSession();
 
+  // Stays usable when the session failed to load, so the network-error
+  // simulation can always be switched back off.
   if (!snapshot)
     return (
       <AppShell title="Settings" back="/profile" nav={false}>
-        <LoadingState />
+        <NoticeBar tone="warning">
+          Session could not be loaded. Disable the network error simulation or reset the mock
+          session.
+        </NoticeBar>
+        <PrimaryButton
+          fullWidth
+          className="mt-4"
+          onClick={() => void setSimulateNetworkError(false)}
+        >
+          Disable network error
+        </PrimaryButton>
+        <PrimaryButton
+          variant="ghost"
+          fullWidth
+          className="mt-2"
+          onClick={() => void resetSession()}
+        >
+          Reset mock session
+        </PrimaryButton>
+        <div className="mt-4">
+          <LoadingState label="Waiting for session" />
+        </div>
       </AppShell>
     );
 
