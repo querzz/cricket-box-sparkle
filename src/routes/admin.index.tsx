@@ -96,8 +96,8 @@ function AdminDashboard() {
         <div className="grid grid-cols-2 gap-2.5">
           <ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} />
           <Link to="/admin/economics" className="block"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></Link>
-          <ActionCard icon={Gift} title="Prize Pool" text={`${stats.winning} выигрышных исходов`} />
-          <ActionCard icon={Users} title="Участники" text="Следующий модуль" />
+          <a href="#prize-pool" className="block h-full"><ActionCard icon={Gift} title="Призовой фонд" text={`${stats.winning} выигрышных исходов`} /></a>
+          <a href="#participants-preview" className="block h-full"><ActionCard icon={Users} title="Участники" text="Предпросмотр участников" /></a>
         </div>
 
         <section>
@@ -106,7 +106,7 @@ function AdminDashboard() {
             {seasons.length === 0 && <div className="px-4 py-6 text-center text-xs text-muted-foreground">Сезонов пока нет.</div>}
             {seasons.map((season) => (
               <button type="button" key={season.id} onClick={() => setSelectedId(season.id)} className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors ${current?.id === season.id ? "bg-primary/8" : ""}`}>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{season.code}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{season.days} дней · {season.paidPrice} ⭐ · daily {season.dailyFree ? "ON" : "OFF"}</p></div>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{season.code}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{season.days} дней · {season.paidPrice} ⭐ · бесплатная попытка: {season.dailyFree ? "вкл." : "выкл."}</p></div>
                 <StatusBadge status={{ type: "season", value: season.state }} /><ArrowRight className="size-4 text-muted-foreground" />
               </button>
             ))}
@@ -118,33 +118,35 @@ function AdminDashboard() {
             <div className="mb-2 flex items-center justify-between"><h2 className="section-label">Настройки сезона</h2><span className="text-[10px] text-muted-foreground">{current.state}</span></div>
             <GlassCard className="space-y-3 px-4 py-4">
               <Row label="Название"><input value={current.code} onChange={(e) => updateCurrent({ code: e.target.value })} className="admin-input" /></Row>
-              <div className="grid grid-cols-2 gap-2"><Row label="Длительность"><input type="number" min={1} value={current.days} onChange={(e) => updateCurrent({ days: Number(e.target.value) || 1 })} className="admin-input" /></Row><Row label="Paid spin"><input type="number" min={1} value={current.paidPrice} onChange={(e) => updateCurrent({ paidPrice: Number(e.target.value) || 1 })} className="admin-input" /></Row></div>
+              <div className="grid grid-cols-2 gap-2"><Row label="Длительность"><input type="number" min={1} value={current.days} onChange={(e) => updateCurrent({ days: Number(e.target.value) || 1 })} className="admin-input" /></Row><Row label="Платная прокрутка"><input type="number" min={1} value={current.paidPrice} onChange={(e) => updateCurrent({ paidPrice: Number(e.target.value) || 1 })} className="admin-input" /></Row></div>
               <label className="flex items-center justify-between rounded-xl border border-glass-border bg-muted/20 px-3 py-3"><span><span className="block text-sm font-semibold">1 бесплатная попытка в день</span><span className="text-[11px] text-muted-foreground">Без накопления</span></span><input type="checkbox" checked={current.dailyFree} onChange={(e) => updateCurrent({ dailyFree: e.target.checked })} /></label>
               <PrimaryButton fullWidth variant="outline" onClick={() => alert("Черновик сохранён локально для предпросмотра.")}><Save className="size-4" /> Сохранить настройки</PrimaryButton>
             </GlassCard>
           </section>
 
-          <section>
+          <section id="prize-pool">
             <div className="mb-2 flex items-center justify-between"><h2 className="section-label">Призовой фонд</h2><button type="button" onClick={addPrize} className="inline-flex items-center gap-1 text-[10px] text-primary-glow"><Plus className="size-3" /> Добавить</button></div>
             <GlassCard className="space-y-2.5 px-3 py-3">
               {prizes.map((prize) => (
                 <div key={prize.id} className="rounded-2xl border border-glass-border bg-muted/15 px-3 py-3">
-                  <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{prize.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{prize.kind} · {prize.subtitle}</p></div><div className="flex items-center gap-1 rounded-xl border border-glass-border bg-muted/20 p-1"><button type="button" onClick={() => changeQuantity(prize.id, -1)} className="grid size-7 place-items-center rounded-lg"><X className="size-3" /></button><span className="w-8 text-center font-display text-sm">{prize.quantity}</span><button type="button" onClick={() => changeQuantity(prize.id, 1)} className="grid size-7 place-items-center rounded-lg"><Plus className="size-3" /></button></div></div>
+                  <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{prize.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{prize.kind} · {prize.subtitle}</p></div><div className="flex items-center gap-1 rounded-xl border border-glass-border bg-muted/20 p-1"><button type="button" aria-label={`Уменьшить ${prize.title}`} onClick={() => changeQuantity(prize.id, -1)} className="grid size-7 place-items-center rounded-lg"><X className="size-3" /></button><span className="w-8 text-center font-display text-sm">{prize.quantity}</span><button type="button" aria-label={`Увеличить ${prize.title}`} onClick={() => changeQuantity(prize.id, 1)} className="grid size-7 place-items-center rounded-lg"><Plus className="size-3" /></button></div></div>
                   {prize.kind === "STARS" && <div className="mt-2"><label className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Stars за единицу</label><input type="number" min={1} value={prize.amount} onChange={(e) => setPrizes((all) => all.map((p) => p.id === prize.id ? { ...p, amount: Math.max(1, Number(e.target.value) || 1), title: `${Math.max(1, Number(e.target.value) || 1)} Stars` } : p))} className="admin-input mt-1" /></div>}
+                  {prize.kind === "PREMIUM" && <div className="mt-2"><label className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Количество Premium</label><p className="mt-1 text-xs font-semibold">{prize.quantity} шт.</p></div>}
                 </div>
               ))}
               <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3 text-[11px] text-muted-foreground"><p><strong className="text-foreground">{stats.winning}</strong> выигрышных исходов · Stars liability <strong className="text-foreground">{stats.stars} ⭐</strong> · planning capacity <strong className="text-foreground">{stats.planningCapacity}</strong></p><p className="mt-1">Пустые исходы добавляются отдельно при расчёте общей ёмкости сезона.</p></div>
             </GlassCard>
           </section>
 
-          <section className="grid grid-cols-2 gap-2.5">
+          <section id="participants-preview" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <GlassCard className="px-3 py-3"><Users className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">Участники</p><p className="mt-0.5 text-[10px] text-muted-foreground">{current.participants} участников сейчас · подробный модуль подключим следующим этапом.</p></GlassCard>
             <GlassCard className="px-3 py-3"><CalendarDays className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">Этап</p><p className="mt-0.5 text-[10px] text-muted-foreground">{stateAction(current.state)}</p></GlassCard>
-            <GlassCard className="px-3 py-3"><Settings2 className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">Stars cap</p><p className="mt-0.5 text-[10px] text-muted-foreground">500 ⭐ по умолчанию</p></GlassCard>
+            <GlassCard className="px-3 py-3"><Settings2 className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">Лимит Stars</p><p className="mt-0.5 text-[10px] text-muted-foreground">500 ⭐ по умолчанию</p></GlassCard>
           </section>
         </>}
       </div>
 
-      {newOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center"><GlassCard className="w-full max-w-lg px-4 py-4"><div className="flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Новый сезон</p><h2 className="font-display text-base uppercase">Создать черновик</h2></div><button type="button" onClick={() => setNewOpen(false)} aria-label="Закрыть"><X className="size-5" /></button></div><div className="mt-4 space-y-3"><Row label="Название"><input value={name} onChange={(e) => setName(e.target.value)} className="admin-input" /></Row><div className="grid grid-cols-2 gap-2"><Row label="Дней"><input type="number" min={1} value={days} onChange={(e) => setDays(Number(e.target.value) || 1)} className="admin-input" /></Row><Row label="Paid spin, ⭐"><input type="number" min={1} value={paidPrice} onChange={(e) => setPaidPrice(Number(e.target.value) || 1)} className="admin-input" /></Row></div><label className="flex items-center justify-between rounded-xl border border-glass-border bg-muted/20 px-3 py-3"><span><span className="block text-sm font-semibold">Daily free spin</span><span className="text-[11px] text-muted-foreground">1 попытка в день без накопления</span></span><input type="checkbox" checked={dailyFree} onChange={(e) => setDailyFree(e.target.checked)} /></label><PrimaryButton fullWidth onClick={createSeason}>Создать сезон</PrimaryButton></div></GlassCard></div>}
+      {newOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center"><GlassCard className="w-full max-w-lg px-4 py-4"><div className="flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Новый сезон</p><h2 className="font-display text-base uppercase">Создать черновик</h2></div><button type="button" onClick={() => setNewOpen(false)} aria-label="Закрыть"><X className="size-5" /></button></div><div className="mt-4 space-y-3"><Row label="Название"><input value={name} onChange={(e) => setName(e.target.value)} className="admin-input" /></Row><div className="grid grid-cols-2 gap-2"><Row label="Дней"><input type="number" min={1} value={days} onChange={(e) => setDays(Number(e.target.value) || 1)} className="admin-input" /></Row><Row label="Платная прокрутка, ⭐"><input type="number" min={1} value={paidPrice} onChange={(e) => setPaidPrice(Number(e.target.value) || 1)} className="admin-input" /></Row></div><label className="flex items-center justify-between rounded-xl border border-glass-border bg-muted/20 px-3 py-3"><span><span className="block text-sm font-semibold">Ежедневная бесплатная попытка</span><span className="text-[11px] text-muted-foreground">1 попытка в день без накопления</span></span><input type="checkbox" checked={dailyFree} onChange={(e) => setDailyFree(e.target.checked)} /></label><PrimaryButton fullWidth onClick={createSeason}>Создать сезон</PrimaryButton></div></GlassCard></div>}
     </AppShell>
   );
 }
@@ -152,4 +154,4 @@ function AdminDashboard() {
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>; }
 function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick?: () => void }) { const inner = <GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard>; return onClick ? <button type="button" onClick={onClick} className="block h-full w-full text-left">{inner}</button> : inner; }
 function Row({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>; }
-function stateAction(state: SeasonState) { switch (state) { case "DRAFT": return "Настройте и сохраните"; case "SCHEDULED": return "Ожидает старта"; case "ACTIVE": return "Идёт сейчас"; case "ENDING": return "Завершается"; case "CLOSED": return "Остановлен"; case "PAYOUT": return "Выдача призов"; default: return "В архиве"; } }
+function stateAction(state: SeasonState) { switch (state) { case "DRAFT": return "Готов к настройке"; case "SCHEDULED": return "Ожидает старта"; case "ACTIVE": return "Идёт сейчас"; case "ENDING": return "Завершается"; case "CLOSED": return "Сезон закрыт"; case "PAYOUT": return "Выдача призов"; default: return "В архиве"; } }
