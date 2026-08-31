@@ -52,7 +52,7 @@ function HomeScreen() {
 
   const ui = seasonUi(snapshot);
   const attempts = snapshot.spin.freeSpins;
-  const latestReward = snapshot.rewards[0];
+  const latestReward = snapshot.rewards.find((reward) => reward.kind !== "EMPTY");
 
   return (
     <AppShell bare className="pt-[env(safe-area-inset-top)]">
