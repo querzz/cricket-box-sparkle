@@ -41,7 +41,8 @@ function loadState(): SessionSnapshot {
       stars: { ...initial.stars, ...saved.stars },
       spin: { ...initial.spin, ...saved.spin },
       gift: { ...initial.gift, ...saved.gift },
-      dev: { ...initial.dev, ...saved.dev },
+      // the network-error simulation is session-only so a reload always recovers
+      dev: { simulateNetworkError: false },
     };
   } catch {
     return initial;
