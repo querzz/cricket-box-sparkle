@@ -15,7 +15,6 @@ interface Props {
   claiming?: boolean | undefined;
 }
 
-/** Suspense beat before the reward is revealed, in ms. Short enough to stay snappy. */
 const SUSPENSE_MS = 750;
 
 export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, claiming }: Props) {
@@ -42,7 +41,7 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
         {revealed && !empty && <Sparkles count={18} />}
 
         <p className="font-display text-xs uppercase tracking-[0.3em] text-primary-glow">
-          {!revealed ? "Opening the box" : empty ? "No luck" : "You won"}
+          {!revealed ? "Открываем коробку" : empty ? "Не повезло" : "Вы выиграли"}
         </p>
 
         <div className="relative mx-auto mt-5 grid size-40 place-items-center">
@@ -55,14 +54,8 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
           />
           {revealed && !empty && (
             <>
-              <span
-                aria-hidden
-                className="absolute size-36 rounded-full border border-primary/40 animate-ring-burst"
-              />
-              <span
-                aria-hidden
-                className="absolute size-36 rounded-full border border-primary-glow/30 animate-ring-burst [animation-delay:-0.5s]"
-              />
+              <span aria-hidden className="absolute size-36 rounded-full border border-primary/40 animate-ring-burst" />
+              <span aria-hidden className="absolute size-36 rounded-full border border-primary-glow/30 animate-ring-burst [animation-delay:-0.5s]" />
             </>
           )}
 
@@ -75,72 +68,36 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
               className="relative size-32 object-contain animate-pop-in drop-shadow-[0_0_32px_oklch(0.78_0.19_348_/_65%)]"
             />
           ) : (
-            <span
-              aria-hidden
-              className="relative size-24 rounded-full bg-primary/25 blur-md animate-suspense"
-            />
+            <span aria-hidden className="relative size-24 rounded-full bg-primary/25 blur-md animate-suspense" />
           )}
         </div>
 
-        <h2
-          className={cn(
-            "mt-4 min-h-8 font-display text-2xl font-semibold uppercase tracking-[0.1em]",
-            revealed && "animate-rise",
-          )}
-        >
+        <h2 className={cn("mt-4 min-h-8 font-display text-2xl font-semibold uppercase tracking-[0.1em]", revealed && "animate-rise")}>
           {revealed ? reward.title : "…"}
         </h2>
         <p className="mt-1.5 min-h-8 text-xs text-muted-foreground">
-          {!revealed
-            ? "Hold tight"
-            : empty
-              ? "The box was empty. Try another spin."
-              : (reward.subtitle ?? "Congratulations!")}
+          {!revealed ? "Секунду…" : empty ? "Коробка оказалась пустой. Попробуйте ещё раз." : (reward.subtitle ?? "Поздравляем!")}
         </p>
 
         {revealed && capped && (
           <div className="mt-4 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-left">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-warning">
-              Balance limit reached
-            </p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-warning">Достигнут лимит баланса</p>
             <dl className="mt-2 space-y-1 text-[11px]">
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Reward</dt>
-                <dd className="font-semibold">{reward.amount} Stars</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Credited</dt>
-                <dd className="font-semibold">{reward.creditedAmount ?? 0} Stars</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Not credited</dt>
-                <dd className="font-semibold text-warning">{uncredited} Stars</dd>
-              </div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Награда</dt><dd className="font-semibold">{reward.amount} Stars</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Зачислено</dt><dd className="font-semibold">{reward.creditedAmount ?? 0} Stars</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Не зачислено</dt><dd className="font-semibold text-warning">{uncredited} Stars</dd></div>
             </dl>
-            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-              Your internal Stars balance is full. Spend Stars to free up capacity.
-            </p>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Ваш баланс Stars заполнен. Потратьте Stars, чтобы освободить место.</p>
           </div>
         )}
 
         <div className="mt-6 space-y-2">
-          <PrimaryButton
-            fullWidth
-            size="lg"
-            loading={claiming}
-            disabled={!revealed}
-            onClick={onClaim}
-          >
-            {empty ? "Close" : "Claim"}
+          <PrimaryButton fullWidth size="lg" loading={claiming} disabled={!revealed} onClick={onClaim}>
+            {empty ? "Закрыть" : "Забрать"}
           </PrimaryButton>
           {onSpinAgain && (
-            <PrimaryButton
-              variant="ghost"
-              fullWidth
-              disabled={spinAgainDisabled || claiming || !revealed}
-              onClick={onSpinAgain}
-            >
-              Spin again
+            <PrimaryButton variant="ghost" fullWidth disabled={spinAgainDisabled || claiming || !revealed} onClick={onSpinAgain}>
+              Крутить ещё
             </PrimaryButton>
           )}
         </div>
