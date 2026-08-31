@@ -29,7 +29,7 @@ export interface User {
 }
 
 export interface StarsBalance {
-  /** Internal Cricket Box Stars — NOT the user's Telegram Stars. */
+  /** User-facing Telegram Stars balance tracked by the product. */
   amount: number;
   max: number;
 }
@@ -41,7 +41,7 @@ export interface Season {
   state: SeasonState;
   startsAt: string;
   endsAt: string;
-  /** Price of one extra spin, in internal Stars. Null when paid spins are off. */
+  /** Price of one extra spin, in Telegram Stars. Null when paid spins are off. */
   paidSpinPrice: number | null;
 }
 
@@ -52,6 +52,8 @@ export interface Prize {
   subtitle?: string | undefined;
   remaining: number;
   total: number;
+  /** Weight per remaining inventory unit. MVP uses finite inventory with equal unit weight. */
+  weight?: number | undefined;
 }
 
 export interface Reward {
