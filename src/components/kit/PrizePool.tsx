@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type PointerEvent } from "react";
 import { rewardArt } from "@/components/assets";
 import { GlassCard } from "@/components/kit/GlassCard";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,7 @@ export function PrizeStrip({ prizes }: { prizes: Prize[] }) {
   const drag = useRef({ active: false, x: 0, left: 0 });
   const [dragging, setDragging] = useState(false);
 
-  const onPointerDown = (event: React.PointerEvent<HTMLUListElement>) => {
+  const onPointerDown = (event: PointerEvent<HTMLUListElement>) => {
     const el = scrollerRef.current;
     if (!el) return;
     drag.current = { active: true, x: event.clientX, left: el.scrollLeft };
@@ -69,7 +69,7 @@ export function PrizeStrip({ prizes }: { prizes: Prize[] }) {
     el.setPointerCapture(event.pointerId);
   };
 
-  const onPointerMove = (event: React.PointerEvent<HTMLUListElement>) => {
+  const onPointerMove = (event: PointerEvent<HTMLUListElement>) => {
     const el = scrollerRef.current;
     if (!el || !drag.current.active) return;
     el.scrollLeft = drag.current.left - (event.clientX - drag.current.x);
