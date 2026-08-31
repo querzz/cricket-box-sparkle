@@ -1,6 +1,6 @@
 # CRICKET BOX — APPROVED PRODUCT DECISIONS
 
-This file records product decisions approved after the initial MASTER SPECIFICATION. Check it together with `docs/MASTER_PLAN.md`, `docs/MASTER_SPECIFICATION.md`, and `docs/ECONOMICS.md` before future product or coding work.
+This file records product decisions approved after the initial MASTER SPECIFICATION. Check it together with `docs/MASTER_PLAN.md`, `docs/MASTER_SPECIFICATION.md`, `docs/ECONOMICS.md`, and `docs/HOME_UX.md` before future product or coding work.
 
 ## 1. Stars — one currency only
 
@@ -205,7 +205,19 @@ Default:
 - Founder/Veteran status can persist as metadata;
 - final cross-season Stars settlement behavior must be explicitly approved before production.
 
-## 15. Production-priority decisions
+## 15. Home UX
+
+Approved Home behavior:
+- `Возможные призы` is a visual showcase, not an inventory dashboard.
+- Each prize icon on Home must include a short readable label under it, e.g. `500 грн`, `Telegram Premium · 3 месяца`, `100 Stars`.
+- The Home prize strip must hide the `EMPTY` outcome and exact remaining counts.
+- Exact inventory remains available on the full prizes screen.
+- Home includes `Твои призы`: compact empty state before the first win; latest 1–2 rewards after a win.
+- Home includes `Как это работает` with three compact steps and a link to full rules.
+- Do not put Leaderboard on Home.
+- The subscription/promo area is reserved for future Telegram-channel advertising support and must remain optional.
+
+## 16. Production-priority decisions
 
 Before adding more retention features:
 1. finalize Stars payment/reward fulfillment model;
@@ -215,7 +227,7 @@ Before adding more retention features:
 5. build Admin WebApp;
 6. implement backend and database.
 
-## 16. Source-of-truth rule
+## 17. Source-of-truth rule
 
 These decisions are approved unless explicitly changed later.
 
@@ -224,6 +236,7 @@ Future coding work must:
 2. read `docs/MASTER_PLAN.md`;
 3. read this file;
 4. read `docs/ECONOMICS.md` for economic assumptions;
-5. inspect the current code;
-6. preserve approved decisions;
-7. label new ideas as PROPOSED until approved.
+5. read `docs/HOME_UX.md` for Home behavior;
+6. inspect the current code;
+7. preserve approved decisions;
+8. label new ideas as PROPOSED until approved.
