@@ -19,8 +19,57 @@ import type {
 } from "@/lib/types";
 
 const LATENCY = 550;
+const STORAGE_KEY = "cricket-box:mock-session:v1";
 
-let state: SessionSnapshot = createInitialSnapshot();
+/**
+ * Mock persistence. The real backend owns this state; until then we keep it in
+ * localStorage so a page reload does not wipe stars, spins, rewards, the gift
+ * cooldown or withdrawals.
+ */
+function loadState(): SessionSnapshot {
+  const initial = createInitialSnapshot();
+  if (typeof localStorage === "undefined") return initial;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initial;
+    const saved = JSON.parse(raw) as Partial<SessionSnapshot>;
+    return {
+      ...initial,
+      ...saved,
+      user: { ...initial.user, ...saved.user },
+      season: { ...initial.season, ...saved.season },
+      stars: { ...initial.stars, ...saved.stars },
+      spin: { ...initial.spin, ...saved.spin },
+      gift: { ...initial.gift, ...saved.gift },
+      dev: { ...initial.dev, ...saved.dev },
+    };
+  } catch {
+    return initial;
+  }
+}
+
+function persist() {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* storage unavailable — mock state simply stays in memory */
+  }
+}
+
+let state: SessionSnapshot = loadState();
+let hydrated = typeof localStorage !== "undefined";
+
+/** Re-read persisted state on the client after SSR produced the initial value. */
+function ensureHydrated() {
+  if (hydrated || typeof localStorage === "undefined") return;
+  state = loadState();
+  hydrated = true;
+}
+
+function networkError() {
+  return fail("NETWORK", "Network request failed. Check your connection and try again.");
+}
 
 const delay = <T>(value: T, ms = LATENCY) =>
   new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
@@ -31,7 +80,10 @@ const fail = (code: ServiceError["code"], message: string): ServiceResult<never>
   error: { code, message },
 });
 
-const clone = (): SessionSnapshot => structuredClone(state);
+const clone = (): SessionSnapshot => {
+  persist();
+  return structuredClone(state);
+};
 
 /** Server-side reward table. Intentionally not exported. */
 const rewardTable: Array<{ kind: RewardKind; title: string; subtitle?: string; amount?: number; weight: number }> = [
@@ -79,9 +131,11 @@ function guardSeason(): ServiceResult<null> {
 
 function creditReward(reward: Reward) {
   if (reward.kind === "STARS" && reward.amount) {
-    const room = state.stars.max - state.stars.amount;
+    const room = Math.max(0, state.stars.max - state.stars.amount);
     const credited = Math.min(room, reward.amount);
     state.stars.amount += credited;
+    reward.creditedAmount = credited;
+    reward.uncreditedAmount = reward.amount - credited;
     if (credited < reward.amount) {
       reward.payoutNote = `Balance limit reached — only ${credited} of ${reward.amount} Stars were credited.`;
     }
@@ -96,10 +150,13 @@ export interface SpinOptions {
 
 export const cricketApi = {
   async getSession(): Promise<ServiceResult<SessionSnapshot>> {
+    ensureHydrated();
+    if (state.dev.simulateNetworkError) return delay(networkError(), 350);
     return delay(ok(clone()), 350);
   },
 
   async spin(options: SpinOptions = {}): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
+    if (state.dev.simulateNetworkError) return delay(networkError());
     const guard = guardSeason();
     if (!guard.ok) return delay(guard);
 
@@ -121,6 +178,7 @@ export const cricketApi = {
   },
 
   async claimGift(): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
+    if (state.dev.simulateNetworkError) return delay(networkError());
     const guard = guardSeason();
     if (!guard.ok) return delay(guard);
     if (!state.user.isParticipant)
@@ -145,6 +203,7 @@ export const cricketApi = {
   },
 
   async requestWithdrawal(amount: number): Promise<ServiceResult<{ withdrawal: Withdrawal; snapshot: SessionSnapshot }>> {
+    if (state.dev.simulateNetworkError) return delay(networkError());
     if (amount < state.withdrawalMinimum)
       return delay(fail("BELOW_MINIMUM", `Minimum withdrawal is ${state.withdrawalMinimum} Stars.`));
     if (amount > state.stars.amount) return delay(fail("INSUFFICIENT_STARS", "Not enough internal Stars."));
@@ -170,6 +229,18 @@ export const cricketApi = {
   async setSubscribed(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
     state.user.isSubscribed = value;
     return delay(ok(clone()), 200);
+  },
+
+  /** Dev-only: jump the internal Stars balance to an exact value. */
+  async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> {
+    state.stars.amount = Math.max(0, Math.min(state.stars.max, Math.round(amount)));
+    return delay(ok(clone()), 200);
+  },
+
+  /** Dev-only: make every subsequent call fail like a dropped connection. */
+  async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
+    state.dev.simulateNetworkError = value;
+    return delay(ok(clone()), 150);
   },
 
   async reset(): Promise<ServiceResult<SessionSnapshot>> {
