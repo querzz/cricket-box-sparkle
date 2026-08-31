@@ -1,0 +1,55 @@
+import { query } from "@/server/db";
+
+export type DbSeason = {
+  id: string;
+  code: string;
+  name: string;
+  state: "DRAFT" | "SCHEDULED" | "ACTIVE" | "ENDING" | "CLOSED" | "PAYOUT" | "ARCHIVED";
+  starts_at: string | null;
+  ends_at: string | null;
+  paid_spin_price: number;
+  daily_free_spin: boolean;
+};
+
+export type DbPrize = {
+  id: string;
+  season_id: string;
+  kind: string;
+  title: string;
+  subtitle: string | null;
+  amount: string;
+  unit_cost: string;
+  currency: string | null;
+  quantity_total: number;
+  quantity_remaining: number;
+  metadata: Record<string, unknown>;
+};
+
+export async function listSeasons() {
+  const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin FROM seasons ORDER BY created_at DESC`);
+  return result.rows;
+}
+
+export async function createSeason(input: { code: string; name: string; paidSpinPrice: number; dailyFreeSpin: boolean; adminId: string }) {
+  const result = await query<DbSeason>(`INSERT INTO seasons (code, name, paid_spin_price, daily_free_spin, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`, [input.code, input.name, input.paidSpinPrice, input.dailyFreeSpin, input.adminId]);
+  return result.rows[0];
+}
+
+export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>) {
+  const result = await query<DbSeason>(`UPDATE seasons SET code = COALESCE($2, code), name = COALESCE($3, name), state = COALESCE($4, state), starts_at = $5, ends_at = $6, paid_spin_price = COALESCE($7, paid_spin_price), daily_free_spin = COALESCE($8, daily_free_spin), updated_at = now() WHERE id = $1 RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`, [id, patch.code ?? null, patch.name ?? null, patch.state ?? null, patch.startsAt ?? null, patch.endsAt ?? null, patch.paidSpinPrice ?? null, patch.dailyFreeSpin ?? null]);
+  return result.rows[0];
+}
+
+export async function listPrizes(seasonId: string) {
+  const result = await query<DbPrize>(`SELECT id, season_id, kind, title, subtitle, amount, unit_cost, currency, quantity_total, quantity_remaining, metadata FROM prizes WHERE season_id = $1 ORDER BY created_at ASC`, [seasonId]);
+  return result.rows;
+}
+
+export async function upsertPrize(input: { id?: string; seasonId: string; kind: string; title: string; subtitle?: string | null; amount: number; unitCost: number; currency?: string | null; quantityTotal: number; quantityRemaining?: number; metadata?: Record<string, unknown> }) {
+  if (input.id) {
+    const result = await query<DbPrize>(`UPDATE prizes SET kind=$2,title=$3,subtitle=$4,amount=$5,unit_cost=$6,currency=$7,quantity_total=$8,quantity_remaining=$9,metadata=$10,updated_at=now() WHERE id=$1 RETURNING id,season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,metadata`, [input.id,input.kind,input.title,input.subtitle ?? null,input.amount,input.unitCost,input.currency ?? null,input.quantityTotal,input.quantityRemaining ?? input.quantityTotal,input.metadata ?? {}]);
+    return result.rows[0];
+  }
+  const result = await query<DbPrize>(`INSERT INTO prizes (season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,metadata`, [input.seasonId,input.kind,input.title,input.subtitle ?? null,input.amount,input.unitCost,input.currency ?? null,input.quantityTotal,input.quantityRemaining ?? input.quantityTotal,input.metadata ?? {}]);
+  return result.rows[0];
+}
