@@ -21,6 +21,8 @@ interface SessionContextValue {
   requestWithdrawal: (amount: number) => Promise<true | ServiceError>;
   setSeasonState: (state: SeasonState) => Promise<void>;
   setSubscribed: (value: boolean) => Promise<void>;
+  setStarsAmount: (amount: number) => Promise<void>;
+  setSimulateNetworkError: (value: boolean) => Promise<void>;
   resetSession: () => Promise<void>;
 }
 
@@ -42,6 +44,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setError(null);
     } else {
       setError(result.error);
+      // a failed session load leaves nothing to render — show the error state
+      setSnapshot(null);
     }
     setLoading(false);
   }, []);
@@ -84,6 +88,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (result.ok) setSnapshot(result.data);
   }, []);
 
+  const setStarsAmount = useCallback(async (amount: number) => {
+    const result = await cricketApi.setStarsAmount(amount);
+    if (result.ok) setSnapshot(result.data);
+  }, []);
+
+  const setSimulateNetworkError = useCallback(async (value: boolean) => {
+    const result = await cricketApi.setSimulateNetworkError(value);
+    if (result.ok) {
+      setSnapshot(result.data);
+      setError(null);
+    }
+  }, []);
+
   const resetSession = useCallback(async () => {
     const result = await cricketApi.reset();
     if (result.ok) setSnapshot(result.data);
@@ -100,6 +117,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       requestWithdrawal,
       setSeasonState,
       setSubscribed,
+      setStarsAmount,
+      setSimulateNetworkError,
       resetSession,
     }),
     [
@@ -112,6 +131,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       requestWithdrawal,
       setSeasonState,
       setSubscribed,
+      setStarsAmount,
+      setSimulateNetworkError,
       resetSession,
     ],
   );

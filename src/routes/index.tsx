@@ -119,27 +119,56 @@ function HomeScreen() {
 
           <GlassCard className="mt-4 px-4 py-3.5">
             <div className="flex items-start justify-between gap-3">
-              <Countdown target={snapshot.season.endsAt} label="Season ends in" />
+              {ui.isFinished ? (
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
+                    Season status
+                  </p>
+                  <p className="mt-1 font-display text-lg uppercase tracking-[0.12em] text-gradient-primary">
+                    {ui.headline}
+                  </p>
+                </div>
+              ) : (
+                <Countdown target={snapshot.season.endsAt} label="Season ends in" />
+              )}
               <StatusBadge status={{ type: "season", value: snapshot.season.state }} />
             </div>
             <div className="mt-3 border-t border-glass-border pt-3 text-[11px] text-muted-foreground">
               <p>{ui.note}</p>
               <p className="mt-1">
-                {snapshot.user.isParticipant ? "You are participating" : "Not participating yet"} ·{" "}
-                {attempts} free attempt{attempts === 1 ? "" : "s"}
+                {ui.isFinished
+                  ? "Spins and the daily gift are closed for this season."
+                  : `${snapshot.user.isParticipant ? "You are participating" : "Not participating yet"} · ${attempts} free attempt${attempts === 1 ? "" : "s"}`}
               </p>
             </div>
           </GlassCard>
 
           <div className="mt-4">
-            <PrimaryButton
-              fullWidth
-              size="lg"
-              disabled={!ui.canSpin}
-              onClick={() => void navigate({ to: "/draw" })}
-            >
-              {ui.ctaLabel}
-            </PrimaryButton>
+            {ui.isFinished ? (
+              <div className="space-y-2">
+                <PrimaryButton fullWidth size="lg" onClick={() => void navigate({ to: "/prizes" })}>
+                  View my prizes
+                </PrimaryButton>
+                {ui.canWithdraw && (
+                  <PrimaryButton
+                    variant="outline"
+                    fullWidth
+                    onClick={() => void navigate({ to: "/withdraw" })}
+                  >
+                    Withdraw internal Stars
+                  </PrimaryButton>
+                )}
+              </div>
+            ) : (
+              <PrimaryButton
+                fullWidth
+                size="lg"
+                disabled={!ui.canSpin}
+                onClick={() => void navigate({ to: "/draw" })}
+              >
+                {ui.ctaLabel}
+              </PrimaryButton>
+            )}
           </div>
         </div>
       </section>

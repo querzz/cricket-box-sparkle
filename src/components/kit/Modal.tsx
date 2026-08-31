@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { cn } from "@/lib/utils";
@@ -22,10 +23,10 @@ export function Modal({ open, onClose, children, className, dismissible = true }
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center">
       <div
         className="absolute inset-0 bg-background/85 backdrop-blur-md animate-in fade-in"
         onClick={dismissible ? onClose : undefined}
@@ -50,45 +51,7 @@ export function Modal({ open, onClose, children, className, dismissible = true }
         )}
         {children}
       </div>
-    </div>
-  );
-}
-
-export function ConfirmModal({
-  open,
-  title,
-  description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
-  loading = false,
-  onConfirm,
-  onClose,
-}: {
-  open: boolean;
-  title: string;
-  description?: string | undefined;
-  confirmLabel?: string | undefined;
-  cancelLabel?: string | undefined;
-  loading?: boolean | undefined;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <Modal open={open} onClose={loading ? undefined : onClose} dismissible={!loading}>
-      <div className="space-y-5 text-center">
-        <div>
-          <h2 className="font-display text-base uppercase tracking-[0.16em]">{title}</h2>
-          {description && <p className="mt-2 text-xs text-muted-foreground">{description}</p>}
-        </div>
-        <div className="space-y-2">
-          <PrimaryButton fullWidth loading={loading} onClick={onConfirm}>
-            {confirmLabel}
-          </PrimaryButton>
-          <PrimaryButton variant="ghost" fullWidth disabled={loading} onClick={onClose}>
-            {cancelLabel}
-          </PrimaryButton>
-        </div>
-      </div>
-    </Modal>
+    </div>,
+    document.body,
   );
 }

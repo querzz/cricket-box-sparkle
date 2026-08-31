@@ -33,6 +33,8 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
 
   if (!reward) return null;
   const empty = reward.kind === "EMPTY";
+  const uncredited = reward.uncreditedAmount ?? 0;
+  const capped = reward.kind === "STARS" && uncredited > 0;
 
   return (
     <Modal open onClose={onClaim} className="text-center">
@@ -95,6 +97,31 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
               ? "The box was empty. Try another spin."
               : (reward.subtitle ?? "Congratulations!")}
         </p>
+
+        {revealed && capped && (
+          <div className="mt-4 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-left">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-warning">
+              Balance limit reached
+            </p>
+            <dl className="mt-2 space-y-1 text-[11px]">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Reward</dt>
+                <dd className="font-semibold">{reward.amount} Stars</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Credited</dt>
+                <dd className="font-semibold">{reward.creditedAmount ?? 0} Stars</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Not credited</dt>
+                <dd className="font-semibold text-warning">{uncredited} Stars</dd>
+              </div>
+            </dl>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+              Your internal Stars balance is full. Spend Stars to free up capacity.
+            </p>
+          </div>
+        )}
 
         <div className="mt-6 space-y-2">
           <PrimaryButton

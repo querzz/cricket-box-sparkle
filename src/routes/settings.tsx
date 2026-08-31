@@ -33,12 +33,42 @@ const states: SeasonState[] = [
 ];
 
 function SettingsScreen() {
-  const { snapshot, setSeasonState, setSubscribed, resetSession } = useSession();
+  const {
+    snapshot,
+    setSeasonState,
+    setSubscribed,
+    setStarsAmount,
+    setSimulateNetworkError,
+    resetSession,
+  } = useSession();
 
+  // Stays usable when the session failed to load, so the network-error
+  // simulation can always be switched back off.
   if (!snapshot)
     return (
       <AppShell title="Settings" back="/profile" nav={false}>
-        <LoadingState />
+        <NoticeBar tone="warning">
+          Session could not be loaded. Disable the network error simulation or reset the mock
+          session.
+        </NoticeBar>
+        <PrimaryButton
+          fullWidth
+          className="mt-4"
+          onClick={() => void setSimulateNetworkError(false)}
+        >
+          Disable network error
+        </PrimaryButton>
+        <PrimaryButton
+          variant="ghost"
+          fullWidth
+          className="mt-2"
+          onClick={() => void resetSession()}
+        >
+          Reset mock session
+        </PrimaryButton>
+        <div className="mt-4">
+          <LoadingState label="Waiting for session" />
+        </div>
       </AppShell>
     );
 
@@ -84,6 +114,40 @@ function SettingsScreen() {
         >
           Toggle
         </PrimaryButton>
+      </GlassCard>
+
+      <GlassCard className="mt-3 px-4 py-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          Developer controls
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Internal Stars</p>
+            <p className="text-[11px] text-muted-foreground">
+              {snapshot.stars.amount} / {snapshot.stars.max}
+            </p>
+          </div>
+          <PrimaryButton
+            variant="outline"
+            onClick={() => void setStarsAmount(snapshot.stars.max)}
+          >
+            Set to {snapshot.stars.max}
+          </PrimaryButton>
+        </div>
+        <div className="mt-3 flex items-center gap-3 border-t border-glass-border pt-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Simulate network error</p>
+            <p className="text-[11px] text-muted-foreground">
+              {snapshot.dev.simulateNetworkError ? "All requests fail" : "Requests succeed"}
+            </p>
+          </div>
+          <PrimaryButton
+            variant="outline"
+            onClick={() => void setSimulateNetworkError(!snapshot.dev.simulateNetworkError)}
+          >
+            {snapshot.dev.simulateNetworkError ? "Disable" : "Enable"}
+          </PrimaryButton>
+        </div>
       </GlassCard>
 
       <PrimaryButton variant="ghost" fullWidth className="mt-4" onClick={() => void resetSession()}>
