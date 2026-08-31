@@ -1,0 +1,87 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { authenticateAdmin } from "@/server/auth/access";
+import { query } from "@/server/db";
+
+type PayoutRow = {
+  id: string;
+  created_at: string;
+  telegram_id: string;
+  username: string | null;
+  kind: "STARS" | "PREMIUM" | "MONEY" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN";
+  amount: string;
+  currency: string | null;
+  status: "PENDING" | "REVIEW" | "PAID" | "FAILED" | "CANCELLED";
+  note: string | null;
+  prize_title: string | null;
+  prize_subtitle: string | null;
+};
+
+export const Route = createFileRoute("/api/admin/payouts")({
+  server: { handlers: {
+    GET: async ({ request }) => {
+      try {
+        const url = new URL(request.url);
+        const initData = url.searchParams.get("initData") ?? "";
+        const search = (url.searchParams.get("search") ?? "").trim();
+        const status = url.searchParams.get("status") ?? "";
+        const admin = await authenticateAdmin(initData);
+        void admin;
+        const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+        const result = await query<PayoutRow>(
+          `SELECT py.id::text, py.created_at::text, u.telegram_id::text, u.username,
+                  py.kind, py.amount::text, py.currency, py.status, py.note,
+                  p.title AS prize_title, p.subtitle AS prize_subtitle
+             FROM payouts py
+             JOIN users u ON u.id = py.user_id
+             LEFT JOIN prizes p ON p.id = py.prize_id
+            WHERE ($2 = '' OR py.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1)
+              AND ($3 = '' OR py.status = $3)
+            ORDER BY py.created_at DESC
+            LIMIT 200`,
+          [pattern, search, status],
+        );
+        const counts = await query<{ pending: string; review: string; paid: string }>(
+          `SELECT COUNT(*) FILTER (WHERE status='PENDING')::text AS pending,
+                  COUNT(*) FILTER (WHERE status='REVIEW')::text AS review,
+                  COUNT(*) FILTER (WHERE status='PAID')::text AS paid
+             FROM payouts`,
+        );
+        return Response.json({
+          ok: true,
+          counts: { pending: Number(counts.rows[0]?.pending ?? 0), review: Number(counts.rows[0]?.review ?? 0), paid: Number(counts.rows[0]?.paid ?? 0) },
+          payouts: result.rows.map((row) => ({
+            id: row.id,
+            time: row.created_at,
+            username: row.username ? `@${row.username.replace(/^@/, "")}` : "—",
+            telegramId: row.telegram_id,
+            prize: row.prize_title ? [row.prize_title, row.prize_subtitle].filter(Boolean).join(" · ") : (row.note === "WITHDRAWAL_REQUEST" ? "Вывод Stars" : "Без привязанного приза"),
+            type: row.kind === "STARS" ? "Stars" : row.kind === "PREMIUM" ? "Premium" : "Деньги",
+            amount: row.kind === "STARS" ? `${row.amount} ⭐` : `${row.amount} ${row.currency ?? ""}`.trim(),
+            status: row.status === "PENDING" ? "Ожидает" : row.status === "REVIEW" ? "На проверке" : row.status === "PAID" ? "Выдан" : row.status === "CANCELLED" ? "Отменён" : "Ошибка",
+          })),
+        });
+      } catch (error) {
+        console.error("Payouts API failed:", error instanceof Error ? error.message : error);
+        return Response.json({ ok: false, code: "PAYOUTS_FAILED" }, { status: 401 });
+      }
+    },
+    PATCH: async ({ request }) => {
+      try {
+        const body = await request.json() as { initData?: unknown; id?: unknown; status?: unknown };
+        const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
+        const id = typeof body.id === "string" ? body.id : "";
+        const status = typeof body.status === "string" ? body.status : "";
+        if (!id || !["PENDING", "REVIEW", "PAID", "FAILED", "CANCELLED"].includes(status)) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+        const before = await query<{ status: string }>(`SELECT status FROM payouts WHERE id=$1::uuid`, [id]);
+        if (!before.rows[0]) return Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 });
+        const result = await query(`UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, paid_at=CASE WHEN $2='PAID' THEN now() ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`, [id, status, admin.id]);
+        void result;
+        await query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`, [admin.id, id, JSON.stringify(before.rows[0]), JSON.stringify({ status })]);
+        return Response.json({ ok: true });
+      } catch (error) {
+        console.error("Payout update failed:", error instanceof Error ? error.message : error);
+        return Response.json({ ok: false, code: "PAYOUT_UPDATE_FAILED" }, { status: 400 });
+      }
+    },
+  }}
+});
