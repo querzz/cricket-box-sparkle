@@ -30,9 +30,9 @@ export function Countdown({ target, label, compact = false, onComplete, classNam
   }, [target, onComplete]);
 
   const cells = [
-    { value: parts.days > 0 ? parts.days : parts.hours, unit: parts.days > 0 ? "days" : "hrs" },
-    { value: parts.days > 0 ? parts.hours : parts.minutes, unit: parts.days > 0 ? "hrs" : "min" },
-    { value: parts.days > 0 ? parts.minutes : parts.seconds, unit: parts.days > 0 ? "min" : "sec" },
+    { value: parts.days > 0 ? parts.days : parts.hours, unit: parts.days > 0 ? "дн" : "ч" },
+    { value: parts.days > 0 ? parts.hours : parts.minutes, unit: parts.days > 0 ? "ч" : "мин" },
+    { value: parts.days > 0 ? parts.minutes : parts.seconds, unit: parts.days > 0 ? "мин" : "сек" },
   ];
 
   if (compact) {
