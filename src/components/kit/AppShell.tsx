@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Bot, ChevronLeft, Gift, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { AdminAuthGate } from "@/components/kit/AdminAuthGate";
 import { BottomNavigation } from "@/components/kit/BottomNavigation";
 import { cn } from "@/lib/utils";
 
@@ -50,14 +51,14 @@ function AdminExtraActions() {
 
   return <div className="relative z-20 grid grid-cols-2 gap-2.5 pb-5">
     <Link to="/admin/owner-gifts" className="press relative z-20 isolate block h-full w-full text-left" aria-label="Личные подарки">
-      <div className="h-full rounded-2xl border border-glass-border bg-card/70 px-3 py-3.5 backdrop-blur-xl">
+      <div className="h-full rounded-2xl border border-glass-border bg-card/70 px-3 py-3.5">
         <Gift className="size-4 text-primary-glow" />
         <p className="mt-2 text-sm font-semibold">Личные подарки</p>
         <p className="mt-0.5 text-[10px] text-muted-foreground">Особые подарки от владельца</p>
       </div>
     </Link>
     <Link to="/admin/mechanics" className="press relative z-20 isolate block h-full w-full text-left" aria-label="Развлекательные механики">
-      <div className="h-full rounded-2xl border border-glass-border bg-card/70 px-3 py-3.5 backdrop-blur-xl">
+      <div className="h-full rounded-2xl border border-glass-border bg-card/70 px-3 py-3.5">
         <Sparkles className="size-4 text-primary-glow" />
         <p className="mt-2 text-sm font-semibold">Развлекательные механики</p>
         <p className="mt-0.5 text-[10px] text-muted-foreground">Передача подарков и мини-игры</p>
@@ -75,7 +76,7 @@ export function AppShell({ children, title, back, action, bare = false, nav = tr
 
   if (needsBotEntry) return <AdminBotGate />;
 
-  return <div className="grain relative mx-auto min-h-dvh w-full max-w-[430px] overflow-x-hidden bg-background">
+  const content = <div className="grain relative mx-auto min-h-dvh w-full max-w-[430px] overflow-x-hidden bg-background">
     <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-0 h-[68vh] stage-glow" />
     <div aria-hidden className="pointer-events-none fixed -left-24 top-[38vh] z-0 size-64 rounded-full bg-primary/20 blur-[90px] animate-drift" />
     <div aria-hidden className="pointer-events-none fixed -right-28 top-[62vh] z-0 size-72 rounded-full bg-primary-glow/12 blur-[110px] animate-drift [animation-delay:-6s]" />
@@ -90,4 +91,10 @@ export function AppShell({ children, title, back, action, bare = false, nav = tr
     </main>
     {nav && <BottomNavigation />}
   </div>;
+
+  if (isAdmin && !isAdminLogin && telegramMiniAppIsAvailable()) {
+    return <AdminAuthGate>{content}</AdminAuthGate>;
+  }
+
+  return content;
 }
