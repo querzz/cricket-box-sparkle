@@ -122,7 +122,7 @@ function DrawScreen() {
             {busy ? "Opening" : "Spin"}
           </PrimaryButton>
 
-          {price !== null && (
+          {price !== null && !ui.isFinished && (
             <PrimaryButton
               variant="outline"
               fullWidth
@@ -134,9 +134,11 @@ function DrawScreen() {
           )}
 
           <p className="text-center text-[11px] text-muted-foreground">
-            {freeSpins > 0
-              ? `${freeSpins} free attempt${freeSpins === 1 ? "" : "s"}`
-              : "Free attempt used"}
+            {ui.isFinished
+              ? "Season ended — no attempts left"
+              : freeSpins > 0
+                ? `${freeSpins} free attempt${freeSpins === 1 ? "" : "s"}`
+                : "Free attempt used"}
           </p>
         </div>
       </GlassCard>
@@ -162,7 +164,28 @@ function DrawScreen() {
         )}
 
         <GlassCard className="px-4 py-3.5">
-          <Countdown target={snapshot.season.endsAt} label="Season ends in" />
+          {ui.isFinished ? (
+            <div className="text-center">
+              <p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">
+                {ui.headline}
+              </p>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p>
+              <div className="mt-3 space-y-2">
+                <Link to="/prizes" className="block">
+                  <PrimaryButton fullWidth>View my prizes</PrimaryButton>
+                </Link>
+                {ui.canWithdraw && (
+                  <Link to="/withdraw" className="block">
+                    <PrimaryButton variant="outline" fullWidth>
+                      Withdraw internal Stars
+                    </PrimaryButton>
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Countdown target={snapshot.season.endsAt} label="Season ends in" />
+          )}
         </GlassCard>
       </div>
 
