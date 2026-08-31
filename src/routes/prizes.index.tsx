@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/kit/AppShell";
 import { PrizePool } from "@/components/kit/PrizePool";
 import { RewardCard } from "@/components/kit/RewardCard";
-import { EmptyState, ErrorState, LoadingState, SkeletonCard } from "@/components/kit/States";
+import { EmptyState, ErrorState, LoadingState } from "@/components/kit/States";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/store/session";
 
@@ -28,9 +28,15 @@ const tabs = [
 function PrizesScreen() {
   const { snapshot, loading, error, refresh } = useSession();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("ALL");
+
+  const rewards = useMemo(
+    () => snapshot?.rewards.filter((reward) => reward.kind !== "EMPTY" && (tab === "ALL" ? true : reward.status === tab)) ?? [],
+    [snapshot, tab],
+  );
+
   if (loading && !snapshot) return <AppShell title="Мои призы"><LoadingState /></AppShell>;
   if (!snapshot) return <AppShell title="Мои призы"><ErrorState onRetry={() => void refresh()} description={error?.message} /></AppShell>;
-  const rewards = snapshot.rewards.filter((r) => (tab === "ALL" ? true : r.status === tab));
+
   return (
     <AppShell title="Мои призы">
       <div className="glass-panel grid grid-cols-3 gap-1 rounded-full p-1">
