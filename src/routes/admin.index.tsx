@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { ArrowRight, BarChart3, CalendarDays, Gift, Plus, Save, Settings2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 
@@ -110,7 +110,7 @@ function AdminDashboard() {
 
         <div className="grid grid-cols-2 gap-2.5">
           <ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} />
-          <a href="/admin/economics" className="block h-full"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></a>
+          <ActionLink icon={BarChart3} title="Экономика" text="Прогноз и маржа" href="/admin/economics" />
           <ActionCard icon={Gift} title="Призовой фонд" text={`${stats.winning} выигрышных исходов`} onClick={() => scrollToSection("prize-pool")} />
           <ActionCard icon={Users} title="Участники" text="Предпросмотр участников" onClick={() => scrollToSection("participants-preview")} />
         </div>
@@ -138,6 +138,7 @@ function AdminDashboard() {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>; }
-function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick?: () => void }) { const inner = <GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard>; return <button type="button" onClick={onClick} disabled={!onClick} className={`block h-full w-full text-left ${onClick ? "cursor-pointer" : "cursor-default"}`} aria-label={title}>{inner}</button>; }
+function ActionLink({ icon: Icon, title, text, href }: { icon: ComponentType<{ className?: string }>; title: string; text: string; href: string }) { return <a href={href} className="block h-full w-full text-left" aria-label={title}><GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard></a>; }
+function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="block h-full w-full text-left" aria-label={title}><GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard></button>; }
 function Row({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>; }
 function stateAction(state: SeasonState) { switch (state) { case "DRAFT": return "Настройте и сохраните"; case "SCHEDULED": return "Ожидает старта"; case "ACTIVE": return "Идёт сейчас"; case "ENDING": return "Завершается"; case "CLOSED": return "Остановлен"; case "PAYOUT": return "Выдача призов"; default: return "В архиве"; } }
