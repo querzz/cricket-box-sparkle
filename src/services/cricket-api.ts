@@ -73,11 +73,6 @@ function isDailySpinEligible() {
   return seasonLive && state.user.isSubscribed && state.user.isParticipant;
 }
 
-/**
- * Grants exactly one free spin per local calendar day while the user is an
- * eligible participant. The spin does not accumulate: unused daily spins do
- * not stack across days.
- */
 function syncDailyFreeSpin() {
   if (typeof localStorage === "undefined") return;
 
@@ -138,10 +133,6 @@ function getEligiblePrizes(): SessionSnapshot["prizes"] {
   });
 }
 
-/**
- * Finite inventory draw: each remaining prize unit is an eligible outcome.
- * This is the mock implementation of weighted sampling without replacement.
- */
 function rollReward(): Reward | null {
   const eligible = getEligiblePrizes();
   if (eligible.length === 0) return null;
@@ -166,7 +157,6 @@ function rollReward(): Reward | null {
   if (!inventory || inventory.remaining <= 0) return null;
 
   inventory.remaining -= 1;
-
   const amount = picked.kind === "STARS"
     ? Number(picked.title.replace(/[^0-9]/g, "")) || undefined
     : undefined;
@@ -187,6 +177,9 @@ function rollReward(): Reward | null {
 }
 
 function creditReward(reward: Reward) {
+  // EMPTY is a spin result, not a prize. It must never enter My Prizes/history.
+  if (reward.kind === "EMPTY") return;
+
   if (reward.kind === "STARS" && reward.amount) {
     const room = Math.max(0, state.stars.max - state.stars.amount);
     const credited = Math.min(room, reward.amount);
@@ -291,7 +284,6 @@ export const cricketApi = {
     return delay(ok({ withdrawal, snapshot: clone() }), 1100);
   },
 
-  /** Dev-only helper used by the season-state switcher in Settings. */
   async setSeasonState(next: SessionSnapshot["season"]["state"]): Promise<ServiceResult<SessionSnapshot>> {
     const current = state.season.state;
     if (current === next) return delay(ok(clone()), 200);
@@ -311,19 +303,16 @@ export const cricketApi = {
     return delay(ok(clone()), 200);
   },
 
-  /** Dev-only: jump the Stars balance to an exact value for QA. */
   async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> {
     state.stars.amount = Math.max(0, Math.min(state.stars.max, Math.round(amount)));
     return delay(ok(clone()), 200);
   },
 
-  /** Dev-only: make every subsequent call fail like a dropped connection. */
   async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
     state.dev.simulateNetworkError = value;
     return delay(ok(clone()), 150);
   },
 
-  /** Dev-only: reset today's free-spin grant so QA can replay it immediately. */
   async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> {
     ensureHydrated();
     if (typeof localStorage !== "undefined") localStorage.removeItem(DAILY_FREE_SPIN_KEY);
