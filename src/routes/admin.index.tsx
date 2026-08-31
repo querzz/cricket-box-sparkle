@@ -108,7 +108,7 @@ function AdminDashboard() {
           <div className="mt-4 grid grid-cols-3 gap-2"><Metric label="Участники" value={String(current?.participants ?? 0)} /><Metric label="Прокрутки" value={String(current?.spins ?? 0)} /><Metric label="Награды" value={String(stats.winning)} /></div>
         </GlassCard>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="relative z-20 isolate grid grid-cols-2 gap-2.5">
           <ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} />
           <ActionLink icon={BarChart3} title="Экономика" text="Прогноз и маржа" href="/admin/economics" />
           <ActionCard icon={Gift} title="Призовой фонд" text={`${stats.winning} выигрышных исходов`} onClick={() => scrollToSection("prize-pool")} />
@@ -138,7 +138,7 @@ function AdminDashboard() {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>; }
-function ActionLink({ icon: Icon, title, text, href }: { icon: ComponentType<{ className?: string }>; title: string; text: string; href: string }) { return <a href={href} className="block h-full w-full text-left" aria-label={title}><GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard></a>; }
-function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="block h-full w-full text-left" aria-label={title}><GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard></button>; }
+function ActionLink({ icon: Icon, title, text, href }: { icon: ComponentType<{ className?: string }>; title: string; text: string; href: string }) { return <a href={href} className="press relative z-20 isolate block h-full w-full text-left" aria-label={title}><GlassCard className="pointer-events-none h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard></a>; }
+function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="press relative z-20 isolate block h-full w-full text-left" aria-label={title}><GlassCard className="pointer-events-none h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard></button>; }
 function Row({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>; }
 function stateAction(state: SeasonState) { switch (state) { case "DRAFT": return "Настройте и сохраните"; case "SCHEDULED": return "Ожидает старта"; case "ACTIVE": return "Идёт сейчас"; case "ENDING": return "Завершается"; case "CLOSED": return "Остановлен"; case "PAYOUT": return "Выдача призов"; default: return "В архиве"; } }
