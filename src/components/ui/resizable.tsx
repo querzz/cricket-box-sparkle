@@ -17,7 +17,7 @@ const ResizableHandle = ({
   className,
   ...props
 }: React.ComponentProps<typeof Separator> & {
-  withHandle?: boolean;
+  withHandle?: boolean | undefined;
 }) => (
   <Separator
     className={cn(
