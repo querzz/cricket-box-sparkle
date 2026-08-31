@@ -110,7 +110,7 @@ function AdminDashboard() {
 
         <div className="grid grid-cols-2 gap-2.5">
           <ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} />
-          <Link to="/admin/economics" className="block"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></Link>
+          <a href="/admin/economics" className="block h-full"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></a>
           <ActionCard icon={Gift} title="Призовой фонд" text={`${stats.winning} выигрышных исходов`} onClick={() => scrollToSection("prize-pool")} />
           <ActionCard icon={Users} title="Участники" text="Предпросмотр участников" onClick={() => scrollToSection("participants-preview")} />
         </div>
