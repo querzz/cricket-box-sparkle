@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, Gift, Heart } from "lucide-react";
 
-import { assets } from "@/components/assets";
+import { assets, rewardArt } from "@/components/assets";
 import { AppShell } from "@/components/kit/AppShell";
 import { Countdown } from "@/components/kit/Countdown";
 import { CricketBox } from "@/components/kit/CricketBox";
@@ -126,7 +126,7 @@ function HomeScreen() {
           <GlassCard className="press flex items-center gap-3 px-4 py-3.5">
             {latestReward ? (
               <>
-                <img src={assets.reward[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" />
+                <img src={rewardArt[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">Последний приз</p>
                   <p className="mt-1 truncate text-sm font-semibold">{latestReward.title}</p>
