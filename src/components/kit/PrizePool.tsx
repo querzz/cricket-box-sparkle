@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { rewardArt } from "@/components/assets";
 import { GlassCard } from "@/components/kit/GlassCard";
 import { cn } from "@/lib/utils";
@@ -55,10 +56,44 @@ const getHomePrizeLabel = (prize: Prize) => {
 };
 
 export function PrizeStrip({ prizes }: { prizes: Prize[] }) {
-  const visiblePrizes = prizes.filter((prize) => prize.kind !== "EMPTY" && prize.remaining > 0);
+  const visiblePrizes = prizes.filter((prize) => prize.kind !== "EMPTY");
+  const scrollerRef = useRef<HTMLUListElement | null>(null);
+  const drag = useRef({ active: false, x: 0, left: 0 });
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLUListElement>) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    drag.current = { active: true, x: event.clientX, left: el.scrollLeft };
+    setDragging(true);
+    el.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLUListElement>) => {
+    const el = scrollerRef.current;
+    if (!el || !drag.current.active) return;
+    el.scrollLeft = drag.current.left - (event.clientX - drag.current.x);
+  };
+
+  const stopDrag = () => {
+    drag.current.active = false;
+    setDragging(false);
+  };
 
   return (
-    <ul className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+    <ul
+      ref={scrollerRef}
+      className={cn(
+        "no-scrollbar flex touch-pan-x gap-2 overflow-x-auto pb-1 pr-1 select-none",
+        dragging ? "cursor-grabbing" : "cursor-grab",
+      )}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stopDrag}
+      onPointerCancel={stopDrag}
+      onPointerLeave={stopDrag}
+      aria-label="Список возможных призов"
+    >
       {visiblePrizes.map((prize) => {
         const label = getHomePrizeLabel(prize);
         return (
