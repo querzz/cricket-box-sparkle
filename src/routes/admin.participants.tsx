@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, ChevronRight, Search, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -25,8 +25,8 @@ function initData() {
   return tg?.WebApp?.initData?.trim() ?? "";
 }
 
-async function loadParticipants(search: string) {
-  const response = await fetch(`/api/admin/participants?initData=${encodeURIComponent(initData())}&search=${encodeURIComponent(search)}&limit=100`);
+async function loadParticipants(search: string, signal?: AbortSignal) {
+  const response = await fetch(`/api/admin/participants?initData=${encodeURIComponent(initData())}&search=${encodeURIComponent(search)}&limit=100`, { signal });
   const data = (await response.json()) as Api;
   if (!response.ok || !data.ok) throw new Error(data.code ?? "REQUEST_FAILED");
   return data.participants ?? [];
@@ -40,19 +40,45 @@ function AdminParticipants() {
   const [selected, setSelected] = useState<Participant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestId = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function refresh(value = search) {
-    setLoading(true); setError("");
-    try { setParticipants(await loadParticipants(value)); }
-    catch { setError("Не удалось загрузить участников из PostgreSQL."); }
-    finally { setLoading(false); }
+    const currentRequest = ++requestId.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setLoading(true);
+    setError("");
+
+    try {
+      const next = await loadParticipants(value, controller.signal);
+      if (currentRequest !== requestId.current) return;
+      setParticipants(next);
+      setError("");
+    } catch (errorValue) {
+      if (controller.signal.aborted || currentRequest !== requestId.current) return;
+      const code = errorValue instanceof Error ? errorValue.message : "REQUEST_FAILED";
+      setError(code === "ADMIN_REQUIRED" ? "Недостаточно прав для просмотра участников." : "Не удалось загрузить участников из PostgreSQL.");
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
+    }
   }
 
-  useEffect(() => { void refresh(""); }, []);
   useEffect(() => {
-    const timer = window.setTimeout(() => { if (query !== search) { setSearch(query); void refresh(query); } }, 350);
+    void refresh("");
+    return () => abortRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (query !== search) {
+        setSearch(query);
+        void refresh(query);
+      }
+    }, 350);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, search]);
 
   const filtered = useMemo(() => status === "Все" ? participants : participants.filter((p) => p.status === status), [participants, status]);
   const stats = useMemo(() => ({ total: participants.length, active: participants.filter((p) => p.status === "Активен").length, spins: participants.reduce((sum, p) => sum + p.spins, 0), rewards: participants.reduce((sum, p) => sum + p.rewards, 0) }), [participants]);
@@ -60,7 +86,7 @@ function AdminParticipants() {
   return (
     <AppShell title="Участники" nav={false}>
       <div className="space-y-4 pb-8">
-        <div className="flex items-center justify-between gap-3"><Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link><button onClick={() => void refresh()} className="text-[10px] text-primary-glow">Обновить</button></div>
+        <div className="flex items-center justify-between gap-3"><Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link><button type="button" onClick={() => void refresh()} className="text-[10px] text-primary-glow">Обновить</button></div>
         <GlassCard className="border-primary/20 px-4 py-4" glow>
           <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-2xl border border-primary/20 bg-primary/10"><Users className="size-5 text-primary-glow" /></div><div><p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Участники сезона</p><h1 className="font-display text-xl uppercase">Пользователи</h1></div></div>
           <div className="mt-4 grid grid-cols-4 gap-2"><Metric label="Всего" value={String(stats.total)} /><Metric label="Активны" value={String(stats.active)} /><Metric label="Прокрутки" value={String(stats.spins)} /><Metric label="Награды" value={String(stats.rewards)} /></div>
