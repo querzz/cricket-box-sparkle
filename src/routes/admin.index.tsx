@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, BarChart3, CalendarDays, Gift, Plus, Save, Settings2, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -29,15 +29,19 @@ const BASE_PRIZES: PrizeDraft[] = [
   { id: "stars20", kind: "STARS", title: "20 Stars", subtitle: "Telegram Stars", amount: 20, quantity: 11 },
 ];
 
-function AdminDashboard() {
-  const { snapshot } = useSession();
-  const [seasons, setSeasons] = useState<AdminSeason[]>(() => {
+function getInitialSeasons(snapshot: ReturnType<typeof useSession>["snapshot"]): AdminSeason[] {
+  if (typeof window !== "undefined") {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) return JSON.parse(saved) as AdminSeason[];
     } catch { /* ignore malformed local mock data */ }
-    return snapshot ? [{ id: snapshot.season.id, code: snapshot.season.code, state: snapshot.season.state, participants: 1, spins: snapshot.spin.totalSpins, days: 14, paidPrice: 100, dailyFree: true }] : [];
-  });
+  }
+  return snapshot ? [{ id: snapshot.season.id, code: snapshot.season.code, state: snapshot.season.state, participants: 1, spins: snapshot.spin.totalSpins, days: 14, paidPrice: 100, dailyFree: true }] : [];
+}
+
+function AdminDashboard() {
+  const { snapshot } = useSession();
+  const [seasons, setSeasons] = useState<AdminSeason[]>(() => getInitialSeasons(snapshot));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [name, setName] = useState("CRICKET BOX #002");
@@ -47,7 +51,7 @@ function AdminDashboard() {
   const [prizes, setPrizes] = useState<PrizeDraft[]>(BASE_PRIZES.map((x) => ({ ...x })));
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seasons));
+    if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seasons));
   }, [seasons]);
 
   const current = seasons.find((season) => season.id === selectedId) ?? seasons.find((season) => season.state === "ACTIVE") ?? seasons[0];
@@ -92,7 +96,7 @@ function AdminDashboard() {
         <div className="grid grid-cols-2 gap-2.5">
           <ActionCard icon={Plus} title="Создать сезон" text="Новый черновик" onClick={() => setNewOpen(true)} />
           <Link to="/admin/economics" className="block"><ActionCard icon={BarChart3} title="Экономика" text="Прогноз и маржа" /></Link>
-          <ActionCard icon={Gift} title="Prize Pool" text={`${stats.winning} winning outcomes`} />
+          <ActionCard icon={Gift} title="Prize Pool" text={`${stats.winning} выигрышных исходов`} />
           <ActionCard icon={Users} title="Участники" text="Следующий модуль" />
         </div>
 
@@ -129,7 +133,7 @@ function AdminDashboard() {
                   {prize.kind === "STARS" && <div className="mt-2"><label className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Stars за единицу</label><input type="number" min={1} value={prize.amount} onChange={(e) => setPrizes((all) => all.map((p) => p.id === prize.id ? { ...p, amount: Math.max(1, Number(e.target.value) || 1), title: `${Math.max(1, Number(e.target.value) || 1)} Stars` } : p))} className="admin-input mt-1" /></div>}
                 </div>
               ))}
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3 text-[11px] text-muted-foreground"><p><strong className="text-foreground">{stats.winning}</strong> winning outcomes · Stars liability <strong className="text-foreground">{stats.stars} ⭐</strong> · planning capacity <strong className="text-foreground">{stats.planningCapacity}</strong></p><p className="mt-1">EMPTY-исходы добавляются отдельно при расчёте общей ёмкости сезона.</p></div>
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3 text-[11px] text-muted-foreground"><p><strong className="text-foreground">{stats.winning}</strong> выигрышных исходов · Stars liability <strong className="text-foreground">{stats.stars} ⭐</strong> · planning capacity <strong className="text-foreground">{stats.planningCapacity}</strong></p><p className="mt-1">Пустые исходы добавляются отдельно при расчёте общей ёмкости сезона.</p></div>
             </GlassCard>
           </section>
 
@@ -147,5 +151,5 @@ function AdminDashboard() {
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>; }
 function ActionCard({ icon: Icon, title, text, onClick }: { icon: ComponentType<{ className?: string }>; title: string; text: string; onClick?: () => void }) { const inner = <GlassCard className="h-full px-3 py-3.5"><Icon className="size-4 text-primary-glow" /><p className="mt-2 text-sm font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{text}</p></GlassCard>; return onClick ? <button type="button" onClick={onClick} className="block h-full w-full text-left">{inner}</button> : inner; }
-function Row({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>; }
+function Row({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>; }
 function stateAction(state: SeasonState) { switch (state) { case "DRAFT": return "Настройте и сохраните"; case "SCHEDULED": return "Ожидает старта"; case "ACTIVE": return "Идёт сейчас"; case "ENDING": return "Завершается"; case "CLOSED": return "Остановлен"; case "PAYOUT": return "Выдача призов"; default: return "В архиве"; } }
