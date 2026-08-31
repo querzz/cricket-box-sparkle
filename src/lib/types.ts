@@ -63,6 +63,10 @@ export interface Reward {
   wonAt: string;
   status: RewardStatus;
   payoutNote?: string | undefined;
+  /** Stars actually added to the balance (may be capped by the 500 limit). */
+  creditedAmount?: number | undefined;
+  /** Stars that could not be credited because the balance is full. */
+  uncreditedAmount?: number | undefined;
 }
 
 export interface SpinState {
@@ -95,6 +99,8 @@ export interface SessionSnapshot {
   rewards: Reward[];
   withdrawals: Withdrawal[];
   withdrawalMinimum: number;
+  /** Mock-only preview flags. Never present in the real backend contract. */
+  dev: { simulateNetworkError: boolean };
 }
 
 /** Result envelope returned by every service call (backend-shaped). */

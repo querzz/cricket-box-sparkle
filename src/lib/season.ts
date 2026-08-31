@@ -1,6 +1,10 @@
 import type { SeasonState, SessionSnapshot } from "./types";
 
 export interface SeasonUi {
+  /** Season accepts spins/gifts. */
+  isLive: boolean;
+  /** Season is over — no countdown, no attempts, payout phase copy. */
+  isFinished: boolean;
   canSpin: boolean;
   canClaimGift: boolean;
   canWithdraw: boolean;
@@ -26,6 +30,8 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const meta = headlines[state];
 
   return {
+    isLive: live,
+    isFinished: state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED",
     canSpin: live && subscribed,
     canClaimGift: live && subscribed && snapshot.user.isParticipant,
     canWithdraw: state === "PAYOUT" || state === "CLOSED",

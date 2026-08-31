@@ -101,5 +101,6 @@ export function createInitialSnapshot(): SessionSnapshot {
       },
     ],
     withdrawalMinimum: WITHDRAWAL_MINIMUM,
+    dev: { simulateNetworkError: false },
   };
 }
