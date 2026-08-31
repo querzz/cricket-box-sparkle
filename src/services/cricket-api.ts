@@ -5,6 +5,8 @@ const STORAGE_KEY = "cricket-box:mock-session:v1";
 const DAY_MS = 24 * 60 * 60 * 1000;
 type BackendSessionResponse = { ok: boolean; snapshot?: SessionSnapshot; code?: string };
 type BackendSpinResponse = { ok: boolean; reward?: Reward; spin?: { id: string }; code?: string };
+type BackendGiftResponse = { ok: boolean; reward?: Reward; code?: string };
+type BackendWithdrawalResponse = { ok: boolean; withdrawal?: Withdrawal; code?: string; minimum?: number };
 
 function initData() {
   if (typeof window === "undefined") return "";
@@ -25,7 +27,7 @@ function localPersist(value: SessionSnapshot) { if (typeof localStorage !== "und
 let state = localStateLoad();
 const ok = <T>(data: T): ServiceResult<T> => ({ ok: true, data });
 const fail = (code: ServiceError["code"], message: string): ServiceResult<never> => ({ ok: false, error: { code, message } });
-const mapBackendError = (code: string): ServiceError => code === "NOT_SUBSCRIBED" ? { code: "NOT_SUBSCRIBED", message: "Подпишись на канал, чтобы участвовать." } : code === "NO_ATTEMPTS" ? { code: "NO_ATTEMPTS", message: "Сегодняшняя бесплатная попытка уже использована." } : code === "SEASON_NOT_ACTIVE" || code === "NO_SEASON" ? { code: "SEASON_CLOSED", message: "Сейчас нет активного сезона." } : { code: "NETWORK", message: "Не удалось выполнить операцию. Попробуй ещё раз." };
+const mapBackendError = (code: string): ServiceError => code === "NOT_SUBSCRIBED" ? { code: "NOT_SUBSCRIBED", message: "Подпишись на канал, чтобы участвовать." } : code === "NO_ATTEMPTS" ? { code: "NO_ATTEMPTS", message: "Сегодняшняя бесплатная попытка уже использована." } : code === "BELOW_MINIMUM" ? { code: "BELOW_MINIMUM", message: "Сумма ниже минимального порога вывода." } : code === "INSUFFICIENT_STARS" ? { code: "INSUFFICIENT_STARS", message: "Недостаточно Stars." } : code === "SEASON_NOT_ACTIVE" || code === "NO_SEASON" ? { code: "SEASON_CLOSED", message: "Сейчас нет активного сезона." } : code === "GIFT_UNAVAILABLE" ? { code: "GIFT_UNAVAILABLE", message: "Подарок сейчас недоступен." } : { code: "NETWORK", message: "Не удалось выполнить операцию. Попробуй ещё раз." };
 
 async function backendSession(): Promise<ServiceResult<SessionSnapshot>> {
   try {
@@ -76,13 +78,31 @@ export const cricketApi = {
     return ok({ reward, snapshot: structuredClone(state) });
   },
   async claimGift(): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
-    if (inTelegram()) return fail("GIFT_UNAVAILABLE", "Ежедневный подарок подключим следующим серверным этапом.");
+    if (inTelegram()) {
+      try {
+        const response = await fetch("/api/gift", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData() }) });
+        const data = (await response.json()) as BackendGiftResponse;
+        if (!response.ok || !data.ok || !data.reward) return { ok: false, error: mapBackendError(data.code ?? "GIFT_FAILED") };
+        const session = await backendSession();
+        if (!session.ok) return session;
+        return ok({ reward: data.reward, snapshot: session.data });
+      } catch { return fail("NETWORK", "Не удалось получить подарок."); }
+    }
     if (state.gift.state !== "AVAILABLE") return fail("GIFT_UNAVAILABLE", "Подарок сейчас на перезарядке.");
     const reward: Reward = { id: `g_${Math.random().toString(36).slice(2, 9)}`, kind: "STARS", title: "15 Stars", amount: 15, wonAt: new Date().toISOString(), status: "RECEIVED", payoutNote: "Ежедневный подарок зачислен на баланс Stars." };
     state.stars.amount = Math.min(state.stars.max, state.stars.amount + 15); state.rewards = [reward, ...state.rewards]; state.gift = { state: "COOLDOWN", availableAt: new Date(Date.now() + DAY_MS).toISOString() } satisfies Gift; localPersist(state); return ok({ reward, snapshot: structuredClone(state) });
   },
   async requestWithdrawal(amount: number): Promise<ServiceResult<{ withdrawal: Withdrawal; snapshot: SessionSnapshot }>> {
-    if (inTelegram()) return fail("NETWORK", "Вывод подключим после серверной выплаты Stars.");
+    if (inTelegram()) {
+      try {
+        const response = await fetch("/api/withdraw", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), amount }) });
+        const data = (await response.json()) as BackendWithdrawalResponse;
+        if (!response.ok || !data.ok || !data.withdrawal) return { ok: false, error: mapBackendError(data.code ?? "WITHDRAW_FAILED") };
+        const session = await backendSession();
+        if (!session.ok) return session;
+        return ok({ withdrawal: data.withdrawal, snapshot: session.data });
+      } catch { return fail("NETWORK", "Не удалось создать заявку на вывод."); }
+    }
     if (amount < state.withdrawalMinimum) return fail("BELOW_MINIMUM", `Минимальная сумма вывода — ${state.withdrawalMinimum} Stars.`);
     if (amount > state.stars.amount) return fail("INSUFFICIENT_STARS", "Недостаточно Stars.");
     state.stars.amount -= amount; const withdrawal: Withdrawal = { id: `w_${Math.random().toString(36).slice(2, 9)}`, rewardTitle: "Telegram Stars", amount, requestedAt: new Date().toISOString(), status: "PENDING" }; state.withdrawals = [withdrawal, ...state.withdrawals]; localPersist(state); return ok({ withdrawal, snapshot: structuredClone(state) });
