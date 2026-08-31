@@ -23,6 +23,7 @@ interface SessionContextValue {
   setSubscribed: (value: boolean) => Promise<void>;
   setStarsAmount: (amount: number) => Promise<void>;
   setSimulateNetworkError: (value: boolean) => Promise<void>;
+  resetDailyFreeSpin: () => Promise<void>;
   resetSession: () => Promise<void>;
 }
 
@@ -44,7 +45,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setError(null);
     } else {
       setError(result.error);
-      // a failed session load leaves nothing to render — show the error state
       setSnapshot(null);
     }
     setLoading(false);
@@ -101,6 +101,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const resetDailyFreeSpin = useCallback(async () => {
+    const result = await cricketApi.resetDailyFreeSpin();
+    if (result.ok) {
+      setSnapshot(result.data);
+      setError(null);
+    }
+  }, []);
+
   const resetSession = useCallback(async () => {
     const result = await cricketApi.reset();
     if (result.ok) setSnapshot(result.data);
@@ -119,6 +127,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setSubscribed,
       setStarsAmount,
       setSimulateNetworkError,
+      resetDailyFreeSpin,
       resetSession,
     }),
     [
@@ -133,6 +142,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setSubscribed,
       setStarsAmount,
       setSimulateNetworkError,
+      resetDailyFreeSpin,
       resetSession,
     ],
   );
