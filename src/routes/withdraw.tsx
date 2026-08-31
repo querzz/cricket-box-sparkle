@@ -16,13 +16,13 @@ import { isServiceError, useSession } from "@/store/session";
 export const Route = createFileRoute("/withdraw")({
   head: () => ({
     meta: [
-      { title: "Withdraw Stars — CRICKET BOX" },
+      { title: "Вывод Stars — CRICKET BOX" },
       {
         name: "description",
-        content: "Request a withdrawal of your internal Cricket Box Stars after the season.",
+        content: "Запрос на вывод Stars после завершения сезона CRICKET BOX.",
       },
-      { property: "og:title", content: "Withdraw Stars — CRICKET BOX" },
-      { property: "og:description", content: "Internal Stars withdrawal requests and their status." },
+      { property: "og:title", content: "Вывод Stars — CRICKET BOX" },
+      { property: "og:description", content: "Запросы на вывод Stars и их статусы." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -38,14 +38,14 @@ function WithdrawScreen() {
 
   if (loading && !snapshot)
     return (
-      <AppShell title="Withdrawals" back="/profile" nav={false}>
-        <LoadingState />
+      <AppShell title="Вывод" back="/profile" nav={false}>
+        <LoadingState label="Загрузка" />
       </AppShell>
     );
   if (!snapshot)
     return (
-      <AppShell title="Withdrawals" back="/profile" nav={false}>
-        <ErrorState onRetry={() => void refresh()} description={error?.message} />
+      <AppShell title="Вывод" back="/profile" nav={false}>
+        <ErrorState title="Ошибка сети" description={error?.message ?? "Не удалось подключиться к серверу. Попробуйте ещё раз."} onRetry={() => void refresh()} />
       </AppShell>
     );
 
@@ -61,14 +61,14 @@ function WithdrawScreen() {
       return;
     }
     setOpen(false);
-    toast.success("Withdrawal request submitted");
+    toast.success("Запрос на вывод отправлен");
   };
 
   return (
-    <AppShell title="Withdrawals" back="/profile" nav={false}>
+    <AppShell title="Вывод" back="/profile" nav={false}>
       <GlassCard className="px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Internal Stars balance
+          Баланс Stars
         </p>
         <StarsBalance balance={snapshot.stars} size="lg" showProgress className="mt-2" />
         <PrimaryButton
@@ -77,26 +77,25 @@ function WithdrawScreen() {
           disabled={!ui.canWithdraw || snapshot.stars.amount < snapshot.withdrawalMinimum}
           onClick={() => setOpen(true)}
         >
-          Withdraw
+          Вывести
         </PrimaryButton>
         {!ui.canWithdraw && (
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Withdrawals open when the season closes.
+            Вывод откроется после завершения сезона.
           </p>
         )}
       </GlassCard>
 
       <NoticeBar className="mt-3">
-        Internal Cricket Box Stars are not your personal Telegram Stars. Minimum withdrawal:{" "}
-        {snapshot.withdrawalMinimum} Stars.
+        Stars CRICKET BOX — это внутренняя валюта приложения, а не ваши личные Telegram Stars. Минимальная сумма вывода: {snapshot.withdrawalMinimum} Stars.
       </NoticeBar>
 
       <h2 className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-        Requests
+        Запросы на вывод
       </h2>
       <div className="mt-3 space-y-2.5">
         {snapshot.withdrawals.length === 0 ? (
-          <EmptyState title="No requests yet" description="Your withdrawal requests appear here." />
+          <EmptyState title="Запросов пока нет" description="Здесь появятся ваши запросы на вывод." />
         ) : (
           snapshot.withdrawals.map((w) => (
             <GlassCard key={w.id} className="flex items-center gap-3 px-4 py-3">
