@@ -35,35 +35,19 @@ export function Countdown({ target, label, compact = false, onComplete, classNam
     { value: parts.days > 0 ? parts.minutes : parts.seconds, unit: parts.days > 0 ? "мин" : "сек" },
   ];
 
-  if (compact) {
-    return (
-      <span className={cn("font-display text-sm tabular-nums", className)}>
-        {cells.map((c) => pad(c.value)).join(":")}
-      </span>
-    );
-  }
+  if (compact) return <span className={cn("font-display text-sm tabular-nums", className)}>{cells.map((c) => pad(c.value)).join(":")}</span>;
 
   return (
     <div className={cn("space-y-1.5", className)}>
-      {label && (
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          {label}
-        </p>
-      )}
+      {label && <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{label}</p>}
       <div className="flex items-end gap-2">
         {cells.map((cell, i) => (
           <div key={cell.unit} className="flex items-end gap-2">
             <div className="text-center">
-              <div className="font-display text-2xl font-semibold tabular-nums leading-none">
-                {pad(cell.value)}
-              </div>
-              <div className="mt-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
-                {cell.unit}
-              </div>
+              <div className="font-display text-2xl font-semibold tabular-nums leading-none">{pad(cell.value)}</div>
+              <div className="mt-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{cell.unit}</div>
             </div>
-            {i < cells.length - 1 && (
-              <span className="pb-4 font-display text-xl text-primary/60">:</span>
-            )}
+            {i < cells.length - 1 && <span className="pb-4 font-display text-xl text-primary/60">:</span>}
           </div>
         ))}
       </div>
