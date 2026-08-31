@@ -1,6 +1,6 @@
 # CRICKET BOX — APPROVED PRODUCT DECISIONS
 
-This file records product decisions approved after the initial MASTER SPECIFICATION. It must be checked together with `docs/MASTER_PLAN.md` and `docs/MASTER_SPECIFICATION.md` before future product or coding work.
+This file records product decisions approved after the initial MASTER SPECIFICATION. Check it together with `docs/MASTER_PLAN.md`, `docs/MASTER_SPECIFICATION.md`, and `docs/ECONOMICS.md` before future product or coding work.
 
 ## 1. Stars — one currency only
 
@@ -16,177 +16,214 @@ User-facing balance example:
 
 `⭐ 125 / 500`
 
-The 500 value is the default configurable capacity/cap defined by the product rules. Production implementation must respect the final Telegram-supported payout/payment model and legal review.
+The 500 value is the default configurable capacity/cap. Production implementation must respect the final Telegram-supported payment/reward model.
 
 ## 2. Daily free spin
 
-Approved as a product direction for testing/MVP economics:
+Approved product direction for MVP testing:
 
-- An active participant can receive **1 free spin per active season day** instead of only one free spin for the entire season.
-- Unused daily free spins do not accumulate unless a later product decision explicitly enables accumulation.
+- An active participant receives **1 free spin per active season day**.
+- Unused daily free spins do not accumulate by default.
 - Season close immediately stops future free-spin grants.
-- The rule must be enforced server-side in production, not with localStorage.
+- The rule must be enforced server-side in production.
 - Exact calendar/timezone behavior must be fixed before production launch.
 
-### Prize-pool safety
+Daily free spins are a retention/acquisition mechanism, not direct revenue.
 
-Daily free spins increase the maximum number of attempts but do NOT guarantee that the prize pool will be fully distributed.
+## 3. Season #001 planning defaults
 
-For every season the Admin WebApp must show:
-- target participants;
-- season duration;
-- expected daily return/retention assumption;
-- expected free spins;
-- maximum free spins;
-- expected paid spins (when enabled);
-- planning spin volume;
-- prize-pool size;
-- expected prize liability;
-- warning when the configured prize pool/budget is inconsistent with projected volume.
+These are **recommended starting settings**, not permanent global values. The admin must be able to change them for future seasons.
 
-A prize with `remaining = 0` is removed from selection. Other rewards and `EMPTY` can continue after a particular prize is exhausted.
+- Target participants: **150**
+- Maximum eligible participants: **300**
+- Duration: **14 days**
+- Free spins: **1/day**
+- Baseline expected daily activity: **50%**
+- Planning free spins: around **1,050–1,260** depending on retention assumption
+- Planning total spin volume: around **2,000** outcomes
 
-The system must NOT secretly alter probabilities or invent rewards merely to prevent the pool from ending early.
+These numbers are used as the first economic baseline and must be recalculated automatically by the Economic Planner.
 
-The admin may have a configurable season-level safety/budget switch that can pause new free-spin grants when a predefined safe exposure threshold is reached. The exact budget formula must be approved before production.
+## 4. Paid spin — starting recommendation
 
-## 3. First-season planning baseline
+Recommended starting price for Season #001: **100 Telegram Stars per paid spin**.
 
-Current audience is approximately **200 Telegram channel members**. This is not the same as guaranteed season participants.
+Why:
+- it gives the first season enough unit revenue headroom for a meaningful prize pool;
+- 75 Stars remains a useful comparison scenario in the Economic Planner;
+- price remains configurable by admin for future seasons;
+- do not change the price mid-season after the first paid transaction.
 
-For planning only, a first test season can be modeled around:
-- ~150 target participants;
-- 14 days;
-- 1 free spin/day;
-- approximately 50–70% average daily return as a planning range;
-- expected free spins around 1,050–1,260 depending on the retention assumption;
-- an additional safety margin before final prize-pool sizing.
+This is a product recommendation, not a hardcoded technical constant.
 
-These numbers are NOT locked production settings. They are a starting point for simulation.
+## 5. Season #001 provisional prize direction
 
-## 4. Prize pool for Season #001 — provisional direction
+Recommended starting pool for simulation:
 
-Do not use tiny Stars rewards (for example 1–3 ⭐) in the first season while the production mechanism for Stars rewards/payouts is still being finalized.
+- **500 UAH × 1**
+- **Telegram Premium 6 months × 1**
+- **100 Stars × 2**
+- **50 Stars × 5**
+- **20 Stars × 11**
+- `EMPTY` for the remaining outcomes
 
-Prefer a small number of meaningful Stars rewards, e.g.:
-- 50 ⭐
-- 100 ⭐
+Main meaningful winners: **20**.
 
-plus a limited number of:
-- Money rewards;
-- Telegram Premium;
-- NFT;
-- `EMPTY` outcomes.
+Stars liability:
 
-Example only, NOT a final locked pool:
-- 500 UAH × 1
-- Premium 3M × 2
-- NFT × 1
-- 50 ⭐ × 3
-- 100 ⭐ × 1
-- `EMPTY` for the remaining outcomes.
+`2×100 + 5×50 + 11×20 = 670 ⭐`
 
-Final quantities, costs, and Stars payout rules require economic simulation and product/legal approval.
+This is a **planning template only**. Final prize quantities, availability, procurement costs, and Stars fulfillment must be confirmed before the season is launched.
 
-## 5. Prize depletion policy
+## 6. Premium / NFT decision
 
-Do NOT close the season merely because one reward type reaches zero.
+For Season #001:
 
-Rules:
-- `remaining = 0` → reward is excluded from the spin pool;
-- other available rewards remain eligible according to the configured model;
-- `EMPTY` may remain available throughout the season;
-- if the overall season safety/budget threshold is reached, the system may pause new free spins according to an explicitly configured rule;
-- no hidden probability manipulation to conceal an exhausted prize pool.
+- Prefer **Premium 6 months** over 3 months when using a Premium prize because the supplied cost difference is small relative to the increased perceived value.
+- **NFT is deferred by default** to Season #002 or a larger audience unless its acquisition/retention value clearly justifies the additional cost.
 
-## 6. Veteran / Loyalty system
+Known supplied costs:
+- Premium 3 months: 14 CHF
+- Premium 6 months: 18 CHF
+- NFT: $9–12
+- cash prize example: 500 UAH
 
-Approved as a **V2 retention feature**.
+## 7. Prize-pool behavior
 
-Activity in previous seasons can create a persistent veteran level/reputation that grants small configurable benefits in the next season.
+- `remaining = 0` → reward is excluded from selection.
+- Exhausting one reward does **not** end the season.
+- `EMPTY` may continue throughout the season.
+- No hidden probability manipulation to hide depleted rewards.
+- Daily free spins increase attempt volume but do not guarantee that all rewards will be claimed.
+- The admin planner must warn when expected/max attempt volume is inconsistent with the configured pool.
 
-Potential tiers (to finalize later):
+## 8. Prize engine
+
+Preferred MVP model: **weighted sampling without replacement**.
+
+Conceptually, each remaining reward unit participates in the finite pool. For each spin:
+- eligible rewards must have `remaining > 0` and be active;
+- Stars rewards are excluded for users already at their Stars cap;
+- one outcome is selected;
+- the selected inventory is decremented atomically;
+- the result is recorded server-side before the client reveal.
+
+Do not use adaptive pacing in MVP unless explicitly approved later.
+
+## 9. Stars cap
+
+Default cap: **500 ⭐**.
+
+Example:
+
+`480 ⭐ + 50 ⭐ reward → 20 ⭐ credited`
+
+The 30 ⭐ overflow must be explicitly recorded/audited and never become a second balance/currency.
+
+At `500 / 500`:
+- Stars rewards are removed from that user's eligible pool;
+- other rewards remain eligible;
+- spending Stars immediately frees capacity.
+
+## 10. Daily Gift
+
+Daily Gift is separate from the main spin prize pool.
+
+- one claim per cooldown/day;
+- active participants only;
+- own reward budget/liability tracking;
+- no silent borrowing from the main prize pool.
+
+Streak remains V2.
+
+## 11. Veteran / Loyalty
+
+Approved as **V2 retention**.
+
+Previous-season activity may create a persistent veteran level/reputation that gives small next-season benefits.
+
+Potential tiers:
 - Newcomer
 - Active
 - Veteran
 - Elite
 
-Potential benefits:
+Potential low-cost benefits:
 - +1 starting free spin;
-- improved Daily Gift for a limited period;
-- special Veteran Gift;
-- cosmetic badge/status;
-- other small non-economic conveniences.
+- temporary improved Daily Gift;
+- Veteran Gift;
+- cosmetic badge/status.
 
-Strict rules:
-- old-season Stars are NOT automatically transferred by this feature;
-- old unused spins are NOT transferred;
-- veteran status must NOT provide a large permanent advantage;
-- veteran status must NOT automatically increase jackpot/rare-prize probability;
-- exact buffs are configurable per season and auditable;
-- feature stays behind V2/feature flag until explicitly approved.
+Strictly:
+- no automatic transfer of old Stars;
+- no transfer of unused spins;
+- no large permanent advantage;
+- no automatic higher jackpot probability;
+- exact bonuses must be approved before implementation.
 
-## 7. Founder / early-community recognition
+## 12. Founder / early-community recognition
 
-Potential extension for Season #001 participants:
+Potential Season #001 participants can receive a **Founder / Early Supporter** cosmetic status retained into later seasons.
 
-A non-economic **Founder / Early Supporter badge** can be retained into later seasons.
+Prefer cosmetic or low-cost retention value. Do not make it a strong economic advantage.
 
-Purpose:
-- reward early participation;
-- create identity/community status;
-- improve return rate;
-- do not create an unfair economic advantage.
+## 13. Economic Planner — required Admin feature
 
-This is a low-risk V2 candidate and must remain cosmetic unless explicitly expanded.
+The Admin WebApp must automatically calculate:
+- target/max participants;
+- expected daily activity;
+- expected/max free spins;
+- expected paid spins;
+- planning total spins;
+- paid-spin price;
+- gross Stars charged;
+- estimated developer revenue under the current approved Telegram model;
+- cash/Premium/NFT costs;
+- Stars prize liability;
+- Daily Gift liability;
+- safety reserve;
+- break-even paid spins;
+- break-even paid conversion;
+- projected margin;
+- worst-case exposure;
+- prize-pool utilization.
 
-## 8. Economic simulation required before enabling daily free spins live
+Statuses:
+- `HEALTHY`
+- `LOW MARGIN`
+- `LOSS RISK`
 
-Before production launch, simulate at least:
-- 100 participants;
-- 200 participants;
-- 1,000 participants;
-- 10,000 participants;
+The planner must always show the assumptions behind the calculation.
 
-and season lengths:
-- 7 days;
-- 14 days;
-- 30 days.
+## 14. Cross-season rule
 
-For each scenario calculate:
-- maximum free spins;
-- expected free spins under multiple retention assumptions;
-- expected paid spins under multiple conversion assumptions;
-- total spins;
-- prize-pool utilization;
-- Stars awarded;
-- Stars spent;
-- Stars payout liability;
-- cash/premium/NFT reward liability;
-- projected gross Stars revenue from paid spins;
-- safety margin / worst-case exposure.
+Season #001 and later seasons remain independent.
 
-No live season budget should be finalized from intuition alone.
+Default:
+- old Stars are not automatically transferred by Veteran;
+- old free/paid spin balances are not transferred;
+- Founder/Veteran status can persist as metadata;
+- final cross-season Stars settlement behavior must be explicitly approved before production.
 
-## 9. Current product priority
+## 15. Production-priority decisions
 
-Do NOT add more retention mechanics before these are resolved:
-1. daily free-spin economics;
-2. final Stars payout/payment model;
-3. finite prize-pool behavior;
-4. Russian UI/i18n;
-5. Admin WebApp.
+Before adding more retention features:
+1. finalize Stars payment/reward fulfillment model;
+2. finalize Daily Free Spin economics;
+3. finalize finite prize-pool mechanics;
+4. implement Russian UI/i18n;
+5. build Admin WebApp;
+6. implement backend and database.
 
-After those are stable, evaluate V2 mechanics such as Veteran, streak, referrals, missions, leaderboard improvements, and limited events.
+## 16. Source-of-truth rule
 
-## 10. Source-of-truth rule
-
-These decisions are approved unless explicitly changed in a later product decision.
+These decisions are approved unless explicitly changed later.
 
 Future coding work must:
 1. read `docs/MASTER_SPECIFICATION.md`;
 2. read `docs/MASTER_PLAN.md`;
 3. read this file;
-4. inspect the current code;
-5. preserve approved decisions;
-6. label new ideas as PROPOSED until approved.
+4. read `docs/ECONOMICS.md` for economic assumptions;
+5. inspect the current code;
+6. preserve approved decisions;
+7. label new ideas as PROPOSED until approved.
