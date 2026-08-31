@@ -119,7 +119,7 @@ function DrawScreen() {
             disabled={!ui.canSpin || freeSpins <= 0}
             onClick={() => void runSpin(false)}
           >
-            {busy ? "Opening" : "Spin"}
+            {ui.isFinished ? "Season closed" : busy ? "Opening" : "Spin"}
           </PrimaryButton>
 
           {price !== null && !ui.isFinished && (
