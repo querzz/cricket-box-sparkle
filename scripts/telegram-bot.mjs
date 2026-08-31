@@ -11,7 +11,7 @@ function loadEnv() {
     const index = trimmed.indexOf("=");
     if (index === -1) continue;
     const key = trimmed.slice(0, index).trim();
-    const value = trimmed.slice(index + 1).trim().replace(/^['"]|['"]$/g, "");
+    const value = trimmed.slice(index + 1).trim().replace(/^['\"]|['\"]$/g, "");
     if (!(key in process.env)) process.env[key] = value;
   }
 }
@@ -38,15 +38,32 @@ const api = (method, body = {}) =>
     return data.result;
   });
 
+function appButton() {
+  if (/^https:\/\//i.test(appUrl)) {
+    return { text: "🎁 Открыть CRICKET BOX", web_app: { url: appUrl } };
+  }
+
+  return { text: "🌐 Открыть локальный CRICKET BOX", url: appUrl };
+}
+
 async function main() {
   const me = await api("getMe");
-  console.log(`@${me.username} is running`);
-  console.log(`Mini App URL: ${appUrl}`);
+  console.log(`@${me.username || botUsername} is running`);
+  console.log(`App URL: ${appUrl}`);
+
+  if (!/^https:\/\//i.test(appUrl)) {
+    console.warn("APP_URL is not HTTPS. Telegram production Web Apps require HTTPS; the bot will use a normal URL button for local testing.");
+  }
 
   let offset = 0;
   while (true) {
     try {
-      const updates = await api("getUpdates", { timeout: 25, offset, allowed_updates: ["message"] });
+      const updates = await api("getUpdates", {
+        timeout: 25,
+        offset,
+        allowed_updates: ["message"],
+      });
+
       for (const update of updates) {
         offset = update.update_id + 1;
         const message = update.message;
@@ -58,9 +75,7 @@ async function main() {
             chat_id: message.chat.id,
             text: "🎁 CRICKET BOX\n\nРозыгрыши, призы и сезонные бонусы в одном месте.",
             reply_markup: {
-              inline_keyboard: [[
-                { text: "🎁 Открыть CRICKET BOX", web_app: { url: appUrl } },
-              ]],
+              inline_keyboard: [[appButton()]],
             },
           });
         }
