@@ -18,6 +18,8 @@ import type {
 
 const LATENCY = 550;
 const STORAGE_KEY = "cricket-box:mock-session:v1";
+const DAILY_FREE_SPIN_KEY = "cricket-box:daily-free-spin:v1";
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function loadState(): SessionSnapshot {
   const initial = createInitialSnapshot();
@@ -59,8 +61,39 @@ function ensureHydrated() {
   hydrated = true;
 }
 
+function todayKey() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function isDailySpinEligible() {
+  const seasonLive = state.season.state === "ACTIVE" || state.season.state === "ENDING";
+  return seasonLive && state.user.isSubscribed && state.user.isParticipant;
+}
+
+/**
+ * Grants exactly one free spin per local calendar day while the user is an
+ * eligible participant. The spin does not accumulate: unused daily spins do
+ * not stack across days.
+ */
+function syncDailyFreeSpin() {
+  if (typeof localStorage === "undefined") return;
+
+  const key = todayKey();
+  const grantedFor = localStorage.getItem(DAILY_FREE_SPIN_KEY);
+
+  if (!isDailySpinEligible()) return;
+  if (grantedFor === key) return;
+
+  state.spin.freeSpins = 1;
+  localStorage.setItem(DAILY_FREE_SPIN_KEY, key);
+  persist();
+}
+
 function networkError() {
-  return fail("NETWORK", "Network request failed. Check your connection and try again.");
+  return fail("NETWORK", "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз.");
 }
 
 const delay = <T>(value: T, ms = LATENCY) =>
@@ -89,9 +122,9 @@ const SEASON_TRANSITIONS: Record<SessionSnapshot["season"]["state"], readonly Se
 
 function guardSeason(): ServiceResult<null> {
   const { state: s } = state.season;
-  if (s === "DRAFT" || s === "SCHEDULED") return fail("SEASON_NOT_STARTED", "Season has not started yet.");
-  if (s !== "ACTIVE" && s !== "ENDING") return fail("SEASON_CLOSED", "This season is closed.");
-  if (!state.user.isSubscribed) return fail("NOT_SUBSCRIBED", "Subscribe to the channel to participate.");
+  if (s === "DRAFT" || s === "SCHEDULED") return fail("SEASON_NOT_STARTED", "Сезон ещё не начался.");
+  if (s !== "ACTIVE" && s !== "ENDING") return fail("SEASON_CLOSED", "Сезон завершён.");
+  if (!state.user.isSubscribed) return fail("NOT_SUBSCRIBED", "Подпишись на канал, чтобы участвовать.");
   return ok(null);
 }
 
@@ -148,8 +181,8 @@ function rollReward(): Reward | null {
     status: picked.kind === "STARS" ? "RECEIVED" : "PENDING",
     payoutNote:
       picked.kind === "STARS"
-        ? "Stars were added to your Cricket Box balance."
-        : "An administrator issues the prize within 48 hours.",
+        ? "Stars зачислены на баланс Cricket Box."
+        : "Администратор выдаст приз после проверки.",
   };
 }
 
@@ -161,49 +194,51 @@ function creditReward(reward: Reward) {
     reward.creditedAmount = credited;
     reward.uncreditedAmount = reward.amount - credited;
     if (credited < reward.amount) {
-      reward.payoutNote = `Balance limit reached — only ${credited} of ${reward.amount} Stars were credited.`;
+      reward.payoutNote = `Лимит баланса достигнут — зачислено ${credited} из ${reward.amount} Stars.`;
     }
   }
   state.rewards = [reward, ...state.rewards];
 }
 
 export interface SpinOptions {
-  /** Pay with Telegram Stars instead of using a free attempt. */
+  /** Pay with Telegram Stars instead of using the free daily attempt. */
   paid?: boolean;
 }
 
 export const cricketApi = {
   async getSession(): Promise<ServiceResult<SessionSnapshot>> {
     ensureHydrated();
+    syncDailyFreeSpin();
     if (state.dev.simulateNetworkError) return delay(networkError(), 350);
     return delay(ok(clone()), 350);
   },
 
   async spin(options: SpinOptions = {}): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
+    ensureHydrated();
+    syncDailyFreeSpin();
     if (state.dev.simulateNetworkError) return delay(networkError());
     const guard = guardSeason();
     if (!guard.ok) return delay(guard);
 
     if (options.paid) {
       const price = state.spin.paidSpinPrice;
-      if (price === null) return delay(fail("NO_ATTEMPTS", "Paid spins are disabled for this season."));
+      if (price === null) return delay(fail("NO_ATTEMPTS", "Платные прокрутки отключены для этого сезона."));
       if (state.stars.amount < price)
-        return delay(fail("INSUFFICIENT_STARS", "Not enough Stars for a paid spin."));
+        return delay(fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки."));
       state.stars.amount -= price;
     } else {
-      if (state.spin.freeSpins <= 0) return delay(fail("NO_ATTEMPTS", "No free attempts left."));
+      if (state.spin.freeSpins <= 0) return delay(fail("NO_ATTEMPTS", "Сегодняшняя бесплатная попытка уже использована."));
       state.spin.freeSpins -= 1;
     }
 
     const reward = rollReward();
     if (!reward) {
-      // Restore the attempt/payment if there is no eligible reward at all.
       if (options.paid) {
         state.stars.amount += state.spin.paidSpinPrice ?? 0;
       } else {
         state.spin.freeSpins += 1;
       }
-      return delay(fail("NO_ATTEMPTS", "No eligible rewards remain in this season."));
+      return delay(fail("NO_ATTEMPTS", "Подходящих призов для этой попытки больше нет."));
     }
 
     state.spin.totalSpins += 1;
@@ -212,12 +247,14 @@ export const cricketApi = {
   },
 
   async claimGift(): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
+    ensureHydrated();
+    syncDailyFreeSpin();
     if (state.dev.simulateNetworkError) return delay(networkError());
     const guard = guardSeason();
     if (!guard.ok) return delay(guard);
     if (!state.user.isParticipant)
-      return delay(fail("GIFT_UNAVAILABLE", "Only active season participants can claim the daily gift."));
-    if (state.gift.state !== "AVAILABLE") return delay(fail("GIFT_UNAVAILABLE", "Your gift is on cooldown."));
+      return delay(fail("GIFT_UNAVAILABLE", "Только участники текущего сезона могут забрать ежедневный подарок."));
+    if (state.gift.state !== "AVAILABLE") return delay(fail("GIFT_UNAVAILABLE", "Подарок сейчас на перезарядке."));
 
     const reward: Reward = {
       id: `g_${Math.random().toString(36).slice(2, 9)}`,
@@ -226,12 +263,12 @@ export const cricketApi = {
       amount: 15,
       wonAt: new Date().toISOString(),
       status: "RECEIVED",
-      payoutNote: "Daily gift credited to your Stars balance.",
+      payoutNote: "Ежедневный подарок зачислен на баланс Stars.",
     };
     creditReward(reward);
     state.gift = {
       state: "COOLDOWN",
-      availableAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      availableAt: new Date(Date.now() + DAY_MS).toISOString(),
     } satisfies Gift;
     return delay(ok({ reward, snapshot: clone() }), 800);
   },
@@ -239,8 +276,8 @@ export const cricketApi = {
   async requestWithdrawal(amount: number): Promise<ServiceResult<{ withdrawal: Withdrawal; snapshot: SessionSnapshot }>> {
     if (state.dev.simulateNetworkError) return delay(networkError());
     if (amount < state.withdrawalMinimum)
-      return delay(fail("BELOW_MINIMUM", `Minimum withdrawal is ${state.withdrawalMinimum} Stars.`));
-    if (amount > state.stars.amount) return delay(fail("INSUFFICIENT_STARS", "Not enough Stars."));
+      return delay(fail("BELOW_MINIMUM", `Минимальная сумма вывода — ${state.withdrawalMinimum} Stars.`));
+    if (amount > state.stars.amount) return delay(fail("INSUFFICIENT_STARS", "Недостаточно Stars."));
 
     state.stars.amount -= amount;
     const withdrawal: Withdrawal = {
@@ -259,14 +296,18 @@ export const cricketApi = {
     const current = state.season.state;
     if (current === next) return delay(ok(clone()), 200);
     if (!SEASON_TRANSITIONS[current].includes(next)) {
-      return delay(fail("SEASON_CLOSED", `Invalid season transition: ${current} → ${next}.`));
+      return delay(fail("SEASON_CLOSED", `Недопустимый переход сезона: ${current} → ${next}.`));
     }
     state.season.state = next;
+    if (!isDailySpinEligible()) state.spin.freeSpins = 0;
+    syncDailyFreeSpin();
     return delay(ok(clone()), 200);
   },
 
   async setSubscribed(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
     state.user.isSubscribed = value;
+    if (value) syncDailyFreeSpin();
+    if (!value) state.spin.freeSpins = 0;
     return delay(ok(clone()), 200);
   },
 
@@ -282,8 +323,20 @@ export const cricketApi = {
     return delay(ok(clone()), 150);
   },
 
+  /** Dev-only: reset today's free-spin grant so QA can replay it immediately. */
+  async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> {
+    ensureHydrated();
+    if (typeof localStorage !== "undefined") localStorage.removeItem(DAILY_FREE_SPIN_KEY);
+    if (isDailySpinEligible()) {
+      state.spin.freeSpins = 1;
+      if (typeof localStorage !== "undefined") localStorage.setItem(DAILY_FREE_SPIN_KEY, todayKey());
+    }
+    return delay(ok(clone()), 150);
+  },
+
   async reset(): Promise<ServiceResult<SessionSnapshot>> {
     state = createInitialSnapshot();
+    if (typeof localStorage !== "undefined") localStorage.removeItem(DAILY_FREE_SPIN_KEY);
     return delay(ok(clone()), 200);
   },
 };
