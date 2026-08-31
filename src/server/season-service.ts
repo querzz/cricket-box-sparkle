@@ -36,10 +36,14 @@ export async function createSeason(input: { code: string; name: string; paidSpin
 }
 
 export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>) {
+  const currentResult = await query<{ state: DbSeason["state"] }>(`SELECT state FROM seasons WHERE id = $1`, [id]);
+  if (!currentResult.rows[0]) return undefined;
+
+  const currentState = currentResult.rows[0].state;
   const startsAt = patch.startsAt ?? null;
   const endsAt = patch.endsAt ?? null;
   const requestedState = patch.state;
-  const autoState = !requestedState && startsAt && endsAt
+  const autoState = !requestedState && ["DRAFT", "SCHEDULED"].includes(currentState) && startsAt && endsAt
     ? (new Date(startsAt) <= new Date() && new Date(endsAt) > new Date() ? "ACTIVE" : "SCHEDULED")
     : requestedState;
 
