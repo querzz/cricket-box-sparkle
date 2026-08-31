@@ -75,6 +75,8 @@ export interface SpinState {
   freeSpins: number;
   paidSpinPrice: number | null;
   totalSpins: number;
+  /** Local mock marker for the calendar day the current free spin belongs to. */
+  freeSpinDate?: string | undefined;
 }
 
 export interface Gift {
