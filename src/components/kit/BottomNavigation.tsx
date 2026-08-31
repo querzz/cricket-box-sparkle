@@ -2,10 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { Home, Zap, Gift, User } from "lucide-react";
 
 const items = [
-  { to: "/", label: "Home", icon: Home, exact: true },
-  { to: "/draw", label: "Draw", icon: Zap, exact: false },
-  { to: "/prizes", label: "My prizes", icon: Gift, exact: false },
-  { to: "/profile", label: "Profile", icon: User, exact: false },
+  { to: "/", label: "Главная", icon: Home, exact: true },
+  { to: "/draw", label: "Розыгрыш", icon: Zap, exact: false },
+  { to: "/prizes", label: "Мои призы", icon: Gift, exact: false },
+  { to: "/profile", label: "Профиль", icon: User, exact: false },
 ] as const;
 
 export function BottomNavigation() {
