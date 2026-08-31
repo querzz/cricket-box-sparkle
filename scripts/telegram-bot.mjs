@@ -1,6 +1,9 @@
+import dns from "node:dns";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+
+dns.setDefaultResultOrder("ipv4first");
 
 function loadEnv() {
   const envPath = path.resolve(process.cwd(), ".env");
@@ -27,16 +30,35 @@ if (!token) {
   process.exit(1);
 }
 
-const api = (method, body = {}) =>
-  fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  }).then(async (response) => {
-    const data = await response.json();
-    if (!data.ok) throw new Error(`${method}: ${data.description || "Telegram API error"}`);
-    return data.result;
-  });
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function api(method, body = {}, retries = 5) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      const data = await response.json();
+      if (!data.ok) {
+        throw new Error(`${method}: ${data.description || "Telegram API error"}`);
+      }
+      return data.result;
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      console.warn(`${method} failed (attempt ${attempt}/${retries}): ${error instanceof Error ? error.message : String(error)}`);
+      await sleep(Math.min(1000 * 2 ** (attempt - 1), 8000));
+    }
+  }
+
+  throw lastError;
+}
 
 function appButton() {
   if (/^https:\/\//i.test(appUrl)) {
@@ -82,7 +104,7 @@ async function main() {
       }
     } catch (error) {
       console.error(error);
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await sleep(3000);
     }
   }
 }
