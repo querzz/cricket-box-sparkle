@@ -24,7 +24,7 @@ export function RewardCard({ reward }: { reward: Reward }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{reward.title}</p>
         <p className="truncate text-[11px] text-muted-foreground">
-          {reward.subtitle ? `${reward.subtitle} · ` : ""}Won {formatDate(reward.wonAt)}
+          {reward.subtitle ? `${reward.subtitle} · ` : ""}Выиграно {formatDate(reward.wonAt)}
         </p>
       </div>
       <StatusBadge status={{ type: "reward", value: reward.status }} />
