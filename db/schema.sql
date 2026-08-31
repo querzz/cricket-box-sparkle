@@ -14,6 +14,15 @@ CREATE TABLE IF NOT EXISTS users (
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS user_state (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  stars_balance INTEGER NOT NULL DEFAULT 125 CHECK (stars_balance >= 0 AND stars_balance <= 500),
+  is_subscribed BOOLEAN NOT NULL DEFAULT TRUE,
+  is_participant BOOLEAN NOT NULL DEFAULT TRUE,
+  daily_gift_claimed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   telegram_id BIGINT NOT NULL UNIQUE,
