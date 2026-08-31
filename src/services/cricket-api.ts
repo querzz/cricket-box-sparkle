@@ -1,11 +1,9 @@
 /**
  * Mock CRICKET BOX API.
  *
- * This module is the ONLY place where authoritative state lives. It stands in
- * for the future backend: spin results, balances, gift availability and
- * withdrawals are all decided here, never inside React components.
- * Replacing the bodies of these methods with real `fetch` calls is the only
- * change required to go live.
+ * This module is the ONLY place where authoritative state lives in the mock.
+ * It stands in for the future backend: spin results, balances, gift
+ * availability and withdrawals are all decided here, never inside React.
  */
 import { createInitialSnapshot } from "@/lib/mock-data";
 import type {
@@ -21,11 +19,6 @@ import type {
 const LATENCY = 550;
 const STORAGE_KEY = "cricket-box:mock-session:v1";
 
-/**
- * Mock persistence. The real backend owns this state; until then we keep it in
- * localStorage so a page reload does not wipe stars, spins, rewards, the gift
- * cooldown or withdrawals.
- */
 function loadState(): SessionSnapshot {
   const initial = createInitialSnapshot();
   if (typeof localStorage === "undefined") return initial;
@@ -53,14 +46,13 @@ function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    /* storage unavailable — mock state simply stays in memory */
+    // Storage is optional in the mock.
   }
 }
 
 let state: SessionSnapshot = loadState();
 let hydrated = typeof localStorage !== "undefined";
 
-/** Re-read persisted state on the client after SSR produced the initial value. */
 function ensureHydrated() {
   if (hydrated || typeof localStorage === "undefined") return;
   state = loadState();
@@ -85,41 +77,15 @@ const clone = (): SessionSnapshot => {
   return structuredClone(state);
 };
 
-/** Server-side reward table. Intentionally not exported. */
-const rewardTable: Array<{ kind: RewardKind; title: string; subtitle?: string; amount?: number; weight: number }> = [
-  { kind: "STARS", title: "20 Stars", amount: 20, weight: 42 },
-  { kind: "STARS", title: "50 Stars", amount: 50, weight: 14 },
-  { kind: "PREMIUM", title: "Telegram Premium", subtitle: "3 months", weight: 8 },
-  { kind: "NFT", title: "NFT Collectible", weight: 5 },
-  { kind: "MONEY", title: "500 UAH", amount: 500, weight: 4 },
-  { kind: "EMPTY", title: "Nothing this time", weight: 27 },
-];
-
-function rollReward(): Reward {
-  const total = rewardTable.reduce((sum, r) => sum + r.weight, 0);
-  let roll = Math.random() * total;
-  let picked = rewardTable[rewardTable.length - 1]!;
-  for (const entry of rewardTable) {
-    roll -= entry.weight;
-    if (roll <= 0) {
-      picked = entry;
-      break;
-    }
-  }
-  return {
-    id: `r_${Math.random().toString(36).slice(2, 9)}`,
-    kind: picked.kind,
-    title: picked.title,
-    subtitle: picked.subtitle,
-    amount: picked.amount,
-    wonAt: new Date().toISOString(),
-    status: picked.kind === "STARS" ? "RECEIVED" : "PENDING",
-    payoutNote:
-      picked.kind === "STARS"
-        ? "Credited to your internal Stars balance."
-        : "An administrator issues the prize within 48 hours.",
-  };
-}
+const SEASON_TRANSITIONS: Record<SessionSnapshot["season"]["state"], readonly SessionSnapshot["season"]["state"][]> = {
+  DRAFT: ["SCHEDULED"],
+  SCHEDULED: ["ACTIVE"],
+  ACTIVE: ["ENDING", "CLOSED"],
+  ENDING: ["CLOSED"],
+  CLOSED: ["PAYOUT"],
+  PAYOUT: ["ARCHIVED"],
+  ARCHIVED: [],
+};
 
 function guardSeason(): ServiceResult<null> {
   const { state: s } = state.season;
@@ -127,6 +93,64 @@ function guardSeason(): ServiceResult<null> {
   if (s !== "ACTIVE" && s !== "ENDING") return fail("SEASON_CLOSED", "This season is closed.");
   if (!state.user.isSubscribed) return fail("NOT_SUBSCRIBED", "Subscribe to the channel to participate.");
   return ok(null);
+}
+
+function getEligiblePrizes(): SessionSnapshot["prizes"] {
+  const starsAreFull = state.stars.amount >= state.stars.max;
+
+  return state.prizes.filter((prize) => {
+    if (prize.remaining <= 0) return false;
+    if (prize.kind === "STARS" && starsAreFull) return false;
+    return prize.weight === undefined || prize.weight > 0;
+  });
+}
+
+/**
+ * Finite inventory draw: each remaining prize unit is an eligible outcome.
+ * This is the mock implementation of weighted sampling without replacement.
+ */
+function rollReward(): Reward | null {
+  const eligible = getEligiblePrizes();
+  if (eligible.length === 0) return null;
+
+  const totalWeight = eligible.reduce(
+    (sum, prize) => sum + prize.remaining * (prize.weight ?? 1),
+    0,
+  );
+
+  let roll = Math.random() * totalWeight;
+  let picked = eligible[eligible.length - 1]!;
+
+  for (const prize of eligible) {
+    roll -= prize.remaining * (prize.weight ?? 1);
+    if (roll <= 0) {
+      picked = prize;
+      break;
+    }
+  }
+
+  const inventory = state.prizes.find((prize) => prize.id === picked.id);
+  if (!inventory || inventory.remaining <= 0) return null;
+
+  inventory.remaining -= 1;
+
+  const amount = picked.kind === "STARS"
+    ? Number(picked.title.replace(/[^0-9]/g, "")) || undefined
+    : undefined;
+
+  return {
+    id: `r_${Math.random().toString(36).slice(2, 9)}`,
+    kind: picked.kind as RewardKind,
+    title: picked.title,
+    subtitle: picked.subtitle,
+    amount,
+    wonAt: new Date().toISOString(),
+    status: picked.kind === "STARS" ? "RECEIVED" : "PENDING",
+    payoutNote:
+      picked.kind === "STARS"
+        ? "Stars were added to your Cricket Box balance."
+        : "An administrator issues the prize within 48 hours.",
+  };
 }
 
 function creditReward(reward: Reward) {
@@ -144,7 +168,7 @@ function creditReward(reward: Reward) {
 }
 
 export interface SpinOptions {
-  /** Pay with internal Stars instead of using a free attempt. */
+  /** Pay with Telegram Stars instead of using a free attempt. */
   paid?: boolean;
 }
 
@@ -164,15 +188,25 @@ export const cricketApi = {
       const price = state.spin.paidSpinPrice;
       if (price === null) return delay(fail("NO_ATTEMPTS", "Paid spins are disabled for this season."));
       if (state.stars.amount < price)
-        return delay(fail("INSUFFICIENT_STARS", "Not enough internal Stars for a paid spin."));
+        return delay(fail("INSUFFICIENT_STARS", "Not enough Stars for a paid spin."));
       state.stars.amount -= price;
     } else {
       if (state.spin.freeSpins <= 0) return delay(fail("NO_ATTEMPTS", "No free attempts left."));
       state.spin.freeSpins -= 1;
     }
 
-    state.spin.totalSpins += 1;
     const reward = rollReward();
+    if (!reward) {
+      // Restore the attempt/payment if there is no eligible reward at all.
+      if (options.paid) {
+        state.stars.amount += state.spin.paidSpinPrice ?? 0;
+      } else {
+        state.spin.freeSpins += 1;
+      }
+      return delay(fail("NO_ATTEMPTS", "No eligible rewards remain in this season."));
+    }
+
+    state.spin.totalSpins += 1;
     creditReward(reward);
     return delay(ok({ reward, snapshot: clone() }), 900);
   },
@@ -192,7 +226,7 @@ export const cricketApi = {
       amount: 15,
       wonAt: new Date().toISOString(),
       status: "RECEIVED",
-      payoutNote: "Daily gift credited to your internal Stars balance.",
+      payoutNote: "Daily gift credited to your Stars balance.",
     };
     creditReward(reward);
     state.gift = {
@@ -206,12 +240,12 @@ export const cricketApi = {
     if (state.dev.simulateNetworkError) return delay(networkError());
     if (amount < state.withdrawalMinimum)
       return delay(fail("BELOW_MINIMUM", `Minimum withdrawal is ${state.withdrawalMinimum} Stars.`));
-    if (amount > state.stars.amount) return delay(fail("INSUFFICIENT_STARS", "Not enough internal Stars."));
+    if (amount > state.stars.amount) return delay(fail("INSUFFICIENT_STARS", "Not enough Stars."));
 
     state.stars.amount -= amount;
     const withdrawal: Withdrawal = {
       id: `w_${Math.random().toString(36).slice(2, 9)}`,
-      rewardTitle: "Internal Stars",
+      rewardTitle: "Telegram Stars",
       amount,
       requestedAt: new Date().toISOString(),
       status: "PENDING",
@@ -222,6 +256,11 @@ export const cricketApi = {
 
   /** Dev-only helper used by the season-state switcher in Settings. */
   async setSeasonState(next: SessionSnapshot["season"]["state"]): Promise<ServiceResult<SessionSnapshot>> {
+    const current = state.season.state;
+    if (current === next) return delay(ok(clone()), 200);
+    if (!SEASON_TRANSITIONS[current].includes(next)) {
+      return delay(fail("SEASON_CLOSED", `Invalid season transition: ${current} → ${next}.`));
+    }
     state.season.state = next;
     return delay(ok(clone()), 200);
   },
@@ -231,7 +270,7 @@ export const cricketApi = {
     return delay(ok(clone()), 200);
   },
 
-  /** Dev-only: jump the internal Stars balance to an exact value. */
+  /** Dev-only: jump the Stars balance to an exact value for QA. */
   async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> {
     state.stars.amount = Math.max(0, Math.min(state.stars.max, Math.round(amount)));
     return delay(ok(clone()), 200);
