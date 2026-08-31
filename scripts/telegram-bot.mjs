@@ -92,6 +92,14 @@ async function main() {
         if (!message?.chat?.id) continue;
 
         const text = message.text || "";
+        if (text === "/id") {
+          await api("sendMessage", {
+            chat_id: message.chat.id,
+            text: `🆔 Твой Telegram ID: ${message.from?.id ?? message.chat.id}`,
+          });
+          continue;
+        }
+
         if (text.startsWith("/start")) {
           await api("sendMessage", {
             chat_id: message.chat.id,
