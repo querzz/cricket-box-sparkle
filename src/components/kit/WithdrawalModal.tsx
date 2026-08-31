@@ -36,9 +36,9 @@ export function WithdrawalModal({
     <Modal open={open} onClose={submitting ? undefined : onClose} dismissible={!submitting}>
       <div className="space-y-5">
         <div className="text-center">
-          <h2 className="font-display text-base uppercase tracking-[0.18em]">Withdraw Stars</h2>
+          <h2 className="font-display text-base uppercase tracking-[0.18em]">Вывод Stars</h2>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
-            Internal Cricket Box Stars — not your personal Telegram Stars.
+            Stars CRICKET BOX — это не ваши личные Telegram Stars.
           </p>
         </div>
 
@@ -46,7 +46,7 @@ export function WithdrawalModal({
 
         {!allowed ? (
           <NoticeBar tone="warning">
-            Withdrawals open when the season enters the payout stage.
+            Вывод откроется после перехода сезона в этап выдачи призов.
           </NoticeBar>
         ) : (
           <>
@@ -55,7 +55,7 @@ export function WithdrawalModal({
                 htmlFor="withdraw-amount"
                 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >
-                Amount
+                Сумма
               </label>
               <input
                 id="withdraw-amount"
@@ -75,29 +75,28 @@ export function WithdrawalModal({
                     onClick={() => setAmount(preset)}
                     className="press rounded-full border border-glass-border bg-muted/40 px-3 py-1.5 text-[11px]"
                   >
-                    {i === 2 ? "Max" : preset}
+                    {i === 2 ? "Макс." : preset}
                   </button>
                 ))}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Minimum withdrawal: {minimum} Stars. Available: {balance.amount} Stars.
+                Минимум: {minimum} Stars. Доступно: {balance.amount} Stars.
               </p>
             </div>
 
             {error && <NoticeBar tone="danger">{error}</NoticeBar>}
 
             <NoticeBar>
-              No payment details are stored in the app. Payouts are handled by an administrator
-              after review.
+              Платёжные данные не хранятся в приложении. После проверки выплаты обрабатывает администратор.
             </NoticeBar>
 
             {confirming ? (
               <div className="space-y-2">
                 <p className="text-center text-xs text-muted-foreground">
-                  Request withdrawal of {amount} Stars?
+                  Запросить вывод {amount} Stars?
                 </p>
                 <PrimaryButton fullWidth loading={submitting} onClick={() => onSubmit(amount)}>
-                  {submitting ? "Processing" : "Confirm"}
+                  {submitting ? "Обработка" : "Подтвердить"}
                 </PrimaryButton>
                 <PrimaryButton
                   variant="ghost"
@@ -105,12 +104,12 @@ export function WithdrawalModal({
                   disabled={submitting}
                   onClick={() => setConfirming(false)}
                 >
-                  Back
+                  Назад
                 </PrimaryButton>
               </div>
             ) : (
               <PrimaryButton fullWidth disabled={!valid} onClick={() => setConfirming(true)}>
-                Continue
+                Продолжить
               </PrimaryButton>
             )}
           </>
