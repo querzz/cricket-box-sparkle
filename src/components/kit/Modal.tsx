@@ -43,7 +43,7 @@ export function Modal({ open, onClose, children, className, dismissible = true }
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="press absolute right-4 top-4 grid size-8 place-items-center rounded-full bg-muted/60 text-muted-foreground"
+            className="press absolute right-4 top-4 z-20 grid size-8 place-items-center rounded-full bg-muted/60 text-muted-foreground"
           >
             <X className="size-4" />
           </button>
