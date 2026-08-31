@@ -70,6 +70,8 @@ export function AppShell({ children, title, back, action, bare = false, nav = tr
   const isAdmin = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
   const isAdminLogin = typeof window !== "undefined" && window.location.pathname === "/admin/login";
   const needsBotEntry = isAdmin && !isAdminLogin && !import.meta.env.DEV && !telegramMiniAppIsAvailable();
+  const adminBack = isAdmin && !isAdminLogin ? "/" : undefined;
+  const effectiveBack = back ?? adminBack;
 
   if (needsBotEntry) return <AdminBotGate />;
 
@@ -78,7 +80,7 @@ export function AppShell({ children, title, back, action, bare = false, nav = tr
     <div aria-hidden className="pointer-events-none fixed -left-24 top-[38vh] z-0 size-64 rounded-full bg-primary/20 blur-[90px] animate-drift" />
     <div aria-hidden className="pointer-events-none fixed -right-28 top-[62vh] z-0 size-72 rounded-full bg-primary-glow/12 blur-[110px] animate-drift [animation-delay:-6s]" />
     {!bare && <header className="sticky top-0 z-30 grid grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-2 bg-background/80 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur-xl">
-      {back ? <Link to={back} className="press grid size-9 place-items-center rounded-full bg-muted/50 text-foreground" aria-label="Back"><ChevronLeft className="size-5" /></Link> : <span />}
+      {effectiveBack ? <Link to={effectiveBack} className="press grid size-9 place-items-center rounded-full bg-muted/50 text-foreground" aria-label={effectiveBack === "/" ? "Назад в бота" : "Назад"}><ChevronLeft className="size-5" /></Link> : <span />}
       <h1 className="truncate text-center font-display text-sm font-semibold uppercase tracking-[0.22em]">{title}</h1>
       <div className="flex justify-end">{action}</div>
     </header>}
