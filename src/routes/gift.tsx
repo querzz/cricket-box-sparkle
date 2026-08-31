@@ -36,13 +36,13 @@ function GiftScreen() {
 
   if (loading && !snapshot)
     return (
-      <AppShell title="Your gift" back="/" nav={false}>
+      <AppShell title="Your gift" back="/">
         <LoadingState />
       </AppShell>
     );
   if (!snapshot)
     return (
-      <AppShell title="Your gift" back="/" nav={false}>
+      <AppShell title="Your gift" back="/">
         <ErrorState onRetry={() => void refresh()} description={error?.message} />
       </AppShell>
     );
@@ -69,7 +69,7 @@ function GiftScreen() {
   };
 
   return (
-    <AppShell title="Your gift" back="/" nav={false}>
+    <AppShell title="Your gift" back="/">
       <div className="relative mt-6 grid place-items-center">
         {opening && <Sparkles count={20} />}
         <div
