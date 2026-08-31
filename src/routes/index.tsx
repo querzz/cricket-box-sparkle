@@ -10,7 +10,6 @@ import { GlassCard } from "@/components/kit/GlassCard";
 import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { PrizeStrip } from "@/components/kit/PrizePool";
 import { Avatar } from "@/components/kit/ProfileHeader";
-import { RewardCard } from "@/components/kit/RewardCard";
 import { StatusBadge } from "@/components/kit/StatusBadge";
 import { ErrorState, LoadingState, NoticeBar } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
@@ -53,9 +52,7 @@ function HomeScreen() {
 
   const ui = seasonUi(snapshot);
   const attempts = snapshot.spin.freeSpins;
-  const latestRewards = snapshot.rewards.slice(0, 2);
-  const rewardCount = snapshot.rewards.length;
-  const rewardLabel = rewardCount === 1 ? "приз" : rewardCount >= 2 && rewardCount <= 4 ? "приза" : "призов";
+  const latestReward = snapshot.rewards[0];
 
   return (
     <AppShell bare className="pt-[env(safe-area-inset-top)]">
@@ -95,7 +92,7 @@ function HomeScreen() {
             </div>
             <div className="mt-3 border-t border-glass-border pt-3 text-[11px] text-muted-foreground">
               <p>{ui.note}</p>
-              <p className="mt-1">{ui.isFinished ? "Прокрутки и ежедневный подарок закрыты для этого сезона." : `${snapshot.user.isParticipant ? "Ты участвуешь" : "Ты ещё не участвуешь"} · ${attempts} бесплатн${attempts === 1 ? "ая попытка сегодня" : "ых попытки сегодня"}`}</p>
+              <p className="mt-1">{ui.isFinished ? "Прокрутки и ежедневный подарок закрыты для этого сезона." : `${snapshot.user.isParticipant ? "Ты участвуешь" : "Ты ещё не участвуешь"} · ${attempts} бесплатн${attempts === 1 ? "ая попытка" : "ых попытки"}`}</p>
             </div>
           </GlassCard>
 
@@ -120,62 +117,68 @@ function HomeScreen() {
         <PrizeStrip prizes={snapshot.prizes} />
       </section>
 
-      <section className="mt-6 space-y-2.5">
+      <section className="mt-5 space-y-2.5">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Твои призы</h2>
-            {rewardCount > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Ты уже выиграл {rewardCount} {rewardLabel}</p>}
-          </div>
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Твои призы</h2>
           <Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Все <ChevronRight className="size-3.5" /></Link>
         </div>
-
-        {latestRewards.length === 0 ? (
-          <GlassCard className="flex items-center gap-3 px-4 py-3.5">
-            <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
-              <Gift className="size-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">Пока здесь пусто</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Крути бокс, чтобы получить первый приз.</p>
-            </div>
-            <Link to="/draw" className="shrink-0"><PrimaryButton variant="outline" size="md">Крутить</PrimaryButton></Link>
+        <Link to="/prizes" className="block">
+          <GlassCard className="press flex items-center gap-3 px-4 py-3.5">
+            {latestReward ? (
+              <>
+                <img src={assets.reward[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">Последний приз</p>
+                  <p className="mt-1 truncate text-sm font-semibold">{latestReward.title}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{latestReward.status === "RECEIVED" ? "Получен" : latestReward.status === "PROBLEM" ? "Требует решения" : "Ожидает выдачи"}</p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </>
+            ) : (
+              <>
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10"><Gift className="size-6 text-primary-glow" /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Пока здесь пусто</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Крути бокс, чтобы получить свой первый приз.</p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </>
+            )}
           </GlassCard>
-        ) : (
-          <div className="space-y-2.5">
-            {latestRewards.map((reward) => <RewardCard key={reward.id} reward={reward} />)}
-          </div>
-        )}
+        </Link>
       </section>
 
-      <section className="mt-6 space-y-2.5">
+      <section className="mt-5 space-y-2.5">
         <div className="flex items-center justify-between">
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Как это работает</h2>
           <Link to="/profile/rules" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Подробнее <ChevronRight className="size-3.5" /></Link>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <GlassCard className="grid grid-cols-3 gap-2 px-3 py-4">
           {[
-            { n: "01", title: "Крутишь", text: "Получаешь одну бесплатную попытку каждый день." },
-            { n: "02", title: "Получаешь", text: "Награда определяется из призового пула сезона." },
-            { n: "03", title: "Забираешь", text: "Полученный приз появляется в разделе «Мои призы»." },
-          ].map((step) => (
-            <GlassCard key={step.n} className="px-3 py-3.5">
-              <span className="font-display text-[10px] text-primary">{step.n}</span>
-              <p className="mt-2 text-xs font-semibold">{step.title}</p>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">{step.text}</p>
-            </GlassCard>
+            ["01", "🎰", "Крутишь"],
+            ["02", "🎁", "Получаешь"],
+            ["03", "⭐", "Используешь или выводишь"],
+          ].map(([number, icon, label]) => (
+            <div key={number} className="text-center">
+              <p className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">{number}</p>
+              <p className="mt-1 text-xl">{icon}</p>
+              <p className="mt-1 text-[10px] font-semibold leading-tight">{label}</p>
+            </div>
           ))}
-        </div>
+        </GlassCard>
       </section>
 
-      {!snapshot.user.isSubscribed && (
-        <GlassCard className="mt-6 flex items-center gap-3 px-3.5 py-3">
-          <div className="grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold">Подпишись на канал</p>
-            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Подписка открывает участие и ежедневный подарок.</p>
-          </div>
-        </GlassCard>
-      )}
+      <GlassCard className="mt-5 flex items-center gap-3 px-3.5 py-3">
+        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">🔥 Уже сыграно {snapshot.spin.totalSpins} прокруток в этом сезоне.</p>
+        <span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span>
+      </GlassCard>
+
+      {!snapshot.user.isSubscribed && <NoticeBar tone="warning" className="mt-4">Подпишись на канал, чтобы открыть прокрутки и ежедневный подарок.</NoticeBar>}
+
+      <GlassCard className="mt-4 flex items-center gap-3 px-3.5 py-3">
+        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">Подпишись на канал и получай больше шансов выиграть в каждом сезоне.</p>
+        <span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span>
+      </GlassCard>
     </AppShell>
   );
 }
