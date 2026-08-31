@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, BarChart3, CalendarDays, Gift, LineChart, Plus, RotateCw, Save, Settings2, Users, WalletCards, X } from "lucide-react";
+import { ArrowRight, BarChart3, CalendarDays, Gift, LineChart, Plus, RotateCw, Save, Settings2, Users, WalletCards, X, FileText } from "lucide-react";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
@@ -85,6 +85,7 @@ function AdminDashboard() {
           <ActionLink icon={RotateCw} title="Прокрутки" text="Журнал всех попыток" href="/admin/spins" />
           <ActionLink icon={WalletCards} title="Выплаты" text="Выдача и статусы наград" href="/admin/payouts" />
           <ActionLink icon={LineChart} title="Статистика" text="Аналитика и показатели сезонов" href="/admin/statistics" />
+          <ActionLink icon={FileText} title="Журнал действий" text="История изменений и событий" href="/admin/audit" />
         </div>
         <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Сезоны</h2><button type="button" onClick={() => setNewOpen(true)} className="text-[11px] text-primary-glow">+ Создать</button></div><GlassCard className="divide-y divide-glass-border overflow-hidden">{seasons.length === 0 && <div className="px-4 py-6 text-center text-xs text-muted-foreground">Сезонов пока нет.</div>}{seasons.map((season) => <button type="button" key={season.id} onClick={() => setSelectedId(season.id)} className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors ${current?.id === season.id ? "bg-primary/8" : ""}`}><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{season.code}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{season.days} дней · {season.paidPrice} ⭐ · бесплатная попытка: {season.dailyFree ? "вкл." : "выкл."}</p></div><StatusBadge status={{ type: "season", value: season.state }} /><ArrowRight className="size-4 text-muted-foreground" /></button>)}</GlassCard></section>
         {current && <>
