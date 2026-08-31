@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -13,7 +12,7 @@ export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [
       { title: "Настройки — CRICKET BOX" },
-      { name: "description", content: "Предпросмотр состояний сезона и настроек участия." },
+      { name: "description", content: "Предпросмотр состояний сезона и тестовые настройки Cricket Box." },
     ],
   }),
   component: SettingsScreen,
@@ -26,7 +25,15 @@ const labels: Record<SeasonState, string> = {
 };
 
 function SettingsScreen() {
-  const { snapshot, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetSession } = useSession();
+  const {
+    snapshot,
+    setSeasonState,
+    setSubscribed,
+    setStarsAmount,
+    setSimulateNetworkError,
+    resetDailyFreeSpin,
+    resetSession,
+  } = useSession();
 
   if (!snapshot)
     return (
@@ -58,7 +65,20 @@ function SettingsScreen() {
 
       <GlassCard className="mt-3 px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Инструменты разработчика</p>
-        <div className="mt-3 flex items-center gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Stars</p><p className="text-[11px] text-muted-foreground">{snapshot.stars.amount} / {snapshot.stars.max}</p></div><PrimaryButton variant="outline" onClick={() => void setStarsAmount(snapshot.stars.max)}>Установить {snapshot.stars.max}</PrimaryButton></div>
+
+        <div className="mt-3 flex items-center gap-3">
+          <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Stars</p><p className="text-[11px] text-muted-foreground">{snapshot.stars.amount} / {snapshot.stars.max}</p></div>
+          <PrimaryButton variant="outline" onClick={() => void setStarsAmount(snapshot.stars.max)}>Установить {snapshot.stars.max}</PrimaryButton>
+        </div>
+
+        <div className="mt-3 flex items-center gap-3 border-t border-glass-border pt-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Бесплатная попытка сегодня</p>
+            <p className="text-[11px] text-muted-foreground">Выдать дневную попытку повторно для тестирования.</p>
+          </div>
+          <PrimaryButton variant="outline" onClick={() => void resetDailyFreeSpin()}>Выдать</PrimaryButton>
+        </div>
+
         <div className="mt-3 flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Симуляция ошибки сети</p><p className="text-[11px] text-muted-foreground">{snapshot.dev.simulateNetworkError ? "Все запросы завершатся ошибкой" : "Запросы работают"}</p></div><PrimaryButton variant="outline" onClick={() => void setSimulateNetworkError(!snapshot.dev.simulateNetworkError)}>{snapshot.dev.simulateNetworkError ? "Отключить" : "Включить"}</PrimaryButton></div>
       </GlassCard>
 
