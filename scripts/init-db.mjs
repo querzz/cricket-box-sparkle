@@ -43,6 +43,23 @@ try {
   await client.connect();
   await client.query(schema);
 
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS user_state (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      stars_balance INTEGER NOT NULL DEFAULT 125 CHECK (stars_balance >= 0 AND stars_balance <= 500),
+      is_subscribed BOOLEAN NOT NULL DEFAULT TRUE,
+      is_participant BOOLEAN NOT NULL DEFAULT TRUE,
+      daily_gift_claimed_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`
+    INSERT INTO user_state (user_id)
+    SELECT id FROM users
+    ON CONFLICT (user_id) DO NOTHING
+  `);
+  console.log("✅ Persistent user state is ready.");
+
   const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
   const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS);
 
