@@ -5,19 +5,19 @@ import pg from "pg";
 
 const { Client } = pg;
 
-function loadEnv() {
+async function loadEnv() {
   const envPath = path.resolve(process.cwd(), ".env");
-  return fs.readFile(envPath, "utf8").then((text) => {
-    for (const line of text.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const index = trimmed.indexOf("=");
-      if (index === -1) continue;
-      const key = trimmed.slice(0, index).trim();
-      const value = trimmed.slice(index + 1).trim().replace(/^['\"]|['\"]$/g, "");
-      if (!(key in process.env)) process.env[key] = value;
-    }
-  });
+  if (!(await fs.stat(envPath).catch(() => null))) return;
+  const text = await fs.readFile(envPath, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const index = trimmed.indexOf("=");
+    if (index === -1) continue;
+    const key = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim().replace(/^['\"]|['\"]$/g, "");
+    if (!(key in process.env)) process.env[key] = value;
+  }
 }
 
 await loadEnv();
@@ -31,9 +31,42 @@ const schemaPath = path.resolve(process.cwd(), "db/schema.sql");
 const schema = await fs.readFile(schemaPath, "utf8");
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 
+function parseTelegramIds(value) {
+  return String(value ?? "")
+    .split(/[ ,]+/)
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .filter((id) => /^\d+$/.test(id));
+}
+
 try {
   await client.connect();
   await client.query(schema);
+
+  const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
+  const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS);
+
+  if (ownerId) {
+    await client.query(
+      `INSERT INTO admins (telegram_id, username, role, is_active)
+       VALUES ($1, NULL, 'OWNER', TRUE)
+       ON CONFLICT (telegram_id) DO UPDATE SET role = 'OWNER', is_active = TRUE, updated_at = now()`,
+      [ownerId],
+    );
+    console.log("✅ Owner access seeded from OWNER_TELEGRAM_ID.");
+  }
+
+  for (const adminId of adminIds) {
+    if (adminId === ownerId) continue;
+    await client.query(
+      `INSERT INTO admins (telegram_id, username, role, is_active)
+       VALUES ($1, NULL, 'ADMIN', TRUE)
+       ON CONFLICT (telegram_id) DO UPDATE SET role = 'ADMIN', is_active = TRUE, updated_at = now()`,
+      [adminId],
+    );
+  }
+
+  if (adminIds.length > 0) console.log(`✅ Seeded ${adminIds.length} admin access record(s).`);
   console.log("✅ Cricket Box database schema is ready.");
 } catch (error) {
   console.error("❌ Database initialization failed:", error);
