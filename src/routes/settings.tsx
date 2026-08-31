@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -82,7 +82,10 @@ function SettingsScreen() {
         <div className="mt-3 flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Симуляция ошибки сети</p><p className="text-[11px] text-muted-foreground">{snapshot.dev.simulateNetworkError ? "Все запросы завершатся ошибкой" : "Запросы работают"}</p></div><PrimaryButton variant="outline" onClick={() => void setSimulateNetworkError(!snapshot.dev.simulateNetworkError)}>{snapshot.dev.simulateNetworkError ? "Отключить" : "Включить"}</PrimaryButton></div>
       </GlassCard>
 
-      <PrimaryButton variant="ghost" fullWidth className="mt-4" onClick={() => void resetSession()}>Сбросить тестовую сессию</PrimaryButton>
+      <Link to="/admin" className="mt-4 block">
+        <PrimaryButton fullWidth variant="outline">Открыть админ-панель</PrimaryButton>
+      </Link>
+      <PrimaryButton variant="ghost" fullWidth className="mt-2" onClick={() => void resetSession()}>Сбросить тестовую сессию</PrimaryButton>
     </AppShell>
   );
 }
