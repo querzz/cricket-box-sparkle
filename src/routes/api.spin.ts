@@ -33,26 +33,43 @@ export const Route = createFileRoute("/api/spin")({
           if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
 
           const result = await withTransaction(async (client) => {
-            const user = await client.query<{ id: string }>(
-              `SELECT id::text FROM users WHERE telegram_id = $1 LIMIT 1`,
+            const user = await client.query<{ id: string; xp: number }>(
+              `SELECT id::text, xp FROM users WHERE telegram_id = $1 LIMIT 1 FOR UPDATE`,
               [telegramId],
             );
             if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
+
+            await client.query(
+              `INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant)
+               VALUES ($1::uuid, 125, TRUE, TRUE)
+               ON CONFLICT (user_id) DO NOTHING`,
+              [user.rows[0].id],
+            );
+
+            const userState = await client.query<{ is_subscribed: boolean; is_participant: boolean }>(
+              `SELECT is_subscribed, is_participant FROM user_state WHERE user_id = $1::uuid FOR UPDATE`,
+              [user.rows[0].id],
+            );
+            const state = userState.rows[0];
+            if (!state?.is_subscribed) throw new Error("NOT_SUBSCRIBED");
+            if (!state.is_participant) throw new Error("NOT_PARTICIPANT");
 
             const season = await client.query<{
               id: string;
               code: string;
               state: string;
               paid_spin_price: number;
+              daily_free_spin: boolean;
             }>(
-              `SELECT id::text, code, state, paid_spin_price
+              `SELECT id::text, code, state, paid_spin_price, daily_free_spin
                  FROM seasons
                 WHERE state IN ('ACTIVE', 'ENDING')
-                ORDER BY created_at DESC
+                ORDER BY CASE WHEN state = 'ACTIVE' THEN 0 ELSE 1 END, created_at DESC
                 LIMIT 1
                 FOR UPDATE`,
             );
             if (!season.rows[0]) throw new Error("SEASON_NOT_ACTIVE");
+            if (!season.rows[0].daily_free_spin) throw new Error("NO_ATTEMPTS");
 
             const alreadyFree = await client.query<{ exists: boolean }>(
               `SELECT EXISTS(
@@ -60,6 +77,7 @@ export const Route = createFileRoute("/api/spin")({
                   WHERE user_id = $1::uuid
                     AND season_id = $2::uuid
                     AND type = 'FREE'
+                    AND status = 'COMPLETED'
                     AND created_at >= date_trunc('day', now())
                ) AS exists`,
               [user.rows[0].id, season.rows[0].id],
@@ -101,6 +119,10 @@ export const Route = createFileRoute("/api/spin")({
               [user.rows[0].id, season.rows[0].id, picked.id],
             );
 
+            const nextXp = Number(user.rows[0].xp ?? 0) + 10;
+            const nextLevel = Math.max(1, Math.floor(nextXp / 100) + 1);
+            await client.query(`UPDATE users SET xp = $2, level = $3, last_seen_at = now() WHERE id = $1::uuid`, [user.rows[0].id, nextXp, nextLevel]);
+
             const payout = await client.query<{ id: string }>(
               `INSERT INTO payouts (spin_id, user_id, prize_id, kind, amount, currency, status, note)
                VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::numeric, $6, 'PENDING', $7)
@@ -114,6 +136,12 @@ export const Route = createFileRoute("/api/spin")({
                 picked.currency,
                 picked.kind === "STARS" ? "Stars ожидают финальной выдачи через Telegram." : "Приз ожидает выдачи администратором.",
               ],
+            );
+
+            await client.query(
+              `INSERT INTO audit_logs (action, entity_type, entity_id, after_data)
+               VALUES ('SPIN_COMPLETED', 'spin', $1, $2::jsonb)`,
+              [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: season.rows[0].id, prizeId: picked.id, type: "FREE" })],
             );
 
             return {
@@ -148,7 +176,7 @@ export const Route = createFileRoute("/api/spin")({
           });
         } catch (error) {
           const code = error instanceof Error ? error.message : "SPIN_FAILED";
-          const status = code === "NO_ATTEMPTS" ? 409 : code === "USER_NOT_FOUND" ? 403 : code === "SEASON_NOT_ACTIVE" ? 409 : code === "PAYMENT_REQUIRED" ? 402 : 400;
+          const status = code === "NO_ATTEMPTS" ? 409 : code === "USER_NOT_FOUND" || code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "SEASON_NOT_ACTIVE" ? 409 : code === "PAYMENT_REQUIRED" ? 402 : 400;
           return Response.json({ ok: false, code }, { status });
         }
       },
