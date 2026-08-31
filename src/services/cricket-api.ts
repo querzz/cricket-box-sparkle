@@ -6,15 +6,7 @@
  * availability and withdrawals are all decided here, never inside React.
  */
 import { createInitialSnapshot } from "@/lib/mock-data";
-import type {
-  Gift,
-  Reward,
-  RewardKind,
-  ServiceError,
-  ServiceResult,
-  SessionSnapshot,
-  Withdrawal,
-} from "@/lib/types";
+import type { Gift, Reward, RewardKind, ServiceError, ServiceResult, SessionSnapshot, Withdrawal } from "@/lib/types";
 
 const LATENCY = 550;
 const STORAGE_KEY = "cricket-box:mock-session:v1";
@@ -36,6 +28,10 @@ function loadState(): SessionSnapshot {
       stars: { ...initial.stars, ...saved.stars },
       spin: { ...initial.spin, ...saved.spin },
       gift: { ...initial.gift, ...saved.gift },
+      rewards: Array.isArray(saved.rewards)
+        ? saved.rewards.filter((reward) => reward.kind !== "EMPTY")
+        : initial.rewards,
+      withdrawals: Array.isArray(saved.withdrawals) ? saved.withdrawals : initial.withdrawals,
       dev: { ...initial.dev, ...saved.dev },
     };
   } catch {
@@ -75,13 +71,9 @@ function isDailySpinEligible() {
 
 function syncDailyFreeSpin() {
   if (typeof localStorage === "undefined") return;
-
   const key = todayKey();
   const grantedFor = localStorage.getItem(DAILY_FREE_SPIN_KEY);
-
-  if (!isDailySpinEligible()) return;
-  if (grantedFor === key) return;
-
+  if (!isDailySpinEligible() || grantedFor === key) return;
   state.spin.freeSpins = 1;
   localStorage.setItem(DAILY_FREE_SPIN_KEY, key);
   persist();
@@ -91,19 +83,10 @@ function networkError() {
   return fail("NETWORK", "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз.");
 }
 
-const delay = <T>(value: T, ms = LATENCY) =>
-  new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
-
+const delay = <T>(value: T, ms = LATENCY) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
 const ok = <T>(data: T): ServiceResult<T> => ({ ok: true, data });
-const fail = (code: ServiceError["code"], message: string): ServiceResult<never> => ({
-  ok: false,
-  error: { code, message },
-});
-
-const clone = (): SessionSnapshot => {
-  persist();
-  return structuredClone(state);
-};
+const fail = (code: ServiceError["code"], message: string): ServiceResult<never> => ({ ok: false, error: { code, message } });
+const clone = (): SessionSnapshot => { persist(); return structuredClone(state); };
 
 const SEASON_TRANSITIONS: Record<SessionSnapshot["season"]["state"], readonly SessionSnapshot["season"]["state"][]> = {
   DRAFT: ["SCHEDULED"],
@@ -116,16 +99,15 @@ const SEASON_TRANSITIONS: Record<SessionSnapshot["season"]["state"], readonly Se
 };
 
 function guardSeason(): ServiceResult<null> {
-  const { state: s } = state.season;
-  if (s === "DRAFT" || s === "SCHEDULED") return fail("SEASON_NOT_STARTED", "Сезон ещё не начался.");
-  if (s !== "ACTIVE" && s !== "ENDING") return fail("SEASON_CLOSED", "Сезон завершён.");
+  const { state: seasonState } = state.season;
+  if (seasonState === "DRAFT" || seasonState === "SCHEDULED") return fail("SEASON_NOT_STARTED", "Сезон ещё не начался.");
+  if (seasonState !== "ACTIVE" && seasonState !== "ENDING") return fail("SEASON_CLOSED", "Сезон завершён.");
   if (!state.user.isSubscribed) return fail("NOT_SUBSCRIBED", "Подпишись на канал, чтобы участвовать.");
   return ok(null);
 }
 
 function getEligiblePrizes(): SessionSnapshot["prizes"] {
   const starsAreFull = state.stars.amount >= state.stars.max;
-
   return state.prizes.filter((prize) => {
     if (prize.remaining <= 0) return false;
     if (prize.kind === "STARS" && starsAreFull) return false;
@@ -136,31 +118,17 @@ function getEligiblePrizes(): SessionSnapshot["prizes"] {
 function rollReward(): Reward | null {
   const eligible = getEligiblePrizes();
   if (eligible.length === 0) return null;
-
-  const totalWeight = eligible.reduce(
-    (sum, prize) => sum + prize.remaining * (prize.weight ?? 1),
-    0,
-  );
-
+  const totalWeight = eligible.reduce((sum, prize) => sum + prize.remaining * (prize.weight ?? 1), 0);
   let roll = Math.random() * totalWeight;
   let picked = eligible[eligible.length - 1]!;
-
   for (const prize of eligible) {
     roll -= prize.remaining * (prize.weight ?? 1);
-    if (roll <= 0) {
-      picked = prize;
-      break;
-    }
+    if (roll <= 0) { picked = prize; break; }
   }
-
   const inventory = state.prizes.find((prize) => prize.id === picked.id);
   if (!inventory || inventory.remaining <= 0) return null;
-
   inventory.remaining -= 1;
-  const amount = picked.kind === "STARS"
-    ? Number(picked.title.replace(/[^0-9]/g, "")) || undefined
-    : undefined;
-
+  const amount = picked.kind === "STARS" ? Number(picked.title.replace(/[^0-9]/g, "")) || undefined : undefined;
   return {
     id: `r_${Math.random().toString(36).slice(2, 9)}`,
     kind: picked.kind as RewardKind,
@@ -169,34 +137,24 @@ function rollReward(): Reward | null {
     amount,
     wonAt: new Date().toISOString(),
     status: picked.kind === "STARS" ? "RECEIVED" : "PENDING",
-    payoutNote:
-      picked.kind === "STARS"
-        ? "Stars зачислены на баланс Cricket Box."
-        : "Администратор выдаст приз после проверки.",
+    payoutNote: picked.kind === "STARS" ? "Stars зачислены на баланс Cricket Box." : "Администратор выдаст приз после проверки.",
   };
 }
 
-function creditReward(reward: Reward) {
-  // EMPTY is a spin result, not a prize. It must never enter My Prizes/history.
+function recordReward(reward: Reward) {
   if (reward.kind === "EMPTY") return;
-
   if (reward.kind === "STARS" && reward.amount) {
     const room = Math.max(0, state.stars.max - state.stars.amount);
     const credited = Math.min(room, reward.amount);
     state.stars.amount += credited;
     reward.creditedAmount = credited;
     reward.uncreditedAmount = reward.amount - credited;
-    if (credited < reward.amount) {
-      reward.payoutNote = `Лимит баланса достигнут — зачислено ${credited} из ${reward.amount} Stars.`;
-    }
+    if (credited < reward.amount) reward.payoutNote = `Лимит баланса достигнут — зачислено ${credited} из ${reward.amount} Stars.`;
   }
-  state.rewards = [reward, ...state.rewards];
+  state.rewards = [reward, ...state.rewards.filter((existing) => existing.kind !== "EMPTY")];
 }
 
-export interface SpinOptions {
-  /** Pay with Telegram Stars instead of using the free daily attempt. */
-  paid?: boolean;
-}
+export interface SpinOptions { paid?: boolean; }
 
 export const cricketApi = {
   async getSession(): Promise<ServiceResult<SessionSnapshot>> {
@@ -216,8 +174,7 @@ export const cricketApi = {
     if (options.paid) {
       const price = state.spin.paidSpinPrice;
       if (price === null) return delay(fail("NO_ATTEMPTS", "Платные прокрутки отключены для этого сезона."));
-      if (state.stars.amount < price)
-        return delay(fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки."));
+      if (state.stars.amount < price) return delay(fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки."));
       state.stars.amount -= price;
     } else {
       if (state.spin.freeSpins <= 0) return delay(fail("NO_ATTEMPTS", "Сегодняшняя бесплатная попытка уже использована."));
@@ -226,16 +183,13 @@ export const cricketApi = {
 
     const reward = rollReward();
     if (!reward) {
-      if (options.paid) {
-        state.stars.amount += state.spin.paidSpinPrice ?? 0;
-      } else {
-        state.spin.freeSpins += 1;
-      }
+      if (options.paid) state.stars.amount += state.spin.paidSpinPrice ?? 0;
+      else state.spin.freeSpins += 1;
       return delay(fail("NO_ATTEMPTS", "Подходящих призов для этой попытки больше нет."));
     }
 
     state.spin.totalSpins += 1;
-    creditReward(reward);
+    recordReward(reward);
     return delay(ok({ reward, snapshot: clone() }), 900);
   },
 
@@ -245,10 +199,8 @@ export const cricketApi = {
     if (state.dev.simulateNetworkError) return delay(networkError());
     const guard = guardSeason();
     if (!guard.ok) return delay(guard);
-    if (!state.user.isParticipant)
-      return delay(fail("GIFT_UNAVAILABLE", "Только участники текущего сезона могут забрать ежедневный подарок."));
+    if (!state.user.isParticipant) return delay(fail("GIFT_UNAVAILABLE", "Только участники текущего сезона могут забрать ежедневный подарок."));
     if (state.gift.state !== "AVAILABLE") return delay(fail("GIFT_UNAVAILABLE", "Подарок сейчас на перезарядке."));
-
     const reward: Reward = {
       id: `g_${Math.random().toString(36).slice(2, 9)}`,
       kind: "STARS",
@@ -258,28 +210,17 @@ export const cricketApi = {
       status: "RECEIVED",
       payoutNote: "Ежедневный подарок зачислен на баланс Stars.",
     };
-    creditReward(reward);
-    state.gift = {
-      state: "COOLDOWN",
-      availableAt: new Date(Date.now() + DAY_MS).toISOString(),
-    } satisfies Gift;
+    recordReward(reward);
+    state.gift = { state: "COOLDOWN", availableAt: new Date(Date.now() + DAY_MS).toISOString() } satisfies Gift;
     return delay(ok({ reward, snapshot: clone() }), 800);
   },
 
   async requestWithdrawal(amount: number): Promise<ServiceResult<{ withdrawal: Withdrawal; snapshot: SessionSnapshot }>> {
     if (state.dev.simulateNetworkError) return delay(networkError());
-    if (amount < state.withdrawalMinimum)
-      return delay(fail("BELOW_MINIMUM", `Минимальная сумма вывода — ${state.withdrawalMinimum} Stars.`));
+    if (amount < state.withdrawalMinimum) return delay(fail("BELOW_MINIMUM", `Минимальная сумма вывода — ${state.withdrawalMinimum} Stars.`));
     if (amount > state.stars.amount) return delay(fail("INSUFFICIENT_STARS", "Недостаточно Stars."));
-
     state.stars.amount -= amount;
-    const withdrawal: Withdrawal = {
-      id: `w_${Math.random().toString(36).slice(2, 9)}`,
-      rewardTitle: "Telegram Stars",
-      amount,
-      requestedAt: new Date().toISOString(),
-      status: "PENDING",
-    };
+    const withdrawal: Withdrawal = { id: `w_${Math.random().toString(36).slice(2, 9)}`, rewardTitle: "Telegram Stars", amount, requestedAt: new Date().toISOString(), status: "PENDING" };
     state.withdrawals = [withdrawal, ...state.withdrawals];
     return delay(ok({ withdrawal, snapshot: clone() }), 1100);
   },
@@ -287,9 +228,7 @@ export const cricketApi = {
   async setSeasonState(next: SessionSnapshot["season"]["state"]): Promise<ServiceResult<SessionSnapshot>> {
     const current = state.season.state;
     if (current === next) return delay(ok(clone()), 200);
-    if (!SEASON_TRANSITIONS[current].includes(next)) {
-      return delay(fail("SEASON_CLOSED", `Недопустимый переход сезона: ${current} → ${next}.`));
-    }
+    if (!SEASON_TRANSITIONS[current].includes(next)) return delay(fail("SEASON_CLOSED", `Недопустимый переход сезона: ${current} → ${next}.`));
     state.season.state = next;
     if (!isDailySpinEligible()) state.spin.freeSpins = 0;
     syncDailyFreeSpin();
