@@ -11,26 +11,26 @@ const tones: Record<Tone, string> = {
 };
 
 const rewardLabels: Record<RewardStatus, { label: string; tone: Tone }> = {
-  PENDING: { label: "Pending", tone: "pending" },
-  RECEIVED: { label: "Received", tone: "success" },
-  PROBLEM: { label: "Problem", tone: "problem" },
+  PENDING: { label: "Ожидает", tone: "pending" },
+  RECEIVED: { label: "Получен", tone: "success" },
+  PROBLEM: { label: "Проблема", tone: "problem" },
 };
 
 const withdrawalLabels: Record<WithdrawalStatus, { label: string; tone: Tone }> = {
-  PENDING: { label: "Pending", tone: "pending" },
-  PROCESSING: { label: "Processing", tone: "pending" },
-  PAID: { label: "Paid", tone: "success" },
-  REJECTED: { label: "Rejected", tone: "problem" },
+  PENDING: { label: "Ожидает", tone: "pending" },
+  PROCESSING: { label: "Обрабатывается", tone: "pending" },
+  PAID: { label: "Выплачено", tone: "success" },
+  REJECTED: { label: "Отклонено", tone: "problem" },
 };
 
 const seasonLabels: Record<SeasonState, { label: string; tone: Tone }> = {
-  DRAFT: { label: "Draft", tone: "neutral" },
-  SCHEDULED: { label: "Starts soon", tone: "neutral" },
-  ACTIVE: { label: "Active", tone: "success" },
-  ENDING: { label: "Ending soon", tone: "pending" },
-  CLOSED: { label: "Season ended", tone: "problem" },
-  PAYOUT: { label: "Payout", tone: "pending" },
-  ARCHIVED: { label: "Archived", tone: "neutral" },
+  DRAFT: { label: "Черновик", tone: "neutral" },
+  SCHEDULED: { label: "Скоро старт", tone: "neutral" },
+  ACTIVE: { label: "Активен", tone: "success" },
+  ENDING: { label: "Скоро конец", tone: "pending" },
+  CLOSED: { label: "Сезон завершён", tone: "problem" },
+  PAYOUT: { label: "Выдача призов", tone: "pending" },
+  ARCHIVED: { label: "В архиве", tone: "neutral" },
 };
 
 export function StatusBadge({
