@@ -36,7 +36,27 @@ export async function createSeason(input: { code: string; name: string; paidSpin
 }
 
 export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>) {
-  const result = await query<DbSeason>(`UPDATE seasons SET code = COALESCE($2, code), name = COALESCE($3, name), state = COALESCE($4, state), starts_at = $5, ends_at = $6, paid_spin_price = COALESCE($7, paid_spin_price), daily_free_spin = COALESCE($8, daily_free_spin), updated_at = now() WHERE id = $1 RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`, [id, patch.code ?? null, patch.name ?? null, patch.state ?? null, patch.startsAt ?? null, patch.endsAt ?? null, patch.paidSpinPrice ?? null, patch.dailyFreeSpin ?? null]);
+  const startsAt = patch.startsAt ?? null;
+  const endsAt = patch.endsAt ?? null;
+  const requestedState = patch.state;
+  const autoState = !requestedState && startsAt && endsAt
+    ? (new Date(startsAt) <= new Date() && new Date(endsAt) > new Date() ? "ACTIVE" : "SCHEDULED")
+    : requestedState;
+
+  const result = await query<DbSeason>(
+    `UPDATE seasons
+        SET code = COALESCE($2, code),
+            name = COALESCE($3, name),
+            state = COALESCE($4, state),
+            starts_at = $5,
+            ends_at = $6,
+            paid_spin_price = COALESCE($7, paid_spin_price),
+            daily_free_spin = COALESCE($8, daily_free_spin),
+            updated_at = now()
+      WHERE id = $1
+      RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`,
+    [id, patch.code ?? null, patch.name ?? null, autoState ?? null, startsAt, endsAt, patch.paidSpinPrice ?? null, patch.dailyFreeSpin ?? null],
+  );
   return result.rows[0];
 }
 
