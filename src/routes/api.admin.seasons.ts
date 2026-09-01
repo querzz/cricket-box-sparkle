@@ -4,6 +4,8 @@ import { authenticateAdmin } from "@/server/auth/access";
 import { query, withTransaction } from "@/server/db";
 import { createSeason, listSeasons, updateSeason } from "@/server/season-service";
 
+const VALID_STATES = new Set(["DRAFT", "SCHEDULED", "ACTIVE", "ENDING", "CLOSED", "PAYOUT", "ARCHIVED"]);
+
 export const Route = createFileRoute("/api/admin/seasons")({
   server: { handlers: {
     GET: async ({ request }) => {
@@ -40,33 +42,37 @@ export const Route = createFileRoute("/api/admin/seasons")({
         const body = await request.json() as { initData?: string; id?: string; code?: string; name?: string; state?: string; startsAt?: string | null; endsAt?: string | null; paidSpinPrice?: number; dailyFreeSpin?: boolean };
         const actor = await authenticateAdmin(body.initData ?? "");
         if (!body.id) return Response.json({ ok: false, code: "INVALID_ID" }, { status: 400 });
+        if (body.state && !VALID_STATES.has(body.state)) return Response.json({ ok: false, code: "INVALID_STATE" }, { status: 400 });
 
-        const before = await query<{ id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; paid_spin_price:number; daily_free_spin:boolean }>(
-          `SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,daily_free_spin FROM seasons WHERE id=$1::uuid`, [body.id],
-        );
-        if (!before.rows[0]) return Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 });
+        const result = await withTransaction(async (client) => {
+          const before = await client.query<{ id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; paid_spin_price:number; daily_free_spin:boolean }>(
+            `SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,daily_free_spin FROM seasons WHERE id=$1::uuid FOR UPDATE`, [body.id],
+          );
+          if (!before.rows[0]) return { season: undefined, before: undefined };
 
-        const season = await withTransaction(async (client) => {
-          const currentState = before.rows[0]!.state;
-          const requestedState = body.state;
-          const nextState = requestedState || ((currentState === "DRAFT" || currentState === "SCHEDULED") && body.startsAt && body.endsAt && new Date(body.startsAt) <= new Date() && new Date(body.endsAt) > new Date() ? "ACTIVE" : undefined);
-          if (nextState === "ACTIVE") {
-            await client.query(`UPDATE seasons SET state='SCHEDULED', updated_at=now() WHERE state='ACTIVE' AND id <> $1::uuid`, [body.id]);
-            await client.query(`UPDATE seasons SET state='ENDING', updated_at=now() WHERE state='ENDING' AND id <> $1::uuid`, [body.id]);
-          }
-          return updateSeason(body.id!, { code: body.code, name: body.name, state: nextState as never, startsAt: body.startsAt ?? null, endsAt: body.endsAt ?? null, paidSpinPrice: body.paidSpinPrice, dailyFreeSpin: body.dailyFreeSpin });
+          const season = await updateSeason(body.id!, {
+            code: body.code,
+            name: body.name,
+            state: body.state as never,
+            startsAt: body.startsAt,
+            endsAt: body.endsAt,
+            paidSpinPrice: body.paidSpinPrice,
+            dailyFreeSpin: body.dailyFreeSpin,
+          }, client);
+
+          return { season, before: before.rows[0] };
         });
 
-        if (!season) return Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 });
+        if (!result.season || !result.before) return Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 });
         await query(
           `INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data)
            VALUES ($1::uuid, 'SEASON_UPDATED', 'season', $2, $3::jsonb, $4::jsonb)`,
-          [actor.id, body.id, JSON.stringify(before.rows[0]), JSON.stringify(season)],
+          [actor.id, body.id, JSON.stringify(result.before), JSON.stringify(result.season)],
         );
-        return Response.json({ ok: true, season });
+        return Response.json({ ok: true, season: result.season });
       } catch (error) {
         console.error("Season update failed:", error instanceof Error ? error.message : error);
-        return Response.json({ ok: false, code: "REQUEST_FAILED" }, { status: 400 });
+        return Response.json({ ok: false, code: error instanceof Error && error.message === "INVALID_STATE" ? "INVALID_STATE" : "REQUEST_FAILED" }, { status: 400 });
       }
     },
   }},
