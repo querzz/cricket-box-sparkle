@@ -46,13 +46,11 @@ export const Route = createFileRoute("/api/spin")({
               [user.rows[0].id],
             );
 
-            const userState = await client.query<{ is_subscribed: boolean; is_participant: boolean }>(
-              `SELECT is_subscribed, is_participant FROM user_state WHERE user_id = $1::uuid FOR UPDATE`,
+            const userState = await client.query<{ is_subscribed: boolean }>(
+              `SELECT is_subscribed FROM user_state WHERE user_id = $1::uuid FOR UPDATE`,
               [user.rows[0].id],
             );
-            const state = userState.rows[0];
-            if (!state?.is_subscribed) throw new Error("NOT_SUBSCRIBED");
-            if (!state.is_participant) throw new Error("NOT_PARTICIPANT");
+            if (!userState.rows[0]?.is_subscribed) throw new Error("NOT_SUBSCRIBED");
 
             const season = await client.query<{
               id: string;
@@ -68,8 +66,9 @@ export const Route = createFileRoute("/api/spin")({
                 LIMIT 1
                 FOR UPDATE`,
             );
-            if (!season.rows[0]) throw new Error("SEASON_NOT_ACTIVE");
-            if (!season.rows[0].daily_free_spin) throw new Error("NO_ATTEMPTS");
+            const currentSeason = season.rows[0];
+            if (!currentSeason) throw new Error("SEASON_NOT_ACTIVE");
+            if (!currentSeason.daily_free_spin) throw new Error("NO_ATTEMPTS");
 
             const alreadyFree = await client.query<{ exists: boolean }>(
               `SELECT EXISTS(
@@ -80,7 +79,7 @@ export const Route = createFileRoute("/api/spin")({
                     AND status = 'COMPLETED'
                     AND created_at >= date_trunc('day', now())
                ) AS exists`,
-              [user.rows[0].id, season.rows[0].id],
+              [user.rows[0].id, currentSeason.id],
             );
             if (alreadyFree.rows[0]?.exists) throw new Error("NO_ATTEMPTS");
 
@@ -92,7 +91,7 @@ export const Route = createFileRoute("/api/spin")({
                   AND quantity_remaining > 0
                 ORDER BY created_at ASC
                 FOR UPDATE`,
-              [season.rows[0].id],
+              [currentSeason.id],
             );
             if (prizes.rows.length === 0) throw new Error("NO_PRIZES");
 
@@ -116,12 +115,15 @@ export const Route = createFileRoute("/api/spin")({
               `INSERT INTO spins (user_id, season_id, type, price_stars, prize_id, status, completed_at)
                VALUES ($1::uuid, $2::uuid, 'FREE', 0, $3::uuid, 'COMPLETED', now())
                RETURNING id::text, created_at::text`,
-              [user.rows[0].id, season.rows[0].id, picked.id],
+              [user.rows[0].id, currentSeason.id, picked.id],
             );
 
             const nextXp = Number(user.rows[0].xp ?? 0) + 10;
             const nextLevel = Math.max(1, Math.floor(nextXp / 100) + 1);
-            await client.query(`UPDATE users SET xp = $2, level = $3, last_seen_at = now() WHERE id = $1::uuid`, [user.rows[0].id, nextXp, nextLevel]);
+            await client.query(
+              `UPDATE users SET xp = $2, level = $3, last_seen_at = now() WHERE id = $1::uuid`,
+              [user.rows[0].id, nextXp, nextLevel],
+            );
 
             const payout = await client.query<{ id: string }>(
               `INSERT INTO payouts (spin_id, user_id, prize_id, kind, amount, currency, status, note)
@@ -141,14 +143,14 @@ export const Route = createFileRoute("/api/spin")({
             await client.query(
               `INSERT INTO audit_logs (action, entity_type, entity_id, after_data)
                VALUES ('SPIN_COMPLETED', 'spin', $1, $2::jsonb)`,
-              [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: season.rows[0].id, prizeId: picked.id, type: "FREE" })],
+              [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: currentSeason.id, prizeId: picked.id, type: "FREE" })],
             );
 
             return {
               spinId: spin.rows[0].id,
               payoutId: payout.rows[0].id,
               createdAt: spin.rows[0].created_at,
-              season: season.rows[0],
+              season: currentSeason,
               prize: picked,
             };
           });
@@ -176,8 +178,9 @@ export const Route = createFileRoute("/api/spin")({
           });
         } catch (error) {
           const code = error instanceof Error ? error.message : "SPIN_FAILED";
-          const status = code === "NO_ATTEMPTS" ? 409 : code === "USER_NOT_FOUND" || code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "SEASON_NOT_ACTIVE" ? 409 : code === "PAYMENT_REQUIRED" ? 402 : 400;
-          return Response.json({ ok: false, code }, { status });
+          console.error("[CRICKET BOX] spin failed", { code });
+          const status = code === "NO_ATTEMPTS" || code === "NO_PRIZES" ? 409 : code === "USER_NOT_FOUND" || code === "NOT_SUBSCRIBED" ? 403 : code === "SEASON_NOT_ACTIVE" ? 409 : code === "PAYMENT_REQUIRED" ? 402 : 400;
+          return Response.json({ ok: false, code, detail: code }, { status });
         }
       },
     },
