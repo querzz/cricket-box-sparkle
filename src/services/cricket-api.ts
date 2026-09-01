@@ -119,7 +119,6 @@ export const cricketApi = {
         if (!session.ok) return session;
         const price = session.data.spin.paidSpinPrice;
         if (price === null) return fail("SEASON_CLOSED", "Платные прокрутки сейчас недоступны.");
-        if (session.data.stars.amount < price) return fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки.");
         const result = await openStarsInvoice(price);
         if (!result.ok) return result;
         const refreshed = await backendSession();
