@@ -12,7 +12,7 @@ export type SeasonState =
   | "PAYOUT"
   | "ARCHIVED";
 
-export type RewardKind = "STARS" | "PREMIUM" | "NFT" | "MONEY" | "EMPTY";
+export type RewardKind = "STARS" | "PREMIUM" | "NFT" | "MONEY" | "EMPTY" | "NOTHING" | "FREE_SPIN" | "XP";
 
 export type RewardStatus = "PENDING" | "RECEIVED" | "PROBLEM";
 
@@ -26,6 +26,8 @@ export interface User {
   avatarUrl?: string | undefined;
   isParticipant: boolean;
   isSubscribed: boolean;
+  xp: number;
+  level: number;
 }
 
 export interface StarsBalance {
@@ -71,6 +73,7 @@ export interface SpinState {
   paidSpinPrice: number | null;
   totalSpins: number;
   freeSpinDate?: string | undefined;
+  bonusFreeSpins?: number | undefined;
 }
 
 export interface Gift {
