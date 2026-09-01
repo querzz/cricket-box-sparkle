@@ -25,7 +25,7 @@ export function StarsBalance({ balance, size = "md", showMax = true, showProgres
         <div className="space-y-1.5">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full transition-[width] duration-500", full ? "bg-warning" : "[background-image:var(--gradient-primary)]")} style={{ width: `${pct}%` }} /></div>
           <p className="text-[11px] text-muted-foreground">
-            {full ? "Баланс Stars заполнен — потрать Stars, чтобы освободить место для новых наград." : "Stars внутри Cricket Box. Максимум — 500."}
+            {full ? "Баланс Stars заполнен. Сейчас Stars нельзя потратить в магазине — доступен только вывод. Выведи часть Stars, чтобы освободить место для новых наград." : "Stars внутри Cricket Box. Максимум — 500."}
           </p>
         </div>
       )}
