@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Gift, Minus, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -12,35 +13,14 @@ export const Route = createFileRoute("/admin/prizes")({
 });
 
 type Season = { id: string; code: string; name: string; state: string; paid_spin_price: number; daily_free_spin: boolean };
-type Prize = {
-  id: string;
-  season_id: string;
-  kind: PrizeKind;
-  title: string;
-  subtitle: string | null;
-  amount: string;
-  unit_cost: string;
-  currency: string | null;
-  quantity_total: number;
-  quantity_remaining: number;
-  is_active: boolean;
-  image_url: string | null;
-  metadata: Record<string, unknown> | null;
-};
 type PrizeKind = "MONEY" | "STARS" | "PREMIUM" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN" | "EMPTY";
+type Prize = {
+  id: string; season_id: string; kind: PrizeKind; title: string; subtitle: string | null; amount: string; unit_cost: string;
+  currency: string | null; quantity_total: number; quantity_remaining: number; is_active: boolean; image_url: string | null; metadata: Record<string, unknown> | null;
+};
 type Draft = {
-  id?: string;
-  kind: PrizeKind;
-  title: string;
-  subtitle: string;
-  amount: number;
-  quantity: number;
-  weight: number;
-  active: boolean;
-  unitCost: number;
-  currency: string | null;
-  imageUrl: string;
-  won: number;
+  id?: string; kind: PrizeKind; title: string; subtitle: string; amount: number; quantity: number; weight: number;
+  active: boolean; unitCost: number; currency: string | null; imageUrl: string; won: number;
 };
 type Api<T> = { ok: boolean; seasons?: T; prizes?: T; code?: string };
 
@@ -59,17 +39,9 @@ const emptyDraft = (): Draft => ({ kind: "CUSTOM", title: "", subtitle: "", amou
 
 function fromPrize(prize: Prize): Draft {
   return {
-    id: prize.id,
-    kind: prize.kind,
-    title: prize.title,
-    subtitle: prize.subtitle ?? "",
-    amount: Number(prize.amount) || 0,
-    quantity: prize.quantity_total,
-    weight: Number(prize.metadata?.weight ?? 1) || 1,
-    active: prize.is_active,
-    unitCost: Number(prize.unit_cost) || 0,
-    currency: prize.currency,
-    imageUrl: prize.image_url ?? "",
+    id: prize.id, kind: prize.kind, title: prize.title, subtitle: prize.subtitle ?? "", amount: Number(prize.amount) || 0,
+    quantity: prize.quantity_total, weight: Number(prize.metadata?.weight ?? 1) || 1, active: prize.is_active,
+    unitCost: Number(prize.unit_cost) || 0, currency: prize.currency, imageUrl: prize.image_url ?? "",
     won: Math.max(0, prize.quantity_total - prize.quantity_remaining),
   };
 }
@@ -91,9 +63,8 @@ function AdminPrizes() {
       const list = data.seasons ?? [];
       setSeasons(list);
       setSeasonId((current) => current && list.some((item) => item.id === current) ? current : list.find((item) => item.state === "ACTIVE")?.id ?? list.find((item) => item.state === "ENDING")?.id ?? list[0]?.id ?? "");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось загрузить сезоны.");
-    } finally { setLoading(false); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Не удалось загрузить сезоны."); }
+    finally { setLoading(false); }
   };
 
   const loadPrizes = async (id: string) => {
@@ -101,9 +72,7 @@ function AdminPrizes() {
     try {
       const data = await api<Prize[]>(`/api/admin/prizes?seasonId=${encodeURIComponent(id)}&initData=${encodeURIComponent(initData())}`);
       setDrafts((data.prizes ?? []).map(fromPrize));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось загрузить призовой фонд.");
-    }
+    } catch (e) { setError(e instanceof Error ? e.message : "Не удалось загрузить призовой фонд."); }
   };
 
   useEffect(() => { void loadSeasons(); }, []);
@@ -129,19 +98,11 @@ function AdminPrizes() {
     try {
       for (const draft of drafts) {
         const payload = {
-          id: draft.id,
-          seasonId,
-          kind: draft.kind,
-          title: draft.title.trim(),
-          subtitle: draft.subtitle.trim() || null,
-          amount: Number(draft.amount) || 0,
-          unitCost: Number(draft.unitCost) || 0,
+          id: draft.id, seasonId, kind: draft.kind, title: draft.title.trim(), subtitle: draft.subtitle.trim() || null,
+          amount: Number(draft.amount) || 0, unitCost: Number(draft.unitCost) || 0,
           currency: draft.kind === "MONEY" ? "UAH" : draft.kind === "STARS" ? "XTR" : draft.currency || null,
-          quantityTotal: Math.max(draft.quantity, draft.won),
-          quantityRemaining: remaining(draft),
-          active: draft.active,
-          imageUrl: draft.imageUrl.trim() || null,
-          metadata: { weight: Math.max(0, Number(draft.weight) || 0) },
+          quantityTotal: Math.max(draft.quantity, draft.won), quantityRemaining: remaining(draft), active: draft.active,
+          imageUrl: draft.imageUrl.trim() || null, metadata: { weight: Math.max(0, Number(draft.weight) || 0) },
         };
         await api("/api/admin/prizes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, initData: initData() }) });
       }
@@ -161,13 +122,10 @@ function AdminPrizes() {
       <div className="space-y-4 pb-8">
         <Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link>
         <GlassCard className="px-4 py-4" glow>
-          <div className="flex items-start justify-between gap-3">
-            <div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Конструктор наград</p><h1 className="mt-1 font-display text-xl uppercase">Призовой фонд</h1></div>
-            <button type="button" onClick={() => void loadSeasons()} className="grid size-9 place-items-center rounded-xl border border-glass-border bg-muted/10"><RefreshCw className="size-4" /></button>
-          </div>
+          <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Конструктор наград</p><h1 className="mt-1 font-display text-xl uppercase">Призовой фонд</h1></div><button type="button" onClick={() => void loadSeasons()} className="grid size-9 place-items-center rounded-xl border border-glass-border bg-muted/10"><RefreshCw className="size-4" /></button></div>
           <label className="mt-4 block"><span className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Сезон</span><select value={seasonId} onChange={(e) => setSeasonId(e.target.value)} className="admin-input mt-1 w-full">{seasons.map((season) => <option key={season.id} value={season.id}>{season.code} · {season.state}</option>)}</select></label>
           <div className="mt-3 grid grid-cols-2 gap-2"><Metric label="Всего единиц" value={String(totalInventory)} /><Metric label="Доступно" value={String(totalRemaining)} /></div>
-          <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">Здесь можно добавить денежный приз на любую сумму в гривнах или награду Stars на любую сумму. Quantity — общее количество, weight — вес выбора. После первого спина экономические параметры существующей награды блокируются.</p>
+          <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">Добавляй деньги на любую сумму в гривнах и Stars на любую сумму. Quantity — общее количество, weight — вес выбора. После первого спина экономические параметры существующей награды блокируются.</p>
         </GlassCard>
 
         {error && <GlassCard className="border-destructive/30 bg-destructive/5 px-4 py-3 text-[11px] text-destructive">{error}</GlassCard>}
@@ -186,9 +144,7 @@ function AdminPrizes() {
           {drafts.map((draft, index) => (
             <GlassCard key={draft.id ?? `new-${index}`} className="space-y-3 px-3.5 py-3.5">
               <div className="flex items-start gap-3">
-                <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-glass-border bg-muted/10">
-                  {draft.imageUrl ? <img src={draft.imageUrl} alt="" className="size-full object-cover" /> : <Gift className="size-4 text-primary-glow" />}
-                </div>
+                <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-glass-border bg-muted/10">{draft.imageUrl ? <img src={draft.imageUrl} alt="" className="size-full object-cover" /> : <Gift className="size-4 text-primary-glow" />}</div>
                 <div className="min-w-0 flex-1"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{labelForKind(draft.kind)}</p><p className="mt-1 truncate text-sm font-semibold">{draft.title || "Новая награда"}</p><p className="text-[10px] text-muted-foreground">Выдано {draft.won} · доступно {remaining(draft)}</p></div>
                 <button type="button" aria-label="Удалить награду" onClick={() => remove(index)} className="grid size-8 place-items-center rounded-lg border border-destructive/20 bg-destructive/5 text-destructive"><Trash2 className="size-3.5" /></button>
               </div>
@@ -212,10 +168,8 @@ function AdminPrizes() {
   );
 }
 
-function labelForKind(kind: PrizeKind) {
-  return ({ MONEY: "Денежный приз", STARS: "Stars", PREMIUM: "Telegram Premium", NFT: "NFT", PHYSICAL: "Физическая награда", CUSTOM: "Своя награда", FREE_SPIN: "Бонусная прокрутка", EMPTY: "Без награды" } as Record<PrizeKind, string>)[kind];
-}
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span><div className="mt-1">{children}</div></label>; }
+function labelForKind(kind: PrizeKind) { return ({ MONEY: "Денежный приз", STARS: "Stars", PREMIUM: "Telegram Premium", NFT: "NFT", PHYSICAL: "Физическая награда", CUSTOM: "Своя награда", FREE_SPIN: "Бонусная прокрутка", EMPTY: "Без награды" } as Record<PrizeKind, string>)[kind]; }
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span><div className="mt-1">{children}</div></label>; }
 function AddButton({ label, hint, onClick }: { label: string; hint: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="rounded-2xl border border-glass-border bg-muted/10 px-3 py-3 text-left transition hover:border-primary/30"><span className="block text-sm font-semibold">+ {label}</span><span className="mt-1 block text-[10px] text-muted-foreground">{hint}</span></button>; }
 function EmptyBuilder() { return <GlassCard className="px-4 py-7 text-center"><Gift className="mx-auto size-6 text-muted-foreground" /><p className="mt-2 text-sm font-semibold">Призов пока нет</p><p className="mt-1 text-[11px] text-muted-foreground">Добавь любую награду кнопками выше.</p></GlassCard>; }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p></div>; }
