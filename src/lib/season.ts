@@ -47,11 +47,9 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     isLive: live,
     isFinished: finished,
     isWaiting: waiting,
-    // Participation is currently an administrative flag used for the gift and
-    // participant list. A subscribed user may spin in a live season.
     canSpin: live && subscribed,
-    canClaimGift: live && subscribed && participant,
-    canWithdraw: state === "PAYOUT" || state === "CLOSED",
+    canClaimGift: live && subscribed && participant && snapshot.stars.amount < snapshot.stars.max,
+    canWithdraw: state === "PAYOUT" || state === "CLOSED" || state === "ARCHIVED",
     headline: meta.headline,
     note: meta.note,
     ctaLabel: live ? "Крутить" : waiting ? "Ещё не начался" : "Закрыт",
@@ -64,7 +62,8 @@ export function errorCopy(code: string): string {
   switch (code) {
     case "NO_ATTEMPTS": return "Бесплатная попытка уже использована. Купи дополнительную прокрутку за Stars.";
     case "INSUFFICIENT_STARS": return "Недостаточно Stars для этого действия.";
-    case "STARS_FULL": return "Баланс Stars заполнен. Потрать Stars, чтобы освободить место.";
+    case "STARS_FULL":
+    case "GIFT_BALANCE_FULL": return "Баланс Stars заполнен. Потрать Stars, чтобы освободить место для новых наград.";
     case "SEASON_CLOSED": return "Сезон завершён.";
     case "SEASON_NOT_ACTIVE": return "Сейчас нет активного сезона.";
     case "SEASON_NOT_STARTED": return "Сезон ещё не начался.";
@@ -76,7 +75,10 @@ export function errorCopy(code: string): string {
     case "PAYMENT_CANCELLED": return "Оплата отменена.";
     case "PAYMENT_FAILED": return "Не удалось завершить оплату Telegram Stars.";
     case "PAYMENT_PROCESSING": return "Платёж принят. Результат прокрутки ещё обрабатывается.";
+    case "GIFT_COOLDOWN": return "Подарок уже получен. Возвращайся через 24 часа.";
     case "GIFT_UNAVAILABLE": return "Ежедневный подарок сейчас недоступен.";
+    case "WITHDRAW_NOT_OPEN": return "Вывод откроется после завершения сезона.";
+    case "WITHDRAWAL_PENDING": return "У тебя уже есть заявка на вывод в обработке.";
     case "BELOW_MINIMUM": return "Сумма меньше минимальной для вывода.";
     case "NETWORK": return "Не удалось связаться с сервером. Попробуй ещё раз.";
     default: return `Ошибка операции (${code}). Попробуй ещё раз.`;
