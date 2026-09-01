@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { PoolClient } from "pg";
 import { authenticateAdmin } from "@/server/auth/access";
 import { withTransaction, query } from "@/server/db";
 
@@ -16,11 +17,9 @@ type PayoutRow = {
   prize_subtitle: string | null;
 };
 
-const TERMINAL = ["PAID", "FAILED", "CANCELLED"] as const;
-const REVIEWABLE = ["PENDING", "REVIEW"] as const;
 type Status = PayoutRow["status"];
 
-async function changePayout(client: Parameters<typeof withTransaction>[0] extends (c: infer C) => unknown ? C : never, adminId: string, id: string, nextStatus: Status) {
+async function changePayout(client: PoolClient, adminId: string, id: string, nextStatus: Status) {
   const payout = await client.query<{ user_id: string; kind: string; amount: string; status: Status; note: string | null }>(
     `SELECT user_id::text, kind, amount::text, status, note FROM payouts WHERE id=$1::uuid FOR UPDATE`, [id],
   );
@@ -43,11 +42,9 @@ async function changePayout(client: Parameters<typeof withTransaction>[0] extend
   );
 
   const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
-  if (isWithdrawal && ["FAILED", "CANCELLED"].includes(nextStatus) && REVIEWABLE.includes(before.status as typeof REVIEWABLE[number])) {
+  if (isWithdrawal && ["FAILED", "CANCELLED"].includes(nextStatus) && ["PENDING", "REVIEW"].includes(before.status)) {
     await client.query(
-      `UPDATE user_state
-          SET stars_balance = LEAST(500, stars_balance + $2), updated_at = now()
-        WHERE user_id = $1::uuid`,
+      `UPDATE user_state SET stars_balance = LEAST(500, stars_balance + $2), updated_at = now() WHERE user_id = $1::uuid`,
       [before.user_id, Number(before.amount)],
     );
     await client.query(
@@ -72,7 +69,7 @@ export const Route = createFileRoute("/api/admin/payouts")({
         const url = new URL(request.url);
         const initData = url.searchParams.get("initData") ?? "";
         const search = (url.searchParams.get("search") ?? "").trim();
-        const status = url.searchParams.get("status") ?? "";
+        const status = (url.searchParams.get("status") ?? "") as Status | "";
         await authenticateAdmin(initData);
         const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
         const result = await query<PayoutRow>(
@@ -143,13 +140,12 @@ export const Route = createFileRoute("/api/admin/payouts")({
         const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
         const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
         const nextStatus = typeof body.status === "string" ? body.status as Status : "" as Status;
-        if (!ids.length || !["REVIEW", "PAID", "FAILED", "CANCELLED"].includes(nextStatus) || ids.length > 100) {
-          return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
-        }
+        if (!ids.length || !["REVIEW", "PAID", "FAILED", "CANCELLED"].includes(nextStatus) || ids.length > 100) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+        const uniqueIds = [...new Set(ids)];
         await withTransaction(async (client) => {
-          for (const id of [...new Set(ids)]) await changePayout(client, admin.id, id, nextStatus);
+          for (const id of uniqueIds) await changePayout(client, admin.id, id, nextStatus);
         });
-        return Response.json({ ok: true, count: new Set(ids).size });
+        return Response.json({ ok: true, count: uniqueIds.length });
       } catch (error) {
         console.error("Bulk payout update failed:", error instanceof Error ? error.message : error);
         const code = error instanceof Error ? error.message : "PAYOUT_BULK_FAILED";
