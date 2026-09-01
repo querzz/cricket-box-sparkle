@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { validateTelegramInitData } from "@/server/auth/telegram";
-import { query } from "@/server/db";
 import { requireBotToken } from "@/server/config";
+import { query } from "@/server/db";
 
 type AuthBody = { initData?: unknown };
 
@@ -40,7 +40,7 @@ export const Route = createFileRoute("/api/auth/telegram")({
             `SELECT role FROM admins WHERE telegram_id = $1 AND is_active = TRUE LIMIT 1`,
             [user.id],
           );
-          const role = adminResult.rows[0]?.role ?? "USER";
+          const role = adminResult.rows[0]?.role;
 
           return Response.json({
             ok: true,
@@ -51,7 +51,7 @@ export const Route = createFileRoute("/api/auth/telegram")({
               lastName: user.last_name ?? null,
               isPremium: Boolean(user.is_premium),
             },
-            access: role === "USER" ? "USER" : role,
+            access: role ?? "USER",
           });
         } catch (error) {
           console.error("Telegram auth failed:", error instanceof Error ? error.message : error);
