@@ -65,9 +65,7 @@ export interface Reward {
   wonAt: string;
   status: RewardStatus;
   payoutNote?: string | undefined;
-  /** Stars actually added to the balance (may be capped by the 500 limit). */
   creditedAmount?: number | undefined;
-  /** Stars that could not be credited because the balance is full. */
   uncreditedAmount?: number | undefined;
 }
 
@@ -75,7 +73,6 @@ export interface SpinState {
   freeSpins: number;
   paidSpinPrice: number | null;
   totalSpins: number;
-  /** Local mock marker for the calendar day the current free spin belongs to. */
   freeSpinDate?: string | undefined;
 }
 
@@ -103,11 +100,9 @@ export interface SessionSnapshot {
   rewards: Reward[];
   withdrawals: Withdrawal[];
   withdrawalMinimum: number;
-  /** Mock-only preview flags. Never present in the real backend contract. */
   dev: { simulateNetworkError: boolean };
 }
 
-/** Result envelope returned by every service call (backend-shaped). */
 export type ServiceResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ServiceError };
@@ -121,7 +116,14 @@ export interface ServiceError {
     | "SEASON_NOT_STARTED"
     | "NOT_SUBSCRIBED"
     | "GIFT_UNAVAILABLE"
+    | "GIFT_COOLDOWN"
+    | "GIFT_BALANCE_FULL"
     | "BELOW_MINIMUM"
+    | "WITHDRAW_NOT_OPEN"
+    | "WITHDRAWAL_PENDING"
+    | "PAYMENT_REQUIRED"
+    | "NO_PRIZES"
+    | "NOT_PARTICIPANT"
     | "NETWORK";
   message: string;
 }
