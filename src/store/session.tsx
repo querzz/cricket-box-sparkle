@@ -36,6 +36,15 @@ const isTelegramMiniApp = () =>
   typeof window !== "undefined" &&
   Boolean((window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData?.trim());
 
+const SESSION_TIMEOUT_MS = 12_000;
+
+function timeoutError(): ServiceError {
+  return {
+    code: "NETWORK",
+    message: "Сервер слишком долго не отвечает. Проверь Cloudflare Tunnel и попробуй открыть бота ещё раз.",
+  };
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,15 +52,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const result = await cricketApi.getSession();
-    if (result.ok) {
-      setSnapshot(result.data);
-      setError(null);
-    } else {
-      setError(result.error);
+    try {
+      const result = await Promise.race([
+        cricketApi.getSession(),
+        new Promise<ReturnType<typeof timeoutError>>((resolve) => {
+          window.setTimeout(() => resolve({ ok: false, error: timeoutError() }), SESSION_TIMEOUT_MS);
+        }),
+      ]);
+      if (result.ok) {
+        setSnapshot(result.data);
+        setError(null);
+      } else {
+        setError(result.error);
+        setSnapshot(null);
+      }
+    } catch {
+      setError(timeoutError());
       setSnapshot(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
