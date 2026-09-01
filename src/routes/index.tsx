@@ -82,17 +82,19 @@ function HomeScreen() {
 
           <GlassCard className="mt-4 px-4 py-3.5">
             <div className="flex items-start justify-between gap-3">
-              {ui.isFinished ? (
+              {ui.countdownTarget ? (
+                <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} />
+              ) : (
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Статус сезона</p>
                   <p className="mt-1 font-display text-lg uppercase tracking-[0.12em] text-gradient-primary">{ui.headline}</p>
                 </div>
-              ) : <Countdown target={snapshot.season.endsAt} label="Сезон закончится через" />}
+              )}
               <StatusBadge status={{ type: "season", value: snapshot.season.state }} />
             </div>
             <div className="mt-3 border-t border-glass-border pt-3 text-[11px] text-muted-foreground">
               <p>{ui.note}</p>
-              <p className="mt-1">{ui.isFinished ? "Прокрутки и ежедневный подарок закрыты для этого сезона." : `${snapshot.user.isParticipant ? "Ты участвуешь" : "Ты ещё не участвуешь"} · ${attempts} бесплатн${attempts === 1 ? "ая попытка" : "ых попытки"}`}</p>
+              <p className="mt-1">{ui.isFinished ? "Прокрутки и ежедневный подарок закрыты для этого сезона." : ui.isWaiting ? "Прокрутки откроются после старта сезона." : `${snapshot.user.isParticipant ? "Ты участвуешь" : "Ты ещё не участвуешь"} · ${attempts} бесплатн${attempts === 1 ? "ая попытка" : "ых попытки"}`}</p>
             </div>
           </GlassCard>
 
