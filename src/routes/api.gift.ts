@@ -35,7 +35,7 @@ export const Route = createFileRoute("/api/gift")({
           await client.query(
             `INSERT INTO payouts (user_id, kind, amount, currency, status, note)
              VALUES ($1::uuid, 'STARS', $2, 'XTR', 'PAID', $3)`,
-            [user.rows[0].id, 15, `DAILY_GIFT_CREDITED:${credited}`],
+            [user.rows[0].id, credited, `DAILY_GIFT_CREDITED:${credited}`],
           );
           await client.query(
             `INSERT INTO audit_logs (action, entity_type, entity_id, after_data)
