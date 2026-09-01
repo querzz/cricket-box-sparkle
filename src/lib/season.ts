@@ -5,17 +5,21 @@ export interface SeasonUi {
   isLive: boolean;
   /** Season is over — no countdown, no attempts, payout phase copy. */
   isFinished: boolean;
+  /** Season is waiting to be started manually/scheduled. */
+  isWaiting: boolean;
   canSpin: boolean;
   canClaimGift: boolean;
   canWithdraw: boolean;
   headline: string;
   note: string;
   ctaLabel: string;
+  countdownTarget: string | null;
+  countdownLabel: string | null;
 }
 
 const headlines: Record<SeasonState, { headline: string; note: string }> = {
   DRAFT: { headline: "Сезон готовится", note: "Следующий Cricket Box сейчас собирается." },
-  SCHEDULED: { headline: "Скоро старт", note: "Возвращайся, когда закончится обратный отсчёт." },
+  SCHEDULED: { headline: "Скоро старт", note: "Возвращайся, когда наступит время старта сезона." },
   ACTIVE: { headline: "Сезон активен", note: "Крути Cricket Box и собирай призы." },
   ENDING: { headline: "Сезон заканчивается", note: "Последние попытки перед закрытием бокса." },
   CLOSED: { headline: "Сезон завершён", note: "Новые прокрутки закрыты, призы проверяются." },
@@ -26,18 +30,34 @@ const headlines: Record<SeasonState, { headline: string; note: string }> = {
 export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const state = snapshot.season.state;
   const live = state === "ACTIVE" || state === "ENDING";
+  const finished = state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED";
+  const waiting = state === "DRAFT" || state === "SCHEDULED";
   const subscribed = snapshot.user.isSubscribed;
   const meta = headlines[state];
 
+  let countdownTarget: string | null = null;
+  let countdownLabel: string | null = null;
+
+  if (state === "SCHEDULED" && snapshot.season.startsAt) {
+    countdownTarget = snapshot.season.startsAt;
+    countdownLabel = "Сезон начнётся через";
+  } else if ((state === "ACTIVE" || state === "ENDING") && snapshot.season.endsAt) {
+    countdownTarget = snapshot.season.endsAt;
+    countdownLabel = state === "ENDING" ? "Сезон завершится через" : "Сезон закончится через";
+  }
+
   return {
     isLive: live,
-    isFinished: state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED",
+    isFinished: finished,
+    isWaiting: waiting,
     canSpin: live && subscribed,
     canClaimGift: live && subscribed && snapshot.user.isParticipant,
     canWithdraw: state === "PAYOUT" || state === "CLOSED",
     headline: meta.headline,
     note: meta.note,
-    ctaLabel: live ? "Крутить" : state === "SCHEDULED" || state === "DRAFT" ? "Ещё не начался" : "Закрыт",
+    ctaLabel: live ? "Крутить" : waiting ? "Ещё не начался" : "Закрыт",
+    countdownTarget,
+    countdownLabel,
   };
 }
 
