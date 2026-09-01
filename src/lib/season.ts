@@ -48,7 +48,8 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     isFinished: finished,
     isWaiting: waiting,
     canSpin: live && subscribed,
-    canClaimGift: live && subscribed && participant && snapshot.stars.amount < snapshot.stars.max,
+    // The gift itself can contain XP, bonus spins or NOTHING, so a full Stars balance must not lock it.
+    canClaimGift: live && subscribed && participant,
     canWithdraw: finished,
     headline: meta.headline,
     note: meta.note,
@@ -62,8 +63,8 @@ export function errorCopy(code: string): string {
   switch (code) {
     case "NO_ATTEMPTS": return "Бесплатная попытка уже использована. Купи дополнительную прокрутку за Telegram Stars.";
     case "INSUFFICIENT_STARS": return "Недостаточно Telegram Stars для этого действия.";
-    case "STARS_FULL":
-    case "GIFT_BALANCE_FULL": return "Баланс CRICKET BOX Stars заполнен (500/500). Освободи место выводом после завершения сезона.";
+    case "STARS_FULL": return "Баланс CRICKET BOX Stars заполнен (500/500).";
+    case "GIFT_BALANCE_FULL": return "Подарок сейчас не может зачислить Stars из-за лимита баланса.";
     case "SEASON_CLOSED": return "Сезон завершён: новые прокрутки недоступны.";
     case "SEASON_NOT_ACTIVE": return "Сейчас нет активного сезона.";
     case "SEASON_NOT_STARTED": return "Сезон ещё не начался.";
