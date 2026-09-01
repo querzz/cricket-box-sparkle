@@ -20,9 +20,26 @@ type PrizeRow = {
   amount: string;
   currency: string | null;
   quantity_remaining: number;
+  metadata: Record<string, unknown> | null;
 };
 
 const BOT_HEADER = "x-cricket-bot-token";
+const MAX_STARS = 500;
+
+function pickWeighted(prizes: PrizeRow[]) {
+  const weighted = prizes.map((prize) => {
+    const configuredWeight = Number(prize.metadata?.weight ?? 1);
+    const weight = Number.isFinite(configuredWeight) && configuredWeight > 0 ? configuredWeight : 1;
+    return { prize, weight: weight * prize.quantity_remaining };
+  });
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  let cursor = Math.random() * total;
+  for (const item of weighted) {
+    cursor -= item.weight;
+    if (cursor < 0) return item.prize;
+  }
+  return weighted[weighted.length - 1]!.prize;
+}
 
 export const Route = createFileRoute("/api/payment/complete")({
   server: { handlers: {
@@ -46,19 +63,28 @@ export const Route = createFileRoute("/api/payment/complete")({
         if (!userId || !seasonId) return Response.json({ ok: false, code: "INVALID_PAYLOAD" }, { status: 400 });
 
         const result = await withTransaction(async (client) => {
-          const existing = await client.query<{ id: string; status: string; spin_id: string | null }>(
-            `SELECT id::text, status, spin_id::text FROM star_transactions WHERE telegram_charge_id = $1 LIMIT 1 FOR UPDATE`,
+          const existing = await client.query<{ id: string; status: string; spin_id: string | null; user_id: string | null; amount: string }>(
+            `SELECT id::text, status, spin_id::text, user_id::text, amount::text
+               FROM star_transactions
+              WHERE telegram_charge_id = $1
+              LIMIT 1
+              FOR UPDATE`,
             [chargeId],
           );
-          if (existing.rows[0]?.status === "SUCCESS") {
-            return { duplicate: true, spinId: existing.rows[0].spin_id, payoutId: null, reward: null };
+          if (existing.rows[0]) {
+            const row = existing.rows[0];
+            if (row.user_id !== userId || Number(row.amount) !== totalAmount) throw new Error("PAYMENT_CHARGE_MISMATCH");
+            if (row.status === "SUCCESS") {
+              return { duplicate: true, spinId: row.spin_id, payoutId: null, reward: null };
+            }
+            if (row.status !== "PENDING") throw new Error("PAYMENT_NOT_PENDING");
           }
 
-          const tx = await client.query<{ id: string; amount: number; status: string; user_id: string }>(
-            `SELECT id::text, amount, status, user_id::text
+          const tx = await client.query<{ id: string; amount: number; status: string; user_id: string; payload: Record<string, unknown> }>(
+            `SELECT id::text, amount, status, user_id::text, payload
                FROM star_transactions
               WHERE payload->>'payload' = $1
-              ORDER BY created_at DESC
+              ORDER BY created_at DESC, id DESC
               LIMIT 1
               FOR UPDATE`,
             [payload],
@@ -91,28 +117,62 @@ export const Route = createFileRoute("/api/payment/complete")({
           if (!seasonRow || !["ACTIVE", "ENDING"].includes(seasonRow.state)) throw new Error("SEASON_NOT_ACTIVE");
           if (Number(seasonRow.paid_spin_price) !== totalAmount) throw new Error("PAYMENT_AMOUNT_MISMATCH");
 
+          // A successful Telegram payment must never disappear because the prize pool
+          // changed between pre-checkout and completion. Preserve the paid operation as
+          // an auditable manual-resolution payout when no inventory remains.
           const prizes = await client.query<PrizeRow>(
-            `SELECT id::text, kind, title, subtitle, amount::text, currency, quantity_remaining
+            `SELECT id::text, kind, title, subtitle, amount::text, currency, quantity_remaining, metadata
                FROM prizes
-              WHERE season_id = $1::uuid AND quantity_remaining > 0
+              WHERE season_id = $1::uuid
+                AND quantity_remaining > 0
+                AND (kind <> 'STARS' OR $2::integer < $3::integer)
               ORDER BY created_at ASC
               FOR UPDATE`,
-            [seasonId],
+            [seasonId, Number(state.stars_balance ?? 0), MAX_STARS],
           );
-          if (!prizes.rows.length) throw new Error("NO_PRIZES");
 
-          const total = prizes.rows.reduce((sum, p) => sum + p.quantity_remaining, 0);
-          let cursor = Math.floor(Math.random() * total);
-          let picked = prizes.rows[prizes.rows.length - 1]!;
-          for (const prize of prizes.rows) {
-            cursor -= prize.quantity_remaining;
-            if (cursor < 0) {
-              picked = prize;
-              break;
-            }
+          if (!prizes.rows.length) {
+            const spin = await client.query<{ id: string; created_at: string }>(
+              `INSERT INTO spins (user_id, season_id, type, price_stars, prize_id, status, telegram_payment_charge_id, completed_at)
+               VALUES ($1::uuid, $2::uuid, 'PAID', $3, NULL, 'COMPLETED', $4, now())
+               RETURNING id::text, created_at::text`,
+              [userId, seasonId, totalAmount, chargeId],
+            );
+            const payout = await client.query<{ id: string }>(
+              `INSERT INTO payouts (spin_id, user_id, prize_id, kind, amount, currency, status, note)
+               VALUES ($1::uuid, $2::uuid, NULL, 'CUSTOM', 0, NULL, 'REVIEW', 'PAYMENT_SETTLED_NO_PRIZE_INVENTORY')
+               RETURNING id::text`,
+              [spin.rows[0].id, userId],
+            );
+            await client.query(
+              `UPDATE star_transactions
+                  SET status='SUCCESS', telegram_charge_id=$2, spin_id=$3::uuid, processed_at=now(),
+                      payload=payload || $4::jsonb
+                WHERE id=$1::uuid`,
+              [tx.rows[0].id, chargeId, spin.rows[0].id, JSON.stringify({ telegramId, currency, totalAmount, manualResolution: true })],
+            );
+            await client.query(
+              `INSERT INTO audit_logs (action, entity_type, entity_id, after_data)
+               VALUES ('PAID_SPIN_REQUIRES_MANUAL_RESOLUTION', 'spin', $1, $2::jsonb)`,
+              [spin.rows[0].id, JSON.stringify({ userId, seasonId, chargeId, totalAmount, payoutId: payout.rows[0].id })],
+            );
+            return {
+              duplicate: false,
+              spinId: spin.rows[0].id,
+              payoutId: payout.rows[0].id,
+              reward: {
+                kind: "EMPTY",
+                title: "Оплата получена",
+                subtitle: "Призовой фонд закончился. Заявка передана администратору для решения.",
+                amount: undefined,
+                credited: 0,
+                payoutStatus: "REVIEW",
+              },
+            };
           }
 
-          await client.query(`UPDATE prizes SET quantity_remaining = quantity_remaining - 1, updated_at = now() WHERE id = $1::uuid`, [picked.id]);
+          const picked = pickWeighted(prizes.rows);
+          await client.query(`UPDATE prizes SET quantity_remaining = quantity_remaining - 1, updated_at = now() WHERE id = $1::uuid AND quantity_remaining > 0`, [picked.id]);
 
           const spin = await client.query<{ id: string; created_at: string }>(
             `INSERT INTO spins (user_id, season_id, type, price_stars, prize_id, status, telegram_payment_charge_id, completed_at)
@@ -122,13 +182,13 @@ export const Route = createFileRoute("/api/payment/complete")({
           );
 
           const rewardStars = picked.kind === "STARS" ? Math.max(0, Math.floor(Number(picked.amount) || 0)) : 0;
-          let credited = 0;
-          let payoutStatus = "PENDING";
-          let payoutNote = "Награда ожидает выдачи администратором.";
-          if (rewardStars > 0) {
-            credited = Math.min(rewardStars, Math.max(0, 500 - Number(state.stars_balance)));
-            payoutStatus = "PAID";
-            payoutNote = credited < rewardStars ? `Лимит 500 Stars: зачислено ${credited} из ${rewardStars}.` : "Stars зачислены на баланс.";
+          const credited = rewardStars > 0 ? Math.min(rewardStars, Math.max(0, MAX_STARS - Number(state.stars_balance ?? 0))) : 0;
+          const payoutStatus = rewardStars > 0 ? "PAID" : "PENDING";
+          const payoutNote = rewardStars > 0
+            ? (credited < rewardStars ? `Лимит 500 Stars: зачислено ${credited} из ${rewardStars}.` : "Stars зачислены на баланс.")
+            : "Награда ожидает выдачи администратором.";
+
+          if (credited > 0) {
             await client.query(`UPDATE user_state SET stars_balance = stars_balance + $2, updated_at = now() WHERE user_id = $1::uuid`, [userId, credited]);
           }
 
@@ -149,7 +209,7 @@ export const Route = createFileRoute("/api/payment/complete")({
           await client.query(
             `INSERT INTO audit_logs (action, entity_type, entity_id, after_data)
              VALUES ('PAID_SPIN_COMPLETED', 'spin', $1, $2::jsonb)`,
-            [spin.rows[0].id, JSON.stringify({ userId, seasonId, prizeId: picked.id, chargeId, totalAmount })],
+            [spin.rows[0].id, JSON.stringify({ userId, seasonId, prizeId: picked.id, chargeId, totalAmount, payoutId: payout.rows[0].id })],
           );
 
           return {
@@ -157,7 +217,7 @@ export const Route = createFileRoute("/api/payment/complete")({
             spinId: spin.rows[0].id,
             payoutId: payout.rows[0].id,
             reward: {
-              kind: picked.kind === "FREE_SPIN" ? "STARS" : picked.kind,
+              kind: picked.kind === "FREE_SPIN" ? "FREE_SPIN" : picked.kind,
               title: picked.title,
               subtitle: picked.subtitle,
               amount: Number(picked.amount) || undefined,
