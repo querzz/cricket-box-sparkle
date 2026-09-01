@@ -11,7 +11,7 @@ export const Route = createFileRoute("/admin/participants")({
 });
 
 type Participant = {
-  id: string; username: string; name: string; joined: string; spins: number;
+  id: string; telegramId: string; username: string; name: string; joined: string; spins: number;
   freeSpins: number; paidSpins: number; stars: number; rewards: number;
   referrals: number; status: "Активен" | "Неактивен" | "Заблокирован";
   lastSeen: string; isPremium: boolean; xp: number; level: number;
@@ -26,7 +26,7 @@ function initData() {
 }
 
 async function loadParticipants(search: string, signal?: AbortSignal) {
-  const response = await fetch(`/api/admin/participants?initData=${encodeURIComponent(initData())}&search=${encodeURIComponent(search)}&limit=100`, { signal });
+  const response = await fetch(`/api/admin/participants?initData=${encodeURIComponent(initData())}&search=${encodeURIComponent(search)}&limit=100`, { ...(signal ? { signal } : {}) });
   const data = (await response.json()) as Api;
   if (!response.ok || !data.ok) throw new Error(data.code ?? "REQUEST_FAILED");
   return data.participants ?? [];
