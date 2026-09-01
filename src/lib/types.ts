@@ -13,11 +13,8 @@ export type SeasonState =
   | "ARCHIVED";
 
 export type RewardKind = "STARS" | "PREMIUM" | "NFT" | "MONEY" | "EMPTY" | "NOTHING" | "FREE_SPIN" | "XP";
-
 export type RewardStatus = "PENDING" | "RECEIVED" | "PROBLEM";
-
 export type GiftState = "AVAILABLE" | "CLAIMED" | "COOLDOWN" | "LOCKED";
-
 export type WithdrawalStatus = "PENDING" | "PROCESSING" | "PAID" | "REJECTED";
 
 export interface User {
@@ -28,6 +25,22 @@ export interface User {
   isSubscribed: boolean;
   xp: number;
   level: number;
+  levelTitle?: string | undefined;
+  levelProgress?: number | undefined;
+  nextLevelXp?: number | undefined;
+  levelBenefit?: string | undefined;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  username: string;
+  avatarUrl?: string | undefined;
+  spins: number;
+  wins: number;
+  starsWon: number;
+  level: number;
+  isCurrentUser: boolean;
 }
 
 export interface StarsBalance {
@@ -53,6 +66,8 @@ export interface Prize {
   remaining: number;
   total: number;
   weight?: number | undefined;
+  active?: boolean | undefined;
+  imageUrl?: string | undefined;
 }
 
 export interface Reward {
@@ -98,6 +113,7 @@ export interface SessionSnapshot {
   prizes: Prize[];
   rewards: Reward[];
   withdrawals: Withdrawal[];
+  leaderboard?: LeaderboardEntry[];
   withdrawalMinimum: number;
   dev: { simulateNetworkError: boolean };
 }
