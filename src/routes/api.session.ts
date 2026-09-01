@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query } from "@/server/db";
+import { getLevelInfo } from "@/lib/levels";
 
 const MAX_STARS = 500;
 const GIFT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -14,6 +15,7 @@ type UserRow = {
   first_name: string;
   last_name: string | null;
   is_premium: boolean;
+  avatar_file_id: string | null;
   xp: number;
   level: number;
 };
@@ -22,19 +24,55 @@ type SeasonRow = {
   id: string;
   code: string;
   name: string;
-  state:
-    | "DRAFT"
-    | "SCHEDULED"
-    | "ACTIVE"
-    | "ENDING"
-    | "CLOSED"
-    | "PAYOUT"
-    | "ARCHIVED";
+  state: "DRAFT" | "SCHEDULED" | "ACTIVE" | "ENDING" | "CLOSED" | "PAYOUT" | "ARCHIVED";
   starts_at: string | null;
   ends_at: string | null;
   paid_spin_price: number;
   daily_free_spin: boolean;
 };
+
+async function fetchTelegramAvatarFileId(telegramId: number) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${requireBotToken()}/getUserProfilePhotos`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_id: telegramId, offset: 0, limit: 1 }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json() as { ok: boolean; result?: { total_count: number; photos: Array<Array<{ file_id: string; width: number; height: number }>> } };
+    return data.ok && data.result?.total_count && data.result.photos[0]?.length
+      ? data.result.photos[0][data.result.photos[0].length - 1]?.file_id ?? null
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTelegramAvatarDataUrl(fileId: string | null) {
+  if (!fileId) return undefined;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${requireBotToken()}/getFile`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file_id: fileId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json() as { ok: boolean; result?: { file_path?: string } };
+    const filePath = data.ok ? data.result?.file_path : undefined;
+    if (!filePath) return undefined;
+
+    const imageResponse = await fetch(`https://api.telegram.org/file/bot${requireBotToken()}/${filePath}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!imageResponse.ok) return undefined;
+    const buffer = await imageResponse.arrayBuffer();
+    const extension = filePath.split(".").pop()?.toLowerCase();
+    const mime = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
+    return `data:${mime};base64,${Buffer.from(buffer).toString("base64")}`;
+  } catch {
+    return undefined;
+  }
+}
 
 export const Route = createFileRoute("/api/session")({
   server: {
@@ -59,12 +97,20 @@ export const Route = createFileRoute("/api/session")({
                language_code = EXCLUDED.language_code,
                is_premium = EXCLUDED.is_premium,
                last_seen_at = now()
-             RETURNING id::text, telegram_id::text, username, first_name, last_name, is_premium, xp, level`,
+             RETURNING id::text, telegram_id::text, username, first_name, last_name, is_premium, avatar_file_id, xp, level`,
             [tgUser.id, tgUser.username ?? null, tgUser.first_name, tgUser.last_name ?? null, tgUser.language_code ?? null, Boolean(tgUser.is_premium)],
           );
 
           const user = userResult.rows[0];
           if (!user) throw new Error("USER_NOT_FOUND");
+
+          const latestAvatarFileId = await fetchTelegramAvatarFileId(tgUser.id);
+          if (latestAvatarFileId !== user.avatar_file_id) {
+            await query(`UPDATE users SET avatar_file_id=$2, last_seen_at=now() WHERE id=$1::uuid`, [user.id, latestAvatarFileId]);
+            user.avatar_file_id = latestAvatarFileId;
+          }
+          const avatarUrl = await fetchTelegramAvatarDataUrl(user.avatar_file_id);
+          const levelInfo = getLevelInfo(Number(user.xp ?? 0));
 
           await query(
             `INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins)
@@ -102,10 +148,10 @@ export const Route = createFileRoute("/api/session")({
           if (!season) return Response.json({ ok: false, code: "NO_SEASON" }, { status: 409 });
 
           const prizeResult = await query<{
-            id: string; kind: string; title: string; subtitle: string | null; amount: string; quantity_remaining: number; quantity_total: number;
+            id: string; kind: string; title: string; subtitle: string | null; amount: string; quantity_remaining: number; quantity_total: number; metadata: Record<string, unknown> | null; image_url: string | null;
           }>(
-            `SELECT id::text, kind, title, subtitle, amount::text, quantity_remaining, quantity_total
-               FROM prizes WHERE season_id = $1::uuid ORDER BY created_at ASC`,
+            `SELECT id::text, kind, title, subtitle, amount::text, quantity_remaining, quantity_total, metadata, image_url
+               FROM prizes WHERE season_id = $1::uuid AND is_active = TRUE ORDER BY created_at ASC`,
             [season.id],
           );
 
@@ -133,7 +179,7 @@ export const Route = createFileRoute("/api/session")({
           }>(
             `SELECT p.id::text, p.kind, p.title, p.subtitle, p.amount::text, py.status, py.created_at::text
                FROM payouts py JOIN prizes p ON p.id = py.prize_id
-              WHERE py.user_id = $1::uuid AND py.status IN ('PENDING','REVIEW','PAID')
+              WHERE py.user_id = $1::uuid AND py.status IN ('PENDING','REVIEW','PAID') AND p.kind <> 'EMPTY'
               ORDER BY py.created_at DESC LIMIT 50`,
             [user.id],
           );
@@ -148,25 +194,26 @@ export const Route = createFileRoute("/api/session")({
 
           const rewards = [
             ...rewardResult.rows.map((r) => ({
-              id: `${r.id}_reward`,
-              kind: r.kind === "FREE_SPIN" ? "FREE_SPIN" : r.kind,
-              title: r.title,
-              subtitle: r.subtitle ?? undefined,
-              amount: Number(r.amount) || undefined,
-              wonAt: r.created_at,
-              status: r.status === "PAID" ? "RECEIVED" : "PENDING",
-              payoutNote: r.status === "PAID" ? "Выдано." : "Ожидает выдачи администратором.",
+              id: `${r.id}_reward`, kind: r.kind === "FREE_SPIN" ? "FREE_SPIN" : r.kind, title: r.title,
+              subtitle: r.subtitle ?? undefined, amount: Number(r.amount) || undefined, wonAt: r.created_at,
+              status: r.status === "PAID" ? "RECEIVED" : "PENDING", payoutNote: r.status === "PAID" ? "Выдано." : "Ожидает выдачи администратором.",
             })),
             ...giftHistory.rows.map((g) => ({
-              id: `${g.id}_gift`,
-              kind: g.kind,
-              title: g.title,
-              amount: Number(g.amount) || undefined,
-              wonAt: g.created_at,
-              status: "RECEIVED" as const,
-              payoutNote: g.kind === "XP" ? `+${g.amount} XP` : g.kind === "FREE_SPIN" ? `+${g.amount} бесплатная прокрутка` : g.kind === "NOTHING" ? "Без награды." : `+${g.amount} Stars`,
+              id: `${g.id}_gift`, kind: g.kind, title: g.title, amount: Number(g.amount) || undefined, wonAt: g.created_at,
+              status: "RECEIVED" as const, payoutNote: g.kind === "XP" ? `+${g.amount} XP` : g.kind === "FREE_SPIN" ? `+${g.amount} бесплатная прокрутка` : g.kind === "NOTHING" ? "Без награды." : `+${g.amount} Stars`,
             })),
           ].sort((a, b) => new Date(b.wonAt).getTime() - new Date(a.wonAt).getTime()).slice(0, 60);
+
+          const leaderboardResult = await query<{
+            rank: number; user_id: string; username: string | null; spins_count: number; wins_count: number; stars_won: string; level: number;
+          }>(
+            `SELECT sl.rank, sl.user_id::text, u.username, sl.spins_count, sl.wins_count, sl.stars_won::text, u.level
+               FROM season_leaderboard sl
+               JOIN users u ON u.id = sl.user_id
+              WHERE sl.season_id = $1::uuid AND (sl.rank <= 10 OR sl.user_id = $2::uuid)
+              ORDER BY sl.rank ASC`,
+            [season.id, user.id],
+          );
 
           const withdrawalResult = await query<{ id: string; amount: string; status: string; created_at: string }>(
             `SELECT id::text, amount::text, status, created_at::text
@@ -186,10 +233,15 @@ export const Route = createFileRoute("/api/session")({
               user: {
                 id: user.id,
                 username: user.username ? `@${user.username.replace(/^@/, "")}` : "@username",
+                avatarUrl,
                 isParticipant: userState.is_participant,
                 isSubscribed: userState.is_subscribed,
                 xp: Number(user.xp ?? 0),
-                level: Math.max(1, Number(user.level ?? 1)),
+                level: levelInfo.level,
+                levelTitle: levelInfo.title,
+                levelProgress: levelInfo.progressPercent,
+                nextLevelXp: levelInfo.nextLevelXp,
+                levelBenefit: levelInfo.benefit,
               },
               season: {
                 id: season.id, code: season.code, title: season.name, state: season.state,
@@ -199,26 +251,24 @@ export const Route = createFileRoute("/api/session")({
               },
               stars: { amount: Math.max(0, Math.min(MAX_STARS, Number(userState.stars_balance ?? 0))), max: MAX_STARS },
               spin: {
-                freeSpins,
-                bonusFreeSpins,
-                freeSpinDate: freeToday.rows[0]?.exists ? new Date().toISOString() : undefined,
-                paidSpinPrice: season.paid_spin_price,
-                totalSpins: Number(spinStats.rows[0]?.total ?? 0),
+                freeSpins, bonusFreeSpins, freeSpinDate: freeToday.rows[0]?.exists ? new Date().toISOString() : undefined,
+                paidSpinPrice: season.paid_spin_price, totalSpins: Number(spinStats.rows[0]?.total ?? 0),
               },
               gift: {
                 state: giftedRecently ? "COOLDOWN" : live && userState.is_participant ? "AVAILABLE" : "LOCKED",
                 availableAt: nextGift.toISOString(),
               },
               prizes: prizeResult.rows.map((p) => ({
-                id: p.id,
-                kind: p.kind === "FREE_SPIN" ? "FREE_SPIN" : p.kind,
-                title: p.title,
-                subtitle: p.subtitle ?? undefined,
-                remaining: p.quantity_remaining,
-                total: p.quantity_total,
-                weight: 1,
+                id: p.id, kind: p.kind === "FREE_SPIN" ? "FREE_SPIN" : p.kind, title: p.title,
+                subtitle: p.subtitle ?? undefined, remaining: p.quantity_remaining, total: p.quantity_total,
+                weight: Number(p.metadata?.weight ?? 1), active: true, imageUrl: p.image_url ?? undefined,
               })),
               rewards,
+              leaderboard: leaderboardResult.rows.map((r) => ({
+                rank: r.rank, userId: r.user_id, username: r.username ? `@${r.username.replace(/^@/, "")}` : "@username",
+                spins: r.spins_count, wins: r.wins_count, starsWon: Number(r.stars_won ?? 0), level: Number(r.level ?? 1),
+                isCurrentUser: r.user_id === user.id,
+              })),
               withdrawals: withdrawalResult.rows.map((w) => ({
                 id: w.id, rewardTitle: "Telegram Stars", amount: Number(w.amount) || 0, requestedAt: w.created_at,
                 status: w.status === "PAID" ? "PAID" : ["FAILED","CANCELLED"].includes(w.status) ? "REJECTED" : "PENDING",
