@@ -1,11 +1,8 @@
 import type { SeasonState, SessionSnapshot } from "./types";
 
 export interface SeasonUi {
-  /** Season accepts spins/gifts. */
   isLive: boolean;
-  /** Season is over — no countdown, no attempts, payout phase copy. */
   isFinished: boolean;
-  /** Season is waiting to be started manually/scheduled. */
   isWaiting: boolean;
   canSpin: boolean;
   canClaimGift: boolean;
@@ -38,7 +35,6 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
 
   let countdownTarget: string | null = null;
   let countdownLabel: string | null = null;
-
   if (state === "SCHEDULED" && snapshot.season.startsAt) {
     countdownTarget = snapshot.season.startsAt;
     countdownLabel = "Сезон начнётся через";
@@ -51,7 +47,9 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     isLive: live,
     isFinished: finished,
     isWaiting: waiting,
-    canSpin: live && subscribed && participant,
+    // Participation is currently an administrative flag used for the gift and
+    // participant list. A subscribed user may spin in a live season.
+    canSpin: live && subscribed,
     canClaimGift: live && subscribed && participant,
     canWithdraw: state === "PAYOUT" || state === "CLOSED",
     headline: meta.headline,
@@ -64,41 +62,23 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
 
 export function errorCopy(code: string): string {
   switch (code) {
-    case "NO_ATTEMPTS":
-      return "Бесплатная попытка уже использована. Купи дополнительную прокрутку за Stars.";
-    case "INSUFFICIENT_STARS":
-      return "Недостаточно Stars для этого действия.";
-    case "STARS_FULL":
-      return "Баланс Stars заполнен. Потрать Stars, чтобы освободить место.";
-    case "SEASON_CLOSED":
-      return "Сезон завершён.";
-    case "SEASON_NOT_ACTIVE":
-      return "Сейчас нет активного сезона.";
-    case "SEASON_NOT_STARTED":
-      return "Сезон ещё не начался.";
-    case "NOT_SUBSCRIBED":
-      return "Подпишись на канал, чтобы участвовать.";
-    case "NOT_PARTICIPANT":
-      return "Ты пока не участвуешь в этом сезоне.";
-    case "NO_PRIZES":
-      return "В этом сезоне сейчас нет доступных призов.";
-    case "PAID_SPIN_DISABLED":
-      return "Платные прокрутки сейчас недоступны.";
-    case "PAYMENT_REQUIRED":
-      return "Оплата платной прокрутки ещё не завершена.";
-    case "PAYMENT_CANCELLED":
-      return "Оплата отменена.";
-    case "PAYMENT_FAILED":
-      return "Не удалось завершить оплату Telegram Stars.";
-    case "PAYMENT_PROCESSING":
-      return "Платёж принят. Результат прокрутки ещё обрабатывается.";
-    case "GIFT_UNAVAILABLE":
-      return "Ежедневный подарок сейчас недоступен.";
-    case "BELOW_MINIMUM":
-      return "Сумма меньше минимальной для вывода.";
-    case "NETWORK":
-      return "Не удалось связаться с сервером. Попробуй ещё раз.";
-    default:
-      return `Ошибка операции (${code}). Попробуй ещё раз.`;
+    case "NO_ATTEMPTS": return "Бесплатная попытка уже использована. Купи дополнительную прокрутку за Stars.";
+    case "INSUFFICIENT_STARS": return "Недостаточно Stars для этого действия.";
+    case "STARS_FULL": return "Баланс Stars заполнен. Потрать Stars, чтобы освободить место.";
+    case "SEASON_CLOSED": return "Сезон завершён.";
+    case "SEASON_NOT_ACTIVE": return "Сейчас нет активного сезона.";
+    case "SEASON_NOT_STARTED": return "Сезон ещё не начался.";
+    case "NOT_SUBSCRIBED": return "Подпишись на канал, чтобы участвовать.";
+    case "NOT_PARTICIPANT": return "Ты пока не участвуешь в этом сезоне.";
+    case "NO_PRIZES": return "В этом сезоне сейчас нет доступных призов.";
+    case "PAID_SPIN_DISABLED": return "Платные прокрутки сейчас недоступны.";
+    case "PAYMENT_REQUIRED": return "Оплата платной прокрутки ещё не завершена.";
+    case "PAYMENT_CANCELLED": return "Оплата отменена.";
+    case "PAYMENT_FAILED": return "Не удалось завершить оплату Telegram Stars.";
+    case "PAYMENT_PROCESSING": return "Платёж принят. Результат прокрутки ещё обрабатывается.";
+    case "GIFT_UNAVAILABLE": return "Ежедневный подарок сейчас недоступен.";
+    case "BELOW_MINIMUM": return "Сумма меньше минимальной для вывода.";
+    case "NETWORK": return "Не удалось связаться с сервером. Попробуй ещё раз.";
+    default: return `Ошибка операции (${code}). Попробуй ещё раз.`;
   }
 }
