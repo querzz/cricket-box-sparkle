@@ -12,7 +12,7 @@ export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [
       { title: "Настройки — CRICKET BOX" },
-      { name: "description", content: "Предпросмотр состояний сезона и тестовые настройки Cricket Box." },
+      { name: "description", content: "Настройки профиля и параметры Cricket Box." },
     ],
   }),
   component: SettingsScreen,
@@ -47,9 +47,7 @@ function SettingsScreen() {
 
   return (
     <AppShell title="Настройки" back="/profile" nav={false}>
-      <NoticeBar>Инструменты для предпросмотра. В рабочей версии эти значения приходят только с backend.</NoticeBar>
-
-      <GlassCard className="mt-4 px-4 py-4">
+      <GlassCard className="px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Состояние сезона</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {states.map((state) => (
