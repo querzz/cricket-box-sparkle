@@ -44,21 +44,32 @@ try {
   await client.query(schema);
 
   await client.query(`
-    CREATE TABLE IF NOT EXISTS user_state (
-      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      stars_balance INTEGER NOT NULL DEFAULT 125 CHECK (stars_balance >= 0 AND stars_balance <= 500),
-      is_subscribed BOOLEAN NOT NULL DEFAULT TRUE,
-      is_participant BOOLEAN NOT NULL DEFAULT TRUE,
-      daily_gift_claimed_at TIMESTAMPTZ,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    ALTER TABLE user_state
+      ADD COLUMN IF NOT EXISTS bonus_free_spins INTEGER NOT NULL DEFAULT 0;
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS daily_gift_claims (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('NOTHING','STARS','FREE_SPIN','XP')),
+      amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
+      title TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time
+      ON daily_gift_claims(user_id, created_at DESC)
+  `);
+  console.log("✅ Persistent user state and daily gift storage are ready.");
+
   await client.query(`
     INSERT INTO user_state (user_id)
     SELECT id FROM users
     ON CONFLICT (user_id) DO NOTHING
   `);
-  console.log("✅ Persistent user state is ready.");
 
   const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
   const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS ?? "6537228449");
