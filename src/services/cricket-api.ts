@@ -7,6 +7,7 @@ type BackendSessionResponse = { ok: boolean; snapshot?: SessionSnapshot; code?: 
 type BackendSpinResponse = { ok: boolean; reward?: Reward; spin?: { id: string }; code?: string };
 type BackendGiftResponse = { ok: boolean; reward?: Reward; code?: string };
 type BackendWithdrawalResponse = { ok: boolean; withdrawal?: Withdrawal; code?: string; minimum?: number };
+type BackendInvoiceResponse = { ok: boolean; invoiceUrl?: string; code?: string; price?: number };
 
 function initData() {
   if (typeof window === "undefined") return "";
@@ -27,7 +28,7 @@ function localPersist(value: SessionSnapshot) { if (typeof localStorage !== "und
 let state = localStateLoad();
 const ok = <T>(data: T): ServiceResult<T> => ({ ok: true, data });
 const fail = (code: ServiceError["code"], message: string): ServiceResult<never> => ({ ok: false, error: { code, message } });
-const mapBackendError = (code: string): ServiceError => code === "NOT_SUBSCRIBED" ? { code: "NOT_SUBSCRIBED", message: "Подпишись на канал, чтобы участвовать." } : code === "NO_ATTEMPTS" ? { code: "NO_ATTEMPTS", message: "Сегодняшняя бесплатная попытка уже использована." } : code === "BELOW_MINIMUM" ? { code: "BELOW_MINIMUM", message: "Сумма ниже минимального порога вывода." } : code === "INSUFFICIENT_STARS" ? { code: "INSUFFICIENT_STARS", message: "Недостаточно Stars." } : code === "SEASON_NOT_ACTIVE" || code === "NO_SEASON" ? { code: "SEASON_CLOSED", message: "Сейчас нет активного сезона." } : code === "GIFT_UNAVAILABLE" ? { code: "GIFT_UNAVAILABLE", message: "Подарок сейчас недоступен." } : { code: "NETWORK", message: "Не удалось выполнить операцию. Попробуй ещё раз." };
+const mapBackendError = (code: string): ServiceError => code === "NOT_SUBSCRIBED" ? { code: "NOT_SUBSCRIBED", message: "Подпишись на канал, чтобы участвовать." } : code === "NO_ATTEMPTS" ? { code: "NO_ATTEMPTS", message: "Сегодняшняя бесплатная попытка уже использована." } : code === "BELOW_MINIMUM" ? { code: "BELOW_MINIMUM", message: "Сумма ниже минимального порога вывода." } : code === "INSUFFICIENT_STARS" ? { code: "INSUFFICIENT_STARS", message: "Недостаточно Stars." } : code === "SEASON_NOT_ACTIVE" || code === "NO_SEASON" ? { code: "SEASON_CLOSED", message: "Сейчас нет активного сезона." } : code === "GIFT_UNAVAILABLE" ? { code: "GIFT_UNAVAILABLE", message: "Подарок сейчас недоступен." } : code === "PAID_SPIN_DISABLED" ? { code: "SEASON_CLOSED", message: "Платные прокрутки сейчас недоступны." } : code === "PAYMENT_REQUIRED" ? { code: "INSUFFICIENT_STARS", message: "Оплата платной прокрутки не завершена." } : code === "NO_PRIZES" ? { code: "SEASON_CLOSED", message: "Призы в этом сезоне закончились." } : { code: "NETWORK", message: "Не удалось выполнить операцию. Попробуй ещё раз." };
 
 async function backendSession(): Promise<ServiceResult<SessionSnapshot>> {
   try {
@@ -37,6 +38,7 @@ async function backendSession(): Promise<ServiceResult<SessionSnapshot>> {
     return ok(data.snapshot);
   } catch { return fail("NETWORK", "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз."); }
 }
+
 async function backendFreeSpin(): Promise<ServiceResult<Reward>> {
   try {
     const response = await fetch("/api/spin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), paid: false }) });
@@ -44,6 +46,47 @@ async function backendFreeSpin(): Promise<ServiceResult<Reward>> {
     if (!response.ok || !data.ok || !data.reward) return { ok: false, error: mapBackendError(data.code ?? "SPIN_FAILED") };
     return ok(data.reward);
   } catch { return fail("NETWORK", "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз."); }
+}
+
+async function openStarsInvoice(price: number): Promise<ServiceResult<Reward>> {
+  if (typeof window === "undefined") return fail("NETWORK", "Оплата доступна только внутри Telegram.");
+  const tg = (window as Window & { Telegram?: { WebApp?: { openInvoice?: (url: string, callback?: (status: string) => void) => void } } }).Telegram?.WebApp;
+  if (!tg?.openInvoice) return fail("NETWORK", "Эта версия Telegram не поддерживает оплату внутри Mini App.");
+
+  try {
+    const response = await fetch("/api/payment/invoice", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ initData: initData() }),
+    });
+    const data = (await response.json()) as BackendInvoiceResponse;
+    if (!response.ok || !data.ok || !data.invoiceUrl) return { ok: false, error: mapBackendError(data.code ?? "INVOICE_FAILED") };
+    if (Number(data.price) !== price) return fail("NETWORK", "Цена прокрутки изменилась. Обнови страницу и попробуй снова.");
+
+    const status = await new Promise<string>((resolve) => {
+      let settled = false;
+      const finish = (value: string) => { if (!settled) { settled = true; resolve(value); } };
+      tg.openInvoice?.(data.invoiceUrl!, (value) => finish(value));
+      window.setTimeout(() => finish("timeout"), 60000);
+    });
+    if (status === "cancelled") return fail("INSUFFICIENT_STARS", "Оплата отменена.");
+    if (status === "failed") return fail("NETWORK", "Telegram не смог завершить оплату.");
+    if (status === "timeout") return fail("NETWORK", "Оплата слишком долго обрабатывается. Обнови экран через несколько секунд.");
+
+    const before = await backendSession();
+    const beforeCount = before.ok ? before.data.spin.totalSpins : -1;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const session = await backendSession();
+      if (!session.ok) continue;
+      const latest = session.data.rewards[0];
+      if (session.data.spin.totalSpins > beforeCount && latest) return ok(latest);
+      if (latest && attempt >= 2) return ok(latest);
+    }
+    return fail("NETWORK", "Платёж получен, но результат ещё обрабатывается. Открой экран снова через несколько секунд.");
+  } catch {
+    return fail("NETWORK", "Не удалось открыть оплату Telegram Stars.");
+  }
 }
 
 export interface SpinOptions { paid?: boolean }
@@ -55,7 +98,18 @@ export const cricketApi = {
   },
   async spin(options: SpinOptions = {}): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
     if (inTelegram()) {
-      if (options.paid) return fail("INSUFFICIENT_STARS", "Платная прокрутка будет доступна после подключения Telegram Stars оплаты.");
+      if (options.paid) {
+        const session = await backendSession();
+        if (!session.ok) return session;
+        const price = session.data.spin.paidSpinPrice;
+        if (price === null) return fail("SEASON_CLOSED", "Платные прокрутки сейчас недоступны.");
+        if (session.data.stars.amount < price) return fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки.");
+        const result = await openStarsInvoice(price);
+        if (!result.ok) return result;
+        const refreshed = await backendSession();
+        if (!refreshed.ok) return refreshed;
+        return ok({ reward: result.data, snapshot: refreshed.data });
+      }
       const result = await backendFreeSpin();
       if (!result.ok) return result;
       const session = await backendSession();
@@ -67,7 +121,7 @@ export const cricketApi = {
     if (seasonState !== "ACTIVE" && seasonState !== "ENDING") return fail("SEASON_CLOSED", "Сезон завершён.");
     if (!state.user.isSubscribed) return fail("NOT_SUBSCRIBED", "Подпишись на канал, чтобы участвовать.");
     if (!options.paid && state.spin.freeSpins <= 0) return fail("NO_ATTEMPTS", "Сегодняшняя бесплатная попытка уже использована.");
-    if (options.paid) { const price = state.spin.paidSpinPrice; if (price === null || state.stars.amount < price) return fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки."); state.stars.amount -= price; } else state.spin.freeSpins -= 1;
+    if (options.paid) { const localPrice = state.spin.paidSpinPrice; if (localPrice === null || state.stars.amount < localPrice) return fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки."); state.stars.amount -= localPrice; } else state.spin.freeSpins -= 1;
     const eligible = state.prizes.filter((p) => p.remaining > 0);
     if (!eligible.length) return fail("NO_ATTEMPTS", "Подходящих призов больше нет.");
     const total = eligible.reduce((sum, p) => sum + p.remaining, 0); let cursor = Math.floor(Math.random() * total); let picked = eligible[eligible.length - 1]!;
