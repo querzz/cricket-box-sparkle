@@ -27,12 +27,12 @@ function hex(buffer: ArrayBuffer): string {
 async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    key,
+    key as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
+  return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data) as BufferSource);
 }
 
 /** Validate Telegram Mini App initData on the server before trusting user fields. */
