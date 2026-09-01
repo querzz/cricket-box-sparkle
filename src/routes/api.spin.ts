@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
+import { appendStarsLedger } from "@/server/stars-ledger";
 
 const MAX_STARS = 500;
 const MAX_BONUS_SPINS = 1000;
@@ -91,7 +92,33 @@ export const Route = createFileRoute("/api/spin")({
 
           const rewardStars = picked.kind === "STARS" ? Math.max(0, Math.floor(Number(picked.amount) || 0)) : 0;
           const credited = rewardStars > 0 ? Math.min(rewardStars, Math.max(0, MAX_STARS - Number(state.stars_balance ?? 0))) : 0;
-          if (credited > 0) await client.query(`UPDATE user_state SET stars_balance = stars_balance + $2, updated_at = now() WHERE user_id = $1::uuid`, [user.rows[0].id, credited]);
+          const overflow = Math.max(0, rewardStars - credited);
+          if (rewardStars > 0) {
+            await appendStarsLedger(client, {
+              userId: user.rows[0].id,
+              seasonId: currentSeason.id,
+              spinId: spin.rows[0].id,
+              type: "REWARD",
+              amount: rewardStars,
+              balanceDelta: credited,
+              referenceId: picked.id,
+              idempotencyKey: `spin:${spin.rows[0].id}:reward`,
+              metadata: { requestedAmount: rewardStars, creditedAmount: credited, overflowAmount: overflow, source: "FREE_SPIN" },
+            });
+            if (overflow > 0) {
+              await appendStarsLedger(client, {
+                userId: user.rows[0].id,
+                seasonId: currentSeason.id,
+                spinId: spin.rows[0].id,
+                type: "CAPPED_OVERFLOW_BURNED",
+                amount: -overflow,
+                balanceDelta: 0,
+                referenceId: picked.id,
+                idempotencyKey: `spin:${spin.rows[0].id}:overflow`,
+                metadata: { requestedAmount: rewardStars, creditedAmount: credited, overflowAmount: overflow, source: "FREE_SPIN" },
+              });
+            }
+          }
 
           let payoutId: string | null = null;
           if (picked.kind !== "EMPTY") {
@@ -103,7 +130,7 @@ export const Route = createFileRoute("/api/spin")({
             payoutId = payout.rows[0].id;
           }
 
-          await client.query(`INSERT INTO audit_logs (action, entity_type, entity_id, after_data) VALUES ('SPIN_COMPLETED', 'spin', $1, $2::jsonb)`, [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: currentSeason.id, prizeId: picked.id, type: "FREE", usedDaily: useDaily, usedBonus: useBonus, rewardKind: picked.kind, creditedStars: credited })]);
+          await client.query(`INSERT INTO audit_logs (action, entity_type, entity_id, after_data) VALUES ('SPIN_COMPLETED', 'spin', $1, $2::jsonb)`, [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: currentSeason.id, prizeId: picked.id, type: "FREE", usedDaily: useDaily, usedBonus: useBonus, rewardKind: picked.kind, creditedStars: credited, overflowStars: overflow })]);
 
           return { spinId: spin.rows[0].id, payoutId, createdAt: spin.rows[0].created_at, prize: picked, credited, rewardStars };
         });
