@@ -157,6 +157,47 @@ CREATE TABLE IF NOT EXISTS star_transactions (
   processed_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS stars_ledger (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  season_id UUID REFERENCES seasons(id) ON DELETE SET NULL,
+  spin_id UUID REFERENCES spins(id) ON DELETE SET NULL,
+  type TEXT NOT NULL CHECK (type IN ('OPENING_BALANCE','REWARD','DAILY_GIFT','SPIN_SPEND','WITHDRAWAL','REFUND_REVERSAL','CAPPED_OVERFLOW_BURNED','ADMIN_CORRECTION','ADJUSTMENT')),
+  amount INTEGER NOT NULL,
+  reference_id TEXT,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stars_ledger_user_time ON stars_ledger(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stars_ledger_season_time ON stars_ledger(season_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION prevent_stars_ledger_mutation() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'STARS_LEDGER_APPEND_ONLY';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS stars_ledger_no_update_delete ON stars_ledger;
+CREATE TRIGGER stars_ledger_no_update_delete
+BEFORE UPDATE OR DELETE ON stars_ledger
+FOR EACH ROW EXECUTE FUNCTION prevent_stars_ledger_mutation();
+
+CREATE OR REPLACE FUNCTION seed_stars_ledger_on_state_insert() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO stars_ledger (user_id, type, amount, idempotency_key, metadata)
+  VALUES (NEW.user_id, 'OPENING_BALANCE', NEW.stars_balance, 'opening:' || NEW.user_id::text, jsonb_build_object('source','user_state_insert'))
+  ON CONFLICT (idempotency_key) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS user_state_seed_stars_ledger ON user_state;
+CREATE TRIGGER user_state_seed_stars_ledger
+AFTER INSERT ON user_state
+FOR EACH ROW EXECUTE FUNCTION seed_stars_ledger_on_state_insert();
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
