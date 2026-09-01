@@ -29,7 +29,6 @@ export interface User {
 }
 
 export interface StarsBalance {
-  /** User-facing Telegram Stars balance tracked by the product. */
   amount: number;
   max: number;
 }
@@ -41,7 +40,6 @@ export interface Season {
   state: SeasonState;
   startsAt: string;
   endsAt: string;
-  /** Price of one extra spin, in Telegram Stars. Null when paid spins are off. */
   paidSpinPrice: number | null;
 }
 
@@ -52,7 +50,6 @@ export interface Prize {
   subtitle?: string | undefined;
   remaining: number;
   total: number;
-  /** Weight per remaining inventory unit. MVP uses finite inventory with equal unit weight. */
   weight?: number | undefined;
 }
 
@@ -78,7 +75,6 @@ export interface SpinState {
 
 export interface Gift {
   state: GiftState;
-  /** ISO timestamp when the next gift unlocks. */
   availableAt: string;
 }
 
@@ -113,17 +109,22 @@ export interface ServiceError {
     | "INSUFFICIENT_STARS"
     | "STARS_FULL"
     | "SEASON_CLOSED"
+    | "SEASON_NOT_ACTIVE"
     | "SEASON_NOT_STARTED"
     | "NOT_SUBSCRIBED"
+    | "NOT_PARTICIPANT"
+    | "NO_PRIZES"
     | "GIFT_UNAVAILABLE"
     | "GIFT_COOLDOWN"
     | "GIFT_BALANCE_FULL"
-    | "BELOW_MINIMUM"
     | "WITHDRAW_NOT_OPEN"
     | "WITHDRAWAL_PENDING"
+    | "WITHDRAW_FAILED"
+    | "BELOW_MINIMUM"
     | "PAYMENT_REQUIRED"
-    | "NO_PRIZES"
-    | "NOT_PARTICIPANT"
+    | "PAYMENT_CANCELLED"
+    | "PAYMENT_FAILED"
+    | "PAYMENT_PROCESSING"
     | "NETWORK";
   message: string;
 }
