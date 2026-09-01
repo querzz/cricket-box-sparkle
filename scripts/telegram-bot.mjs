@@ -98,22 +98,31 @@ async function validatePreCheckout(query) {
   if (!payload.startsWith("paidspin:v1:") || currency !== "XTR" || !Number.isSafeInteger(amount) || amount <= 0) {
     return { ok: false, error: "Недействительный платёж." };
   }
-  const [, , userId, seasonId] = payload.split(":");
+  const parts = payload.split(":");
+  const userId = parts[2];
+  const seasonId = parts[3];
+  if (!userId || !seasonId) return { ok: false, error: "Недействительный заказ." };
+
   const db = await paymentDbQuery(
-    `SELECT st.id::text, st.amount, st.status, u.telegram_id::text, s.state, s.paid_spin_price
+    `SELECT st.amount,
+            st.status,
+            st.user_id::text AS user_id,
+            u.telegram_id::text AS telegram_id,
+            s.id::text AS season_id,
+            s.state,
+            s.paid_spin_price
        FROM star_transactions st
        JOIN users u ON u.id = st.user_id
-       JOIN seasons s ON s.id::text = split_part(st.payload->>'payload', ':', 4)
+       JOIN seasons s ON s.id::text = $2
       WHERE st.payload->>'payload' = $1
       ORDER BY st.created_at DESC
       LIMIT 1`,
-    [payload],
+    [payload, seasonId],
   );
   const row = db.rows[0];
-  if (!row || row.status !== "PENDING" || row.telegram_id !== String(query.from?.id ?? "") || row.amount !== amount || Number(row.paid_spin_price) !== amount || !["ACTIVE", "ENDING"].includes(row.state) || userId !== row.telegram_id && !userId) {
+  if (!row || row.status !== "PENDING" || row.user_id !== userId || row.season_id !== seasonId || row.telegram_id !== String(query.from?.id ?? "") || Number(row.amount) !== amount || Number(row.paid_spin_price) !== amount || !["ACTIVE", "ENDING"].includes(row.state)) {
     return { ok: false, error: "Заказ недействителен или сезон уже недоступен." };
   }
-  if (seasonId !== payload.split(":")[3]) return { ok: false, error: "Недействительный заказ." };
   return { ok: true };
 }
 
