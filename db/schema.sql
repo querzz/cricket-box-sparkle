@@ -161,6 +161,3 @@ CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(te
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
 CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season
-  ON star_transactions (user_id, (payload->>'seasonId'))
-  WHERE status = 'PENDING' AND payload->>'type' = 'PAID_SPIN';
