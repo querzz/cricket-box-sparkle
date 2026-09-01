@@ -25,7 +25,8 @@ export const Route = createFileRoute("/api/withdraw")({
 
         const withdrawal = await withTransaction(async (client) => {
           const user = await client.query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
-          if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
+          const userRow = user.rows[0];
+          if (!userRow) throw new Error("USER_NOT_FOUND");
 
           const season = await client.query<{ state: string }>(
             `SELECT state FROM seasons
@@ -40,8 +41,8 @@ export const Route = createFileRoute("/api/withdraw")({
             throw new Error("WITHDRAW_NOT_OPEN");
           }
 
-          await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [user.rows[0].id]);
-          const state = await client.query<{ stars_balance: number }>(`SELECT stars_balance FROM user_state WHERE user_id = $1::uuid FOR UPDATE`, [user.rows[0].id]);
+          await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [userRow.id]);
+          const state = await client.query<{ stars_balance: number }>(`SELECT stars_balance FROM user_state WHERE user_id = $1::uuid FOR UPDATE`, [userRow.id]);
           const balance = Number(state.rows[0]?.stars_balance ?? 0);
 
           const pending = await client.query<{ id: string; amount: string; created_at: string }>(
@@ -49,36 +50,39 @@ export const Route = createFileRoute("/api/withdraw")({
               WHERE user_id = $1::uuid AND kind = 'STARS' AND note = 'WITHDRAWAL_REQUEST'
                 AND status IN ('PENDING','REVIEW')
               ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-            [user.rows[0].id],
+            [userRow.id],
           );
-          if (pending.rows[0]) {
-            if (Number(pending.rows[0].amount) === amount) return pending.rows[0];
+          const pendingRow = pending.rows[0];
+          if (pendingRow) {
+            if (Number(pendingRow.amount) === amount) return pendingRow;
             throw new Error("WITHDRAWAL_PENDING");
           }
 
           if (amount > balance) throw new Error("INSUFFICIENT_STARS");
 
-          const payout = await client.query<{ id: string; created_at: string }>(
+          const payout = await client.query<{ id: string; created_at: string; amount: string }>(
             `INSERT INTO payouts (user_id, kind, amount, currency, status, note)
              VALUES ($1::uuid, 'STARS', $2, 'XTR', 'PENDING', 'WITHDRAWAL_REQUEST')
-             RETURNING id::text, created_at::text`,
-            [user.rows[0].id, amount],
+             RETURNING id::text, amount::text, created_at::text`,
+            [userRow.id, amount],
           );
+          const payoutRow = payout.rows[0];
+          if (!payoutRow) throw new Error("WITHDRAW_FAILED");
 
           await appendStarsLedger(client, {
-            userId: user.rows[0].id,
+            userId: userRow.id,
             type: "WITHDRAWAL",
             amount: -amount,
             balanceDelta: -amount,
-            referenceId: payout.rows[0].id,
-            idempotencyKey: `withdrawal:${payout.rows[0].id}`,
+            referenceId: payoutRow.id,
+            idempotencyKey: `withdrawal:${payoutRow.id}`,
             metadata: { amount, seasonState },
           });
           await client.query(
             `INSERT INTO audit_logs (action, entity_type, entity_id, after_data) VALUES ('WITHDRAWAL_REQUESTED','payout',$1,$2::jsonb)`,
-            [payout.rows[0].id, JSON.stringify({ userId: user.rows[0].id, amount, seasonState })],
+            [payoutRow.id, JSON.stringify({ userId: userRow.id, amount, seasonState })],
           );
-          return payout.rows[0];
+          return payoutRow;
         });
 
         return Response.json({ ok: true, withdrawal: { id: withdrawal.id, amount: Number(withdrawal.amount), requestedAt: withdrawal.created_at, status: "PENDING" }, reused: true });
