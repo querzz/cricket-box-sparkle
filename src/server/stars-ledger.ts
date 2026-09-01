@@ -37,26 +37,6 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
     [input.userId],
   );
 
-  const existing = await client.query<{ id: string }>(
-    `SELECT id::text
-       FROM stars_ledger
-      WHERE idempotency_key = $1
-      LIMIT 1`,
-    [input.idempotencyKey],
-  );
-
-  if (existing.rows[0]) {
-    const state = await client.query<{ stars_balance: number }>(
-      `SELECT stars_balance
-         FROM user_state
-        WHERE user_id = $1::uuid
-        FOR UPDATE`,
-      [input.userId],
-    );
-    return { inserted: false, balance: Number(state.rows[0]?.stars_balance ?? 0) };
-  }
-
-  const balanceDelta = input.balanceDelta ?? input.amount;
   const state = await client.query<{ stars_balance: number }>(
     `SELECT stars_balance
        FROM user_state
@@ -65,13 +45,17 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
     [input.userId],
   );
   const currentBalance = Number(state.rows[0]?.stars_balance ?? 0);
+
+  const balanceDelta = input.balanceDelta ?? input.amount;
   const nextBalance = currentBalance + balanceDelta;
   if (nextBalance < 0 || nextBalance > STARS_MAX_BALANCE) throw new Error("STARS_BALANCE_LIMIT");
 
-  await client.query(
+  const inserted = await client.query<{ id: string }>(
     `INSERT INTO stars_ledger
       (user_id, season_id, spin_id, type, amount, reference_id, idempotency_key, metadata)
-     VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb)`,
+     VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING id::text`,
     [
       input.userId,
       input.seasonId ?? null,
@@ -84,6 +68,17 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
     ],
   );
 
+  if (!inserted.rows[0]) {
+    const latest = await client.query<{ stars_balance: number }>(
+      `SELECT stars_balance
+         FROM user_state
+        WHERE user_id = $1::uuid
+        FOR UPDATE`,
+      [input.userId],
+    );
+    return { inserted: false, balance: Number(latest.rows[0]?.stars_balance ?? 0) };
+  }
+
   if (balanceDelta !== 0) {
     await client.query(
       `UPDATE user_state
@@ -92,10 +87,7 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
       [input.userId, nextBalance],
     );
   } else {
-    await client.query(
-      `UPDATE user_state SET updated_at = now() WHERE user_id = $1::uuid`,
-      [input.userId],
-    );
+    await client.query(`UPDATE user_state SET updated_at = now() WHERE user_id = $1::uuid`, [input.userId]);
   }
 
   return { inserted: true, balance: nextBalance };
