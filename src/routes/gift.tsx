@@ -37,29 +37,30 @@ function GiftScreen() {
 
   const ui = seasonUi(snapshot);
   const balanceFull = snapshot.stars.amount >= snapshot.stars.max;
-  const available = snapshot.gift.state === "AVAILABLE" && ui.canClaimGift && !balanceFull;
+  const available = snapshot.gift.state === "AVAILABLE" && ui.canClaimGift;
 
   const open = async () => {
     if (busy || !available) return;
-    setBusy(true);
-    setOpening(true);
-    const result = await claimGift();
-    if (isServiceError(result)) {
-      toast.error(errorCopy(result.code));
-      setOpening(false);
-      setBusy(false);
-      return;
+    setBusy(true); setOpening(true);
+    try {
+      const result = await claimGift();
+      if (isServiceError(result)) {
+        toast.error(errorCopy(result.code));
+        return;
+      }
+      setTimeout(() => setReward(result), 400);
+    } finally {
+      window.setTimeout(() => { setOpening(false); setBusy(false); }, 450);
     }
-    setTimeout(() => { setReward(result); setOpening(false); setBusy(false); }, 400);
   };
 
-  const note = balanceFull
-    ? "Баланс CRICKET BOX Stars заполнен. Потрать Stars или выведи накопленное после завершения сезона, чтобы освободить место."
-    : snapshot.gift.state === "COOLDOWN"
-      ? "Подарок уже получен. Возвращайся позже."
-      : available
-        ? "Открой подарок и забери свои Stars."
-        : ui.note;
+  let description = ui.note;
+  if (available) description = "Открой подарок и получи Stars на баланс CRICKET BOX.";
+  else if (snapshot.gift.state === "COOLDOWN") description = "Подарок уже получен. Возвращайся после окончания таймера.";
+  else if (balanceFull) description = "Баланс 500/500 ⭐. Освободи место после завершения сезона через вывод доступных Stars.";
+  else if (!snapshot.user.isSubscribed) description = "Подпишись на канал, чтобы открыть ежедневный подарок.";
+  else if (!snapshot.user.isParticipant) description = "Для подарка нужно участвовать в текущем сезоне.";
+  else if (!ui.isLive) description = ui.isWaiting ? "Подарок откроется после старта сезона." : "Подарок закрыт вместе с сезоном.";
 
   return (
     <AppShell title="Твой подарок" back="/">
@@ -73,16 +74,16 @@ function GiftScreen() {
 
       <div className="mt-4 text-center">
         <h2 className="font-display text-xl uppercase tracking-[0.14em]">Ежедневный подарок</h2>
-        <p className="mt-2 text-xs text-muted-foreground">{note}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{description}</p>
       </div>
 
       {snapshot.gift.state === "COOLDOWN" && <div className="mt-5 flex justify-center"><Countdown target={snapshot.gift.availableAt} label="Следующий подарок через" /></div>}
 
       <div className="mt-7 space-y-3">
         <PrimaryButton fullWidth size="lg" loading={busy} disabled={!available} onClick={() => void open()}>{available ? "Открыть" : snapshot.gift.state === "COOLDOWN" ? "Получено" : balanceFull ? "Баланс заполнен" : "Недоступно"}</PrimaryButton>
-        {balanceFull && <NoticeBar tone="warning">Лимит баланса — {snapshot.stars.max} Stars. Ежедневный подарок снова станет доступен после освобождения места.</NoticeBar>}
-        {!balanceFull && !ui.canClaimGift && <NoticeBar tone="warning">Только активные участники текущего сезона могут получать ежедневный подарок.</NoticeBar>}
-        <p className="text-center text-[11px] text-muted-foreground">+15 Stars · не чаще одного раза в 24 часа</p>
+        {balanceFull && <NoticeBar tone="warning">Ежедневный подарок не используется для обычной прокрутки. При полном балансе сначала освободи место выводом Stars после завершения сезона.</NoticeBar>}
+        {!ui.canClaimGift && !balanceFull && snapshot.gift.state !== "COOLDOWN" && <NoticeBar tone="warning">Проверь подписку, участие и состояние текущего сезона.</NoticeBar>}
+        <p className="text-center text-[11px] text-muted-foreground">Доступен раз в 24 часа · только для участников активного сезона</p>
       </div>
       <RewardModal reward={reward} onClaim={() => setReward(null)} />
     </AppShell>
