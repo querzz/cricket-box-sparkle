@@ -16,14 +16,14 @@ export const Route = createFileRoute("/api/payment/invoice")({
         const telegramId = validated.user?.id;
         if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
 
-        const user = await query<{ id: string; first_name: string }>(
-          `SELECT id::text, first_name FROM users WHERE telegram_id = $1 LIMIT 1`,
+        const user = await query<{ id: string }>(
+          `SELECT id::text FROM users WHERE telegram_id = $1 LIMIT 1`,
           [telegramId],
         );
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
 
-        const season = await query<{ id: string; code: string; state: string; paid_spin_price: number; daily_free_spin: boolean }>(
-          `SELECT id::text, code, state, paid_spin_price, daily_free_spin
+        const season = await query<{ id: string; code: string; state: string; paid_spin_price: number }>(
+          `SELECT id::text, code, state, paid_spin_price
              FROM seasons
             WHERE state IN ('ACTIVE','ENDING')
             ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END, created_at DESC
@@ -31,6 +31,18 @@ export const Route = createFileRoute("/api/payment/invoice")({
         );
         const current = season.rows[0];
         if (!current) return Response.json({ ok: false, code: "SEASON_NOT_ACTIVE" }, { status: 409 });
+
+        const prizeAvailability = await query<{ total_remaining: string }>(
+          `SELECT COALESCE(SUM(quantity_remaining), 0)::text AS total_remaining
+             FROM prizes
+            WHERE season_id = $1::uuid
+              AND quantity_remaining > 0`,
+          [current.id],
+        );
+        if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) {
+          return Response.json({ ok: false, code: "NO_PRIZES" }, { status: 409 });
+        }
+
         const price = Number(current.paid_spin_price);
         if (!Number.isInteger(price) || price <= 0) return Response.json({ ok: false, code: "PAID_SPIN_DISABLED" }, { status: 409 });
 
