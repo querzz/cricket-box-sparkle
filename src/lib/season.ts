@@ -33,6 +33,7 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const finished = state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED";
   const waiting = state === "DRAFT" || state === "SCHEDULED";
   const subscribed = snapshot.user.isSubscribed;
+  const participant = snapshot.user.isParticipant;
   const meta = headlines[state];
 
   let countdownTarget: string | null = null;
@@ -50,8 +51,8 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     isLive: live,
     isFinished: finished,
     isWaiting: waiting,
-    canSpin: live && subscribed,
-    canClaimGift: live && subscribed && snapshot.user.isParticipant,
+    canSpin: live && subscribed && participant,
+    canClaimGift: live && subscribed && participant,
     canWithdraw: state === "PAYOUT" || state === "CLOSED",
     headline: meta.headline,
     note: meta.note,
@@ -71,15 +72,33 @@ export function errorCopy(code: string): string {
       return "Баланс Stars заполнен. Потрать Stars, чтобы освободить место.";
     case "SEASON_CLOSED":
       return "Сезон завершён.";
+    case "SEASON_NOT_ACTIVE":
+      return "Сейчас нет активного сезона.";
     case "SEASON_NOT_STARTED":
       return "Сезон ещё не начался.";
     case "NOT_SUBSCRIBED":
       return "Подпишись на канал, чтобы участвовать.";
+    case "NOT_PARTICIPANT":
+      return "Ты пока не участвуешь в этом сезоне.";
+    case "NO_PRIZES":
+      return "В этом сезоне сейчас нет доступных призов.";
+    case "PAID_SPIN_DISABLED":
+      return "Платные прокрутки сейчас недоступны.";
+    case "PAYMENT_REQUIRED":
+      return "Оплата платной прокрутки ещё не завершена.";
+    case "PAYMENT_CANCELLED":
+      return "Оплата отменена.";
+    case "PAYMENT_FAILED":
+      return "Не удалось завершить оплату Telegram Stars.";
+    case "PAYMENT_PROCESSING":
+      return "Платёж принят. Результат прокрутки ещё обрабатывается.";
     case "GIFT_UNAVAILABLE":
       return "Ежедневный подарок сейчас недоступен.";
     case "BELOW_MINIMUM":
       return "Сумма меньше минимальной для вывода.";
+    case "NETWORK":
+      return "Не удалось связаться с сервером. Попробуй ещё раз.";
     default:
-      return "Что-то пошло не так. Попробуй ещё раз.";
+      return `Ошибка операции (${code}). Попробуй ещё раз.`;
   }
 }
