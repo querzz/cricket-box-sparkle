@@ -67,10 +67,7 @@ try {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time
-      ON daily_gift_claims(user_id, created_at DESC)
-  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id, created_at DESC)`);
 
   await client.query(`
     WITH ranked AS (
@@ -80,83 +77,68 @@ try {
                ORDER BY created_at DESC, id DESC
              ) AS rn
         FROM star_transactions
-       WHERE status = 'PENDING'
-         AND payload->>'type' = 'PAID_SPIN'
+       WHERE status='PENDING' AND payload->>'type'='PAID_SPIN'
     )
-    UPDATE star_transactions st
-       SET status = 'FAILED', processed_at = now()
-      FROM ranked r
-     WHERE st.id = r.id
-       AND r.rn > 1
+    UPDATE star_transactions st SET status='FAILED', processed_at=now()
+      FROM ranked r WHERE st.id=r.id AND r.rn>1
   `);
   await client.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season
       ON star_transactions (user_id, (payload->>'seasonId'))
-      WHERE status = 'PENDING' AND payload->>'type' = 'PAID_SPIN'
+      WHERE status='PENDING' AND payload->>'type'='PAID_SPIN'
+  `);
+
+  await client.query(`
+    -- Backfill the append-only Stars ledger without changing existing balances.
+    INSERT INTO stars_ledger (user_id, type, amount, idempotency_key, metadata)
+    SELECT us.user_id, 'OPENING_BALANCE', us.stars_balance, 'opening:' || us.user_id::text,
+           jsonb_build_object('source','legacy_user_state_migration')
+      FROM user_state us
+     WHERE NOT EXISTS (
+       SELECT 1 FROM stars_ledger sl WHERE sl.idempotency_key='opening:' || us.user_id::text
+     )
+    ON CONFLICT (idempotency_key) DO NOTHING
   `);
 
   await client.query(`
     CREATE OR REPLACE VIEW season_leaderboard AS
     WITH spin_stats AS (
       SELECT season_id, user_id, COUNT(*)::int AS spins_count
-      FROM spins
-      WHERE status = 'COMPLETED'
-      GROUP BY season_id, user_id
+      FROM spins WHERE status='COMPLETED' GROUP BY season_id, user_id
     ),
     win_stats AS (
       SELECT s.season_id, py.user_id, COUNT(*)::int AS wins_count,
-             COALESCE(SUM(CASE WHEN py.kind = 'STARS' THEN py.amount ELSE 0 END), 0)::numeric AS stars_won
-      FROM payouts py
-      JOIN spins s ON s.id = py.spin_id
-      WHERE py.prize_id IS NOT NULL AND py.kind <> 'EMPTY'
+             COALESCE(SUM(CASE WHEN py.kind='STARS' THEN py.amount ELSE 0 END),0)::numeric AS stars_won
+      FROM payouts py JOIN spins s ON s.id=py.spin_id
+      WHERE py.prize_id IS NOT NULL AND py.kind<>'EMPTY'
       GROUP BY s.season_id, py.user_id
     ),
     base AS (
       SELECT ss.season_id, ss.user_id, ss.spins_count,
-             COALESCE(ws.wins_count, 0)::int AS wins_count,
-             COALESCE(ws.stars_won, 0)::numeric AS stars_won
+             COALESCE(ws.wins_count,0)::int AS wins_count,
+             COALESCE(ws.stars_won,0)::numeric AS stars_won
       FROM spin_stats ss
-      LEFT JOIN win_stats ws ON ws.season_id = ss.season_id AND ws.user_id = ss.user_id
+      LEFT JOIN win_stats ws ON ws.season_id=ss.season_id AND ws.user_id=ss.user_id
     )
-    SELECT season_id, user_id, spins_count, wins_count, stars_won,
-           RANK() OVER (
-             PARTITION BY season_id
-             ORDER BY spins_count DESC, wins_count DESC, stars_won DESC, user_id
-           )::int AS rank
+    SELECT season_id,user_id,spins_count,wins_count,stars_won,
+           RANK() OVER (PARTITION BY season_id ORDER BY spins_count DESC,wins_count DESC,stars_won DESC,user_id)::int AS rank
     FROM base;
   `);
 
-  await client.query(`
-    INSERT INTO user_state (user_id)
-    SELECT id FROM users
-    ON CONFLICT (user_id) DO NOTHING
-  `);
+  await client.query(`INSERT INTO user_state (user_id) SELECT id FROM users ON CONFLICT (user_id) DO NOTHING`);
 
   const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
   const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS ?? "6537228449");
-
   if (ownerId) {
-    await client.query(
-      `INSERT INTO admins (telegram_id, username, role, is_active)
-       VALUES ($1, NULL, 'OWNER', TRUE)
-       ON CONFLICT (telegram_id) DO UPDATE SET role = 'OWNER', is_active = TRUE, updated_at = now()`,
-      [ownerId],
-    );
+    await client.query(`INSERT INTO admins (telegram_id,username,role,is_active) VALUES ($1,NULL,'OWNER',TRUE) ON CONFLICT (telegram_id) DO UPDATE SET role='OWNER',is_active=TRUE,updated_at=now()`, [ownerId]);
     console.log("✅ Owner access seeded from OWNER_TELEGRAM_ID.");
   }
-
   for (const adminId of adminIds) {
     if (adminId === ownerId) continue;
-    await client.query(
-      `INSERT INTO admins (telegram_id, username, role, is_active)
-       VALUES ($1, NULL, 'ADMIN', TRUE)
-       ON CONFLICT (telegram_id) DO UPDATE SET role = 'ADMIN', is_active = TRUE, updated_at = now()`,
-      [adminId],
-    );
+    await client.query(`INSERT INTO admins (telegram_id,username,role,is_active) VALUES ($1,NULL,'ADMIN',TRUE) ON CONFLICT (telegram_id) DO UPDATE SET role='ADMIN',is_active=TRUE,updated_at=now()`, [adminId]);
   }
-
   if (adminIds.length > 0) console.log(`✅ Seeded ${adminIds.length} admin access record(s).`);
-  console.log("✅ Payment idempotency guard, prize controls, avatar storage and leaderboard view are ready.");
+  console.log("✅ Stars ledger migration/backfill, payment idempotency guard, prize controls, avatar storage and leaderboard view are ready.");
 } catch (error) {
   console.error("❌ Database initialization failed:", error);
   process.exitCode = 1;
