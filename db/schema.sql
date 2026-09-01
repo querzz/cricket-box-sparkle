@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS user_state (
   is_subscribed BOOLEAN NOT NULL DEFAULT TRUE,
   is_participant BOOLEAN NOT NULL DEFAULT TRUE,
   daily_gift_claimed_at TIMESTAMPTZ,
+  bonus_free_spins INTEGER NOT NULL DEFAULT 0 CHECK (bonus_free_spins >= 0 AND bonus_free_spins <= 1000),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -93,6 +94,17 @@ CREATE TABLE IF NOT EXISTS payouts (
   paid_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS daily_gift_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('NOTHING','STARS','FREE_SPIN','XP')),
+  amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  title TEXT NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS owner_gifts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -148,3 +160,4 @@ CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts(status, created_at DESC
 CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(telegram_user_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
+CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id, created_at DESC);
