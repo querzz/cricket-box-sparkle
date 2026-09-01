@@ -38,10 +38,14 @@ const mapBackendError = (code: string): ServiceError => {
     case "SEASON_NOT_ACTIVE": return { code: "SEASON_CLOSED", message: "Сейчас нет активного сезона." };
     case "NO_SEASON": return { code: "SEASON_CLOSED", message: "Сейчас нет активного сезона." };
     case "GIFT_UNAVAILABLE": return { code: "GIFT_UNAVAILABLE", message: "Подарок сейчас недоступен." };
-    case "PAID_SPIN_DISABLED": return { code: "SEASON_CLOSED", message: "Платные прокрутки сейчас недоступны." };
-    case "PAYMENT_REQUIRED": return { code: "INSUFFICIENT_STARS", message: "Оплата платной прокрутки не завершена." };
-    case "NO_PRIZES": return { code: "SEASON_CLOSED", message: "В этом сезоне сейчас нет доступных призов." };
-    case "NOT_PARTICIPANT": return { code: "SEASON_CLOSED", message: "Ты пока не участвуешь в этом сезоне." };
+    case "GIFT_COOLDOWN": return { code: "GIFT_COOLDOWN", message: "Подарок уже получен. Возвращайся через 24 часа." };
+    case "GIFT_BALANCE_FULL": return { code: "GIFT_BALANCE_FULL", message: "Баланс Stars уже достиг максимума." };
+    case "WITHDRAW_NOT_OPEN": return { code: "WITHDRAW_NOT_OPEN", message: "Вывод откроется после завершения сезона." };
+    case "WITHDRAWAL_PENDING": return { code: "WITHDRAWAL_PENDING", message: "У тебя уже есть заявка на вывод в обработке." };
+    case "PAID_SPIN_DISABLED": return { code: "PAYMENT_REQUIRED", message: "Платные прокрутки сейчас недоступны." };
+    case "PAYMENT_REQUIRED": return { code: "PAYMENT_REQUIRED", message: "Оплата платной прокрутки не завершена." };
+    case "NO_PRIZES": return { code: "NO_PRIZES", message: "В этом сезоне сейчас нет доступных призов." };
+    case "NOT_PARTICIPANT": return { code: "NOT_PARTICIPANT", message: "Ты пока не участвуешь в этом сезоне." };
     default: return { code: "NETWORK", message: "Не удалось выполнить операцию. Попробуй ещё раз." };
   }
 };
@@ -88,7 +92,7 @@ async function openStarsInvoice(price: number): Promise<ServiceResult<Reward>> {
       tg.openInvoice?.(data.invoiceUrl!, (value) => finish(value));
       window.setTimeout(() => finish("timeout"), 60000);
     });
-    if (status === "cancelled") return fail("INSUFFICIENT_STARS", "Оплата отменена.");
+    if (status === "cancelled") return fail("PAYMENT_REQUIRED", "Оплата отменена.");
     if (status === "failed") return fail("NETWORK", "Telegram не смог завершить оплату.");
     if (status === "timeout") return fail("NETWORK", "Оплата слишком долго обрабатывается. Обнови экран через несколько секунд.");
     const before = await backendSession();
@@ -168,35 +172,10 @@ export const cricketApi = {
     if (amount > state.stars.amount) return fail("INSUFFICIENT_STARS", "Недостаточно Stars.");
     state.stars.amount -= amount; const withdrawal: Withdrawal = { id: `w_${Math.random().toString(36).slice(2, 9)}`, rewardTitle: "Telegram Stars", amount, requestedAt: new Date().toISOString(), status: "PENDING" }; state.withdrawals = [withdrawal, ...state.withdrawals]; localPersist(state); return ok({ withdrawal, snapshot: structuredClone(state) });
   },
-  async setSeasonState(value: SessionSnapshot["season"]["state"]): Promise<ServiceResult<SessionSnapshot>> { state.season.state = value; localPersist(state); return ok(structuredClone(state)); },
-  async setSubscribed(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
-    if (inTelegram()) {
-      const result = await devState("SET_SUBSCRIBED", value);
-      if (!result.ok) return result;
-      const session = await backendSession(); if (!session.ok) return session;
-      return ok(session.data);
-    }
-    state.user.isSubscribed = value; localPersist(state); return ok(structuredClone(state));
-  },
-  async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> {
-    const normalized = Math.max(0, Math.min(inTelegram() ? 500 : state.stars.max, Math.round(amount)));
-    if (inTelegram()) {
-      const result = await devState("SET_STARS", normalized);
-      if (!result.ok) return result;
-      const session = await backendSession(); if (!session.ok) return session;
-      return ok(session.data);
-    }
-    state.stars.amount = normalized; localPersist(state); return ok(structuredClone(state));
-  },
-  async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> { state.dev.simulateNetworkError = value; localPersist(state); return ok(structuredClone(state)); },
-  async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> {
-    if (inTelegram()) {
-      const result = await devState("RESET_FREE_SPIN");
-      if (!result.ok) return result;
-      const session = await backendSession(); if (!session.ok) return session;
-      return ok(session.data);
-    }
-    state.spin.freeSpins = 1; localPersist(state); return ok(structuredClone(state));
-  },
+  async setSeasonState(next: SessionSnapshot["season"]["state"]): Promise<ServiceResult<SessionSnapshot>> { if (!inTelegram()) { state.season.state = next; localPersist(state); return ok(structuredClone(state)); } return fail("NETWORK", "Состояние сезона изменяется только из админ-панели."); },
+  async setSubscribed(value: boolean): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("SET_SUBSCRIBED", value); if (!result.ok) return result; const session = await backendSession(); return session; } state.user.isSubscribed = value; localPersist(state); return ok(structuredClone(state)); },
+  async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("SET_STARS", amount); if (!result.ok) return result; const session = await backendSession(); return session; } state.stars.amount = Math.max(0, Math.min(state.stars.max, Math.round(amount))); localPersist(state); return ok(structuredClone(state)); },
+  async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("SET_SUBSCRIBED", value); if (!result.ok) return result; return backendSession(); } state.dev.simulateNetworkError = value; localPersist(state); return ok(structuredClone(state)); },
+  async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("RESET_FREE_SPIN"); if (!result.ok) return result; return backendSession(); } state.spin.freeSpins = 1; localPersist(state); return ok(structuredClone(state)); },
   async reset(): Promise<ServiceResult<SessionSnapshot>> { state = createInitialSnapshot(); localPersist(state); return ok(structuredClone(state)); },
 };
