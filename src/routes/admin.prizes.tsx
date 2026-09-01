@@ -69,6 +69,7 @@ function AdminPrizes() {
   const [newPrize, setNewPrize] = useState({ title: "", subtitle: "", kind: "STARS", amount: 20, unitCost: 0, quantity: 1 });
 
   const selectedSeason = useMemo(() => seasons.find((x) => x.id === seasonId), [seasons, seasonId]);
+  const isSelectedSeasonLive = selectedSeason?.state === "ACTIVE" || selectedSeason?.state === "ENDING";
   const total = useMemo(() => prizes.reduce((sum, p) => sum + Math.max(0, p.quantity_total), 0), [prizes]);
   const remaining = useMemo(() => prizes.reduce((sum, p) => sum + Math.max(0, p.quantity_remaining), 0), [prizes]);
 
@@ -79,7 +80,11 @@ function AdminPrizes() {
       const data = await getJson<Season[]>(`/api/admin/seasons?initData=${encodeURIComponent(initData())}`);
       const list = data.seasons ?? [];
       setSeasons(list);
-      setSeasonId((current) => (current && list.some((x) => x.id === current) ? current : list[0]?.id ?? ""));
+      setSeasonId((current) => {
+        if (current && list.some((x) => x.id === current)) return current;
+        const live = list.find((x) => x.state === "ACTIVE") ?? list.find((x) => x.state === "ENDING");
+        return live?.id ?? list[0]?.id ?? "";
+      });
     } catch {
       setError("Не удалось загрузить сезоны.");
     } finally {
@@ -173,6 +178,14 @@ function AdminPrizes() {
               {seasons.length === 0 && <option value="">Нет сезонов</option>}
               {seasons.map((season) => <option key={season.id} value={season.id}>{season.code} · {season.state}</option>)}
             </select>
+            {selectedSeason && !isSelectedSeasonLive && (
+              <p className="mt-2 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-200">
+                Сейчас игроки крутят только активный сезон. Для этого экрана выбран {selectedSeason.code} со статусом {selectedSeason.state}. Его призы не участвуют в прокрутке, пока сезон не станет ACTIVE/ENDING.
+              </p>
+            )}
+            {selectedSeason && isSelectedSeasonLive && (
+              <p className="mt-2 text-[10px] text-emerald-300">Этот призовой фонд сейчас используется игроками для прокруток.</p>
+            )}
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2"><Metric label="Всего" value={String(total)} /><Metric label="Осталось" value={String(remaining)} /><Metric label="Цена прокрутки" value={selectedSeason ? `${selectedSeason.paid_spin_price} ⭐` : "—"} /></div>
         </GlassCard>
