@@ -63,6 +63,7 @@ export interface Prize {
   kind: RewardKind;
   title: string;
   subtitle?: string | undefined;
+  amount?: number | undefined;
   remaining: number;
   total: number;
   weight?: number | undefined;
