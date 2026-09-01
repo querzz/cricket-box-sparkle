@@ -42,7 +42,7 @@ function ProfileScreen() {
         <p className="relative mt-3 text-[11px] leading-relaxed text-muted-foreground">
           Это внутренний баланс наград CRICKET BOX. Его можно вывести после завершения сезона. Он не списывается за обычные дополнительные прокрутки — они оплачиваются отдельно через Telegram Stars.
         </p>
-        <Link to="/profile/rules" className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-primary-glow">Как работают Stars <ChevronRight className="size-3.5" /></Link>
+        <Link to="/profile/$section" params={{ section: "rules" }} className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-primary-glow">Как работают Stars <ChevronRight className="size-3.5" /></Link>
       </GlassCard>
       <GlassCard className="mt-4 divide-y divide-glass-border">
         {sections.map(({ slug, label, icon: Icon }) => <Link key={slug} to="/profile/$section" params={{ section: slug }} className="press flex items-center gap-3 px-4 py-3.5"><Icon className="size-4 shrink-0 text-primary" /><span className="min-w-0 flex-1 truncate text-sm">{label}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></Link>)}
