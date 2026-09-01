@@ -17,6 +17,24 @@ type PrizeRow = {
   metadata: Record<string, unknown> | null;
 };
 
+const MAX_STARS = 500;
+const MAX_BONUS_SPINS = 1000;
+
+function pickWeighted(prizes: PrizeRow[]) {
+  const weighted = prizes.map((prize) => {
+    const configuredWeight = Number(prize.metadata?.weight ?? 1);
+    const weight = Number.isFinite(configuredWeight) && configuredWeight > 0 ? configuredWeight : 1;
+    return { prize, weight: weight * prize.quantity_remaining };
+  });
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  let cursor = Math.random() * total;
+  for (const item of weighted) {
+    cursor -= item.weight;
+    if (cursor < 0) return item.prize;
+  }
+  return weighted[weighted.length - 1]!.prize;
+}
+
 export const Route = createFileRoute("/api/spin")({
   server: {
     handlers: {
@@ -40,17 +58,20 @@ export const Route = createFileRoute("/api/spin")({
             if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
 
             await client.query(
-              `INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant)
-               VALUES ($1::uuid, 125, TRUE, TRUE)
+              `INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins)
+               VALUES ($1::uuid, 125, TRUE, TRUE, 0)
                ON CONFLICT (user_id) DO NOTHING`,
               [user.rows[0].id],
             );
 
-            const userState = await client.query<{ is_subscribed: boolean }>(
-              `SELECT is_subscribed FROM user_state WHERE user_id = $1::uuid FOR UPDATE`,
+            const userState = await client.query<{ is_subscribed: boolean; is_participant: boolean; stars_balance: number; bonus_free_spins: number }>(
+              `SELECT is_subscribed, is_participant, stars_balance, bonus_free_spins
+                 FROM user_state WHERE user_id = $1::uuid FOR UPDATE`,
               [user.rows[0].id],
             );
-            if (!userState.rows[0]?.is_subscribed) throw new Error("NOT_SUBSCRIBED");
+            const state = userState.rows[0];
+            if (!state?.is_subscribed) throw new Error("NOT_SUBSCRIBED");
+            if (!state.is_participant) throw new Error("NOT_PARTICIPANT");
 
             const season = await client.query<{
               id: string;
@@ -68,7 +89,6 @@ export const Route = createFileRoute("/api/spin")({
             );
             const currentSeason = season.rows[0];
             if (!currentSeason) throw new Error("SEASON_NOT_ACTIVE");
-            if (!currentSeason.daily_free_spin) throw new Error("NO_ATTEMPTS");
 
             const alreadyFree = await client.query<{ exists: boolean }>(
               `SELECT EXISTS(
@@ -81,33 +101,29 @@ export const Route = createFileRoute("/api/spin")({
                ) AS exists`,
               [user.rows[0].id, currentSeason.id],
             );
-            if (alreadyFree.rows[0]?.exists) throw new Error("NO_ATTEMPTS");
 
+            const useDaily = Boolean(currentSeason.daily_free_spin && !alreadyFree.rows[0]?.exists);
+            const useBonus = !useDaily && Number(state.bonus_free_spins ?? 0) > 0;
+            if (!useDaily && !useBonus) throw new Error("NO_ATTEMPTS");
+
+            // When the Stars balance is full, Stars prizes are not eligible for selection.
             const prizes = await client.query<PrizeRow>(
               `SELECT id::text, kind, title, subtitle, amount::text, unit_cost::text, currency,
                       quantity_remaining, metadata
                  FROM prizes
                 WHERE season_id = $1::uuid
                   AND quantity_remaining > 0
+                  AND (kind <> 'STARS' OR $2::integer < $3::integer)
                 ORDER BY created_at ASC
                 FOR UPDATE`,
-              [currentSeason.id],
+              [currentSeason.id, Number(state.stars_balance ?? 0), MAX_STARS],
             );
             if (prizes.rows.length === 0) throw new Error("NO_PRIZES");
 
-            const total = prizes.rows.reduce((sum, prize) => sum + prize.quantity_remaining, 0);
-            let cursor = Math.floor(Math.random() * total);
-            let picked = prizes.rows[prizes.rows.length - 1]!;
-            for (const prize of prizes.rows) {
-              cursor -= prize.quantity_remaining;
-              if (cursor < 0) {
-                picked = prize;
-                break;
-              }
-            }
+            const picked = pickWeighted(prizes.rows);
 
             await client.query(
-              `UPDATE prizes SET quantity_remaining = quantity_remaining - 1, updated_at = now() WHERE id = $1::uuid`,
+              `UPDATE prizes SET quantity_remaining = quantity_remaining - 1, updated_at = now() WHERE id = $1::uuid AND quantity_remaining > 0`,
               [picked.id],
             );
 
@@ -118,6 +134,13 @@ export const Route = createFileRoute("/api/spin")({
               [user.rows[0].id, currentSeason.id, picked.id],
             );
 
+            if (useBonus) {
+              await client.query(
+                `UPDATE user_state SET bonus_free_spins = GREATEST(0, bonus_free_spins - 1), updated_at = now() WHERE user_id = $1::uuid`,
+                [user.rows[0].id],
+              );
+            }
+
             const nextXp = Number(user.rows[0].xp ?? 0) + 10;
             const nextLevel = Math.max(1, Math.floor(nextXp / 100) + 1);
             await client.query(
@@ -125,33 +148,40 @@ export const Route = createFileRoute("/api/spin")({
               [user.rows[0].id, nextXp, nextLevel],
             );
 
+            const rewardStars = picked.kind === "STARS" ? Math.max(0, Math.floor(Number(picked.amount) || 0)) : 0;
+            const credited = rewardStars > 0 ? Math.min(rewardStars, Math.max(0, MAX_STARS - Number(state.stars_balance ?? 0))) : 0;
+            const payoutStatus = rewardStars > 0 ? "PAID" : "PENDING";
+            const payoutNote = rewardStars > 0
+              ? (credited < rewardStars ? `Лимит 500 Stars: зачислено ${credited} из ${rewardStars}.` : "Stars зачислены на баланс.")
+              : "Приз ожидает выдачи администратором.";
+
+            if (credited > 0) {
+              await client.query(
+                `UPDATE user_state SET stars_balance = stars_balance + $2, updated_at = now() WHERE user_id = $1::uuid`,
+                [user.rows[0].id, credited],
+              );
+            }
+
             const payout = await client.query<{ id: string }>(
-              `INSERT INTO payouts (spin_id, user_id, prize_id, kind, amount, currency, status, note)
-               VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::numeric, $6, 'PENDING', $7)
+              `INSERT INTO payouts (spin_id, user_id, prize_id, kind, amount, currency, status, note, paid_at)
+               VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::numeric, $6, $7, $8, CASE WHEN $7='PAID' THEN now() ELSE NULL END)
                RETURNING id::text`,
-              [
-                spin.rows[0].id,
-                user.rows[0].id,
-                picked.id,
-                picked.kind,
-                picked.amount,
-                picked.currency,
-                picked.kind === "STARS" ? "Stars ожидают финальной выдачи через Telegram." : "Приз ожидает выдачи администратором.",
-              ],
+              [spin.rows[0].id, user.rows[0].id, picked.id, picked.kind, picked.amount, picked.currency, payoutStatus, payoutNote],
             );
 
             await client.query(
               `INSERT INTO audit_logs (action, entity_type, entity_id, after_data)
                VALUES ('SPIN_COMPLETED', 'spin', $1, $2::jsonb)`,
-              [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: currentSeason.id, prizeId: picked.id, type: "FREE" })],
+              [spin.rows[0].id, JSON.stringify({ userId: user.rows[0].id, seasonId: currentSeason.id, prizeId: picked.id, type: "FREE", usedDaily: useDaily, usedBonus: useBonus, payoutStatus })],
             );
 
             return {
               spinId: spin.rows[0].id,
               payoutId: payout.rows[0].id,
               createdAt: spin.rows[0].created_at,
-              season: currentSeason,
               prize: picked,
+              credited,
+              rewardStars,
             };
           });
 
@@ -167,19 +197,23 @@ export const Route = createFileRoute("/api/spin")({
             },
             reward: {
               id: result.payoutId,
-              kind: prize.kind === "FREE_SPIN" ? "STARS" : prize.kind,
+              kind: prize.kind === "FREE_SPIN" ? "FREE_SPIN" : prize.kind,
               title: prize.title,
               subtitle: prize.subtitle,
               amount: Number(prize.amount) || undefined,
               wonAt: result.createdAt,
-              status: "PENDING",
-              payoutNote: prize.kind === "STARS" ? "Награда записана. Финальная выдача Stars выполняется сервером." : "Награда записана и ожидает выдачи.",
+              status: prize.kind === "STARS" ? "RECEIVED" : "PENDING",
+              payoutNote: prize.kind === "STARS"
+                ? (result.credited < result.rewardStars ? `Лимит 500 Stars: зачислено ${result.credited} из ${result.rewardStars}.` : "Stars зачислены на баланс.")
+                : "Награда записана и ожидает выдачи.",
+              creditedAmount: result.prize.kind === "STARS" ? result.credited : undefined,
+              uncreditedAmount: result.prize.kind === "STARS" ? Math.max(0, result.rewardStars - result.credited) : 0,
             },
           });
         } catch (error) {
           const code = error instanceof Error ? error.message : "SPIN_FAILED";
           console.error("[CRICKET BOX] spin failed", { code });
-          const status = code === "NO_ATTEMPTS" || code === "NO_PRIZES" ? 409 : code === "USER_NOT_FOUND" || code === "NOT_SUBSCRIBED" ? 403 : code === "SEASON_NOT_ACTIVE" ? 409 : code === "PAYMENT_REQUIRED" ? 402 : 400;
+          const status = code === "NO_ATTEMPTS" || code === "NO_PRIZES" ? 409 : code === "USER_NOT_FOUND" || code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "SEASON_NOT_ACTIVE" ? 409 : code === "PAYMENT_REQUIRED" ? 402 : 400;
           return Response.json({ ok: false, code, detail: code }, { status });
         }
       },
