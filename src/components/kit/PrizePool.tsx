@@ -11,6 +11,9 @@ const rarity: Record<RewardKind, { label: string; className: string }> = {
   PREMIUM: { label: "Редкий", className: "text-primary-glow border-primary/35 bg-primary/10" },
   STARS: { label: "Обычный", className: "text-muted-foreground border-glass-border bg-muted/40" },
   EMPTY: { label: "Пусто", className: "text-muted-foreground border-glass-border bg-muted/40" },
+  NOTHING: { label: "Пусто", className: "text-muted-foreground border-glass-border bg-muted/40" },
+  FREE_SPIN: { label: "Бонус", className: "text-primary-glow border-primary/30 bg-primary/10" },
+  XP: { label: "Опыт", className: "text-primary-glow border-primary/30 bg-primary/10" },
 };
 
 export function PrizePool({ prizes, className }: { prizes: Prize[]; className?: string }) {
