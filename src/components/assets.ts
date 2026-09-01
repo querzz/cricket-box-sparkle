@@ -17,4 +17,7 @@ export const rewardArt: Record<RewardKind, string> = {
   NFT: nft,
   MONEY: money,
   EMPTY: gift,
+  NOTHING: gift,
+  FREE_SPIN: gift,
+  XP: star,
 };
