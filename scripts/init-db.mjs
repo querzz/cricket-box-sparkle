@@ -63,6 +63,32 @@ try {
     CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time
       ON daily_gift_claims(user_id, created_at DESC)
   `);
+
+  // Keep only the newest open paid-spin transaction per user/season before
+  // adding the database guard. Older duplicates cannot later be completed.
+  await client.query(`
+    WITH ranked AS (
+      SELECT id,
+             row_number() OVER (
+               PARTITION BY user_id, payload->>'seasonId'
+               ORDER BY created_at DESC, id DESC
+             ) AS rn
+        FROM star_transactions
+       WHERE status = 'PENDING'
+         AND payload->>'type' = 'PAID_SPIN'
+    )
+    UPDATE star_transactions st
+       SET status = 'FAILED', processed_at = now()
+      FROM ranked r
+     WHERE st.id = r.id
+       AND r.rn > 1
+  `);
+  await client.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season
+      ON star_transactions (user_id, (payload->>'seasonId'))
+      WHERE status = 'PENDING' AND payload->>'type' = 'PAID_SPIN'
+  `);
+  console.log("✅ Payment idempotency/index guard is ready.");
   console.log("✅ Persistent user state and daily gift storage are ready.");
 
   await client.query(`
