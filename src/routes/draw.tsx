@@ -41,23 +41,41 @@ function DrawScreen() {
     setBusy(true);
     setReward(null);
     setPhase("charging");
-    const result = await spin({ paid });
-    if (isServiceError(result)) {
-      setPhase("idle");
-      setBusy(false);
-      toast.error(errorCopy(result.code));
-      if (["SEASON_CLOSED", "SEASON_NOT_STARTED"].includes(result.code)) {
-        void refresh();
+    try {
+      if (!snapshot) throw new Error("SESSION_NOT_READY");
+      console.log("[CRICKET BOX] spin:start", {
+        paid,
+        seasonId: snapshot.season.id,
+        seasonState: snapshot.season.state,
+        freeSpins: snapshot.spin.freeSpins,
+        paidSpinPrice: snapshot.spin.paidSpinPrice,
+        stars: snapshot.stars.amount,
+      });
+      const result = await spin({ paid });
+      if (isServiceError(result)) {
+        console.error("[CRICKET BOX] spin:error", { paid, code: result.code, message: result.message });
+        setPhase("idle");
+        if (["SEASON_CLOSED", "SEASON_NOT_ACTIVE", "SEASON_NOT_STARTED", "NO_PRIZES"].includes(result.code)) {
+          await refresh();
+        }
+        toast.error(result.message || errorCopy(result.code));
+        return;
       }
+      console.log("[CRICKET BOX] spin:success", { rewardId: result.id, paid });
+      setPhase("opening");
+      window.setTimeout(() => {
+        setReward(result);
+        setPhase("idle");
+        setBusy(false);
+      }, 500);
       return;
-    }
-    setPhase("opening");
-    setTimeout(() => {
-      setReward(result);
-      setPhase("idle");
+    } catch (caught) {
+      console.error("[CRICKET BOX] spin:exception", caught instanceof Error ? caught.message : caught);
+      toast.error("Не удалось выполнить прокрутку. Попробуй ещё раз.");
+    } finally {
       setBusy(false);
-    }, 500);
-  }, [busy, refresh, spin]);
+    }
+  }, [busy, refresh, snapshot, spin]);
 
   if (loading && !snapshot) return <AppShell title="Розыгрыш"><LoadingState /></AppShell>;
   if (!snapshot) return <AppShell title="Розыгрыш"><ErrorState onRetry={() => void refresh()} description={error?.message} /></AppShell>;
