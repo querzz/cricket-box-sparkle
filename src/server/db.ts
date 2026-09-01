@@ -1,6 +1,6 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env["DATABASE_URL"];
 
 let pool: Pool | null = null;
 
