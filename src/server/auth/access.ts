@@ -5,6 +5,7 @@ import { validateTelegramInitData } from "@/server/auth/telegram";
 export type AdminRole = "OWNER" | "ADMIN";
 
 export type AuthenticatedAdmin = {
+  id: string;
   telegramId: number;
   username: string | null;
   firstName: string;
@@ -31,13 +32,13 @@ export async function authenticateAdmin(initData: string): Promise<Authenticated
     [user.id, user.username ?? null, user.first_name, user.last_name ?? null, user.language_code ?? null, Boolean(user.is_premium)],
   );
 
-  const result = await query<{ role: AdminRole }>(
-    `SELECT role FROM admins WHERE telegram_id = $1 AND is_active = TRUE LIMIT 1`,
+  const result = await query<{ id: string; role: AdminRole }>(
+    `SELECT id::text, role FROM admins WHERE telegram_id = $1 AND is_active = TRUE LIMIT 1`,
     [user.id],
   );
 
-  const role = result.rows[0]?.role;
-  if (!role) throw new Error("ADMIN_ACCESS_DENIED");
+  const row = result.rows[0];
+  if (!row) throw new Error("ADMIN_ACCESS_DENIED");
 
   await query(
     `UPDATE admins SET username = $2, updated_at = now() WHERE telegram_id = $1`,
@@ -45,9 +46,10 @@ export async function authenticateAdmin(initData: string): Promise<Authenticated
   );
 
   return {
+    id: row.id,
     telegramId: user.id,
     username: user.username ?? null,
     firstName: user.first_name,
-    role,
+    role: row.role,
   };
 }
