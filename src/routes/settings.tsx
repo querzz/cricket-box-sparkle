@@ -26,6 +26,23 @@ function SettingsScreen() {
     resetSession,
   } = useSession();
 
+  const runDevPaidSpin = async () => {
+    const initData = (window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData?.trim() ?? "";
+    try {
+      const response = await fetch("/api/dev/paid-spin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ initData }),
+      });
+      const data = await response.json() as { ok?: boolean; code?: string; reward?: { title?: string } };
+      if (!response.ok || !data.ok) throw new Error(data.code ?? "DEV_PAID_SPIN_FAILED");
+      window.alert(`Тестовая платная прокрутка готова: ${data.reward?.title ?? "приз"}. Реальные Stars не списывались.`);
+      await resetSession();
+    } catch (error) {
+      window.alert(`Тестовая прокрутка не выполнена: ${error instanceof Error ? error.message : "UNKNOWN"}`);
+    }
+  };
+
   if (!snapshot)
     return (
       <AppShell title="Настройки" back="/profile" nav={false}>
@@ -43,28 +60,28 @@ function SettingsScreen() {
         <PrimaryButton variant="outline" onClick={() => void setSubscribed(!snapshot.user.isSubscribed)}>Переключить</PrimaryButton>
       </GlassCard>
 
-      <GlassCard className="mt-3 px-4 py-4">
+      <GlassCard className="mt-3 space-y-3 px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Инструменты разработчика</p>
 
-        <div className="mt-3 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Stars</p><p className="text-[11px] text-muted-foreground">{snapshot.stars.amount} / {snapshot.stars.max}</p></div>
           <PrimaryButton variant="outline" onClick={() => void setStarsAmount(snapshot.stars.max)}>Установить {snapshot.stars.max}</PrimaryButton>
         </div>
 
-        <div className="mt-3 flex items-center gap-3 border-t border-glass-border pt-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Бесплатная попытка сегодня</p>
-            <p className="text-[11px] text-muted-foreground">Выдать дневную попытку повторно для тестирования.</p>
-          </div>
+        <div className="flex items-center gap-3 border-t border-glass-border pt-3">
+          <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Тестовая платная прокрутка</p><p className="text-[11px] text-muted-foreground">Полный spin → приз → payout, без списания Stars.</p></div>
+          <PrimaryButton variant="outline" onClick={() => void runDevPaidSpin()}>Тест</PrimaryButton>
+        </div>
+
+        <div className="flex items-center gap-3 border-t border-glass-border pt-3">
+          <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Бесплатная попытка сегодня</p><p className="text-[11px] text-muted-foreground">Выдать дневную попытку повторно для тестирования.</p></div>
           <PrimaryButton variant="outline" onClick={() => void resetDailyFreeSpin()}>Выдать</PrimaryButton>
         </div>
 
-        <div className="mt-3 flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Симуляция ошибки сети</p><p className="text-[11px] text-muted-foreground">{snapshot.dev.simulateNetworkError ? "Все запросы завершатся ошибкой" : "Запросы работают"}</p></div><PrimaryButton variant="outline" onClick={() => void setSimulateNetworkError(!snapshot.dev.simulateNetworkError)}>{snapshot.dev.simulateNetworkError ? "Отключить" : "Включить"}</PrimaryButton></div>
+        <div className="flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Симуляция ошибки сети</p><p className="text-[11px] text-muted-foreground">{snapshot.dev.simulateNetworkError ? "Все запросы завершатся ошибкой" : "Запросы работают"}</p></div><PrimaryButton variant="outline" onClick={() => void setSimulateNetworkError(!snapshot.dev.simulateNetworkError)}>{snapshot.dev.simulateNetworkError ? "Отключить" : "Включить"}</PrimaryButton></div>
       </GlassCard>
 
-      <Link to="/admin" className="mt-4 block">
-        <PrimaryButton fullWidth variant="outline">Открыть админ-панель</PrimaryButton>
-      </Link>
+      <Link to="/admin" className="mt-4 block"><PrimaryButton fullWidth variant="outline">Открыть админ-панель</PrimaryButton></Link>
       <PrimaryButton variant="ghost" fullWidth className="mt-2" onClick={() => void resetSession()}>Сбросить тестовую сессию</PrimaryButton>
     </AppShell>
   );
