@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
+import { appendStarsLedger } from "@/server/stars-ledger";
 
 type Body = { payload?: unknown; telegramId?: unknown; chargeId?: unknown; currency?: unknown; totalAmount?: unknown };
 type PrizeRow = {
@@ -72,7 +72,33 @@ export const Route = createFileRoute("/api/payment/complete")({ server: { handle
         const spin = await client.query<{ id:string; created_at:string }>(`INSERT INTO spins (user_id,season_id,type,price_stars,prize_id,status,telegram_payment_charge_id,completed_at) VALUES ($1::uuid,$2::uuid,'PAID',$3,$4::uuid,'COMPLETED',$5,now()) RETURNING id::text,created_at::text`, [userId,seasonId,totalAmount,picked.id,chargeId]);
         const rewardStars = picked.kind === "STARS" ? Math.max(0, Math.floor(Number(picked.amount)||0)) : 0;
         const credited = rewardStars > 0 ? Math.min(rewardStars, Math.max(0, MAX_STARS - Number(state.stars_balance ?? 0))) : 0;
-        if (credited > 0) await client.query(`UPDATE user_state SET stars_balance=stars_balance+$2,updated_at=now() WHERE user_id=$1::uuid`, [userId,credited]);
+        const overflow = Math.max(0, rewardStars - credited);
+        if (rewardStars > 0) {
+          await appendStarsLedger(client, {
+            userId,
+            seasonId,
+            spinId: spin.rows[0].id,
+            type: "REWARD",
+            amount: rewardStars,
+            balanceDelta: credited,
+            referenceId: picked.id,
+            idempotencyKey: `spin:${spin.rows[0].id}:paid-reward`,
+            metadata: { requestedAmount: rewardStars, creditedAmount: credited, overflowAmount: overflow, source: "PAID_SPIN" },
+          });
+          if (overflow > 0) {
+            await appendStarsLedger(client, {
+              userId,
+              seasonId,
+              spinId: spin.rows[0].id,
+              type: "CAPPED_OVERFLOW_BURNED",
+              amount: -overflow,
+              balanceDelta: 0,
+              referenceId: picked.id,
+              idempotencyKey: `spin:${spin.rows[0].id}:paid-overflow`,
+              metadata: { requestedAmount: rewardStars, creditedAmount: credited, overflowAmount: overflow, source: "PAID_SPIN" },
+            });
+          }
+        }
 
         let payoutId: string | null = null;
         if (picked.kind !== "EMPTY") {
@@ -83,8 +109,8 @@ export const Route = createFileRoute("/api/payment/complete")({ server: { handle
         }
         const nextXp = Number(user.rows[0].xp ?? 0) + 10;
         await client.query(`UPDATE users SET xp=$2,level=$3,last_seen_at=now() WHERE id=$1::uuid`, [userId,nextXp,Math.max(1,Math.floor(nextXp/100)+1)]);
-        await client.query(`UPDATE star_transactions SET status='SUCCESS',telegram_charge_id=$2,spin_id=$3::uuid,processed_at=now(),payload=payload||$4::jsonb WHERE id=$1::uuid`, [tx.rows[0].id,chargeId,spin.rows[0].id,JSON.stringify({telegramId,currency,totalAmount,creditedStars:credited})]);
-        await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('PAID_SPIN_COMPLETED','spin',$1,$2::jsonb)`, [spin.rows[0].id,JSON.stringify({userId,seasonId,prizeId:picked.id,chargeId,totalAmount,payoutId,rewardKind:picked.kind,creditedStars:credited})]);
+        await client.query(`UPDATE star_transactions SET status='SUCCESS',telegram_charge_id=$2,spin_id=$3::uuid,processed_at=now(),payload=payload||$4::jsonb WHERE id=$1::uuid`, [tx.rows[0].id,chargeId,spin.rows[0].id,JSON.stringify({telegramId,currency,totalAmount,creditedStars:credited,overflowStars:overflow})]);
+        await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('PAID_SPIN_COMPLETED','spin',$1,$2::jsonb)`, [spin.rows[0].id,JSON.stringify({userId,seasonId,prizeId:picked.id,chargeId,totalAmount,payoutId,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow})]);
         return { duplicate:false, spinId:spin.rows[0].id, payoutId, reward:{ kind:picked.kind, title:picked.title, subtitle:picked.subtitle, amount:Number(picked.amount)||undefined, credited, rewardStars } };
       });
       return Response.json({ ok:true, ...result });
