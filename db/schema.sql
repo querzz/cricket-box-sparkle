@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_name TEXT,
   language_code TEXT,
   is_premium BOOLEAN NOT NULL DEFAULT FALSE,
+  avatar_file_id TEXT,
   xp INTEGER NOT NULL DEFAULT 0,
   level INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS seasons (
 CREATE TABLE IF NOT EXISTS prizes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN')),
+  kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY')),
   title TEXT NOT NULL,
   subtitle TEXT,
   amount NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -59,6 +60,8 @@ CREATE TABLE IF NOT EXISTS prizes (
   currency TEXT,
   quantity_total INTEGER NOT NULL DEFAULT 0 CHECK (quantity_total >= 0),
   quantity_remaining INTEGER NOT NULL DEFAULT 0 CHECK (quantity_remaining >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  image_url TEXT,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -83,7 +86,7 @@ CREATE TABLE IF NOT EXISTS payouts (
   spin_id UUID REFERENCES spins(id) ON DELETE SET NULL,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   prize_id UUID REFERENCES prizes(id) ON DELETE SET NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN')),
+  kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY')),
   amount NUMERIC(18,2) NOT NULL DEFAULT 0,
   currency TEXT,
   status TEXT NOT NULL CHECK (status IN ('PENDING','REVIEW','PAID','FAILED','CANCELLED')) DEFAULT 'PENDING',
@@ -154,6 +157,14 @@ CREATE TABLE IF NOT EXISTS star_transactions (
   processed_at TIMESTAMPTZ
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
+ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE prizes DROP CONSTRAINT IF EXISTS prizes_kind_check;
+ALTER TABLE prizes ADD CONSTRAINT prizes_kind_check CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY'));
+ALTER TABLE payouts DROP CONSTRAINT IF EXISTS payouts_kind_check;
+ALTER TABLE payouts ADD CONSTRAINT payouts_kind_check CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY'));
+
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spins_user_season ON spins(user_id, season_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts(status, created_at DESC);
@@ -161,3 +172,32 @@ CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(te
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
 CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id, created_at DESC);
+
+CREATE OR REPLACE VIEW season_leaderboard AS
+WITH spin_stats AS (
+  SELECT season_id, user_id, COUNT(*)::int AS spins_count
+  FROM spins
+  WHERE status = 'COMPLETED'
+  GROUP BY season_id, user_id
+),
+win_stats AS (
+  SELECT s.season_id, py.user_id, COUNT(*)::int AS wins_count,
+         COALESCE(SUM(CASE WHEN py.kind = 'STARS' THEN py.amount ELSE 0 END), 0)::numeric AS stars_won
+  FROM payouts py
+  JOIN spins s ON s.id = py.spin_id
+  WHERE py.prize_id IS NOT NULL AND py.kind <> 'EMPTY'
+  GROUP BY s.season_id, py.user_id
+),
+base AS (
+  SELECT ss.season_id, ss.user_id, ss.spins_count,
+         COALESCE(ws.wins_count, 0)::int AS wins_count,
+         COALESCE(ws.stars_won, 0)::numeric AS stars_won
+  FROM spin_stats ss
+  LEFT JOIN win_stats ws ON ws.season_id = ss.season_id AND ws.user_id = ss.user_id
+)
+SELECT season_id, user_id, spins_count, wins_count, stars_won,
+       RANK() OVER (
+         PARTITION BY season_id
+         ORDER BY spins_count DESC, wins_count DESC, stars_won DESC, user_id
+       )::int AS rank
+FROM base;
