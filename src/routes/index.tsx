@@ -153,7 +153,7 @@ function HomeScreen() {
       <section className="mt-5 space-y-2.5">
         <div className="flex items-center justify-between">
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Как это работает</h2>
-          <Link to="/profile/rules" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Подробнее <ChevronRight className="size-3.5" /></Link>
+          <Link to="/profile/$section" params={{ section: "rules" }} className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Подробнее <ChevronRight className="size-3.5" /></Link>
         </div>
         <GlassCard className="grid grid-cols-3 gap-2 px-3 py-4">
           {[
