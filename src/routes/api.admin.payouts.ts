@@ -16,6 +16,55 @@ type PayoutRow = {
   prize_subtitle: string | null;
 };
 
+const TERMINAL = ["PAID", "FAILED", "CANCELLED"] as const;
+const REVIEWABLE = ["PENDING", "REVIEW"] as const;
+type Status = PayoutRow["status"];
+
+async function changePayout(client: Parameters<typeof withTransaction>[0] extends (c: infer C) => unknown ? C : never, adminId: string, id: string, nextStatus: Status) {
+  const payout = await client.query<{ user_id: string; kind: string; amount: string; status: Status; note: string | null }>(
+    `SELECT user_id::text, kind, amount::text, status, note FROM payouts WHERE id=$1::uuid FOR UPDATE`, [id],
+  );
+  if (!payout.rows[0]) throw new Error("NOT_FOUND");
+  const before = payout.rows[0];
+  if (before.status === nextStatus) return false;
+
+  const valid =
+    (before.status === "PENDING" && ["REVIEW", "FAILED", "CANCELLED"].includes(nextStatus)) ||
+    (before.status === "REVIEW" && ["PAID", "FAILED", "CANCELLED"].includes(nextStatus));
+  if (!valid) throw new Error("INVALID_TRANSITION");
+
+  await client.query(
+    `UPDATE payouts
+        SET status=$2, operator_admin_id=$3::uuid,
+            paid_at=CASE WHEN $2='PAID' THEN COALESCE(paid_at, now()) ELSE paid_at END,
+            updated_at=now()
+      WHERE id=$1::uuid`,
+    [id, nextStatus, adminId],
+  );
+
+  const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
+  if (isWithdrawal && ["FAILED", "CANCELLED"].includes(nextStatus) && REVIEWABLE.includes(before.status as typeof REVIEWABLE[number])) {
+    await client.query(
+      `UPDATE user_state
+          SET stars_balance = LEAST(500, stars_balance + $2), updated_at = now()
+        WHERE user_id = $1::uuid`,
+      [before.user_id, Number(before.amount)],
+    );
+    await client.query(
+      `INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, after_data)
+       VALUES ($1::uuid,'WITHDRAWAL_REFUNDED','payout',$2,$3::jsonb)`,
+      [adminId, id, JSON.stringify({ amount: Number(before.amount), reason: nextStatus })],
+    );
+  }
+
+  await client.query(
+    `INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data)
+     VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`,
+    [adminId, id, JSON.stringify(before), JSON.stringify({ status: nextStatus })],
+  );
+  return true;
+}
+
 export const Route = createFileRoute("/api/admin/payouts")({
   server: { handlers: {
     GET: async ({ request }) => {
@@ -38,16 +87,28 @@ export const Route = createFileRoute("/api/admin/payouts")({
             ORDER BY py.created_at DESC LIMIT 200`,
           [pattern, search, status],
         );
-        const counts = await query<{ pending: string; review: string; paid: string }>(
+        const counts = await query<{ pending: string; review: string; paid: string; failed: string; cancelled: string }>(
           `SELECT COUNT(*) FILTER (WHERE status='PENDING')::text AS pending,
                   COUNT(*) FILTER (WHERE status='REVIEW')::text AS review,
-                  COUNT(*) FILTER (WHERE status='PAID')::text AS paid FROM payouts`,
+                  COUNT(*) FILTER (WHERE status='PAID')::text AS paid,
+                  COUNT(*) FILTER (WHERE status='FAILED')::text AS failed,
+                  COUNT(*) FILTER (WHERE status='CANCELLED')::text AS cancelled
+             FROM payouts`,
         );
         return Response.json({
           ok: true,
-          counts: { pending: Number(counts.rows[0]?.pending ?? 0), review: Number(counts.rows[0]?.review ?? 0), paid: Number(counts.rows[0]?.paid ?? 0) },
+          counts: {
+            pending: Number(counts.rows[0]?.pending ?? 0),
+            review: Number(counts.rows[0]?.review ?? 0),
+            paid: Number(counts.rows[0]?.paid ?? 0),
+            failed: Number(counts.rows[0]?.failed ?? 0),
+            cancelled: Number(counts.rows[0]?.cancelled ?? 0),
+          },
           payouts: result.rows.map((row) => ({
-            id: row.id, time: row.created_at, username: row.username ? `@${row.username.replace(/^@/, "")}` : "—", telegramId: row.telegram_id,
+            id: row.id,
+            time: row.created_at,
+            username: row.username ? `@${row.username.replace(/^@/, "")}` : "—",
+            telegramId: row.telegram_id,
             prize: row.prize_title ? [row.prize_title, row.prize_subtitle].filter(Boolean).join(" · ") : (row.note === "WITHDRAWAL_REQUEST" ? "Вывод Stars" : "Без привязанного приза"),
             type: row.kind === "STARS" ? "Stars" : row.kind === "PREMIUM" ? "Premium" : "Деньги",
             amount: row.kind === "STARS" ? `${row.amount} ⭐` : `${row.amount} ${row.currency ?? ""}`.trim(),
@@ -59,44 +120,40 @@ export const Route = createFileRoute("/api/admin/payouts")({
         return Response.json({ ok: false, code: "PAYOUTS_FAILED" }, { status: 401 });
       }
     },
+
     PATCH: async ({ request }) => {
       try {
         const body = await request.json() as { initData?: unknown; id?: unknown; status?: unknown };
         const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
         const id = typeof body.id === "string" ? body.id : "";
-        const status = typeof body.status === "string" ? body.status : "";
-        if (!id || !["PENDING", "REVIEW", "PAID", "FAILED", "CANCELLED"].includes(status)) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
-
-        await withTransaction(async (client) => {
-          const payout = await client.query<{ user_id: string; kind: string; amount: string; status: string; note: string | null }>(
-            `SELECT user_id::text, kind, amount::text, status, note FROM payouts WHERE id=$1::uuid FOR UPDATE`, [id],
-          );
-          if (!payout.rows[0]) throw new Error("NOT_FOUND");
-          const before = payout.rows[0];
-          if (before.status === status) return;
-          if (["PAID", "FAILED", "CANCELLED"].includes(before.status) && ["PENDING", "REVIEW"].includes(status)) throw new Error("INVALID_TRANSITION");
-          if (before.status === "PAID" && status !== "PAID") throw new Error("INVALID_TRANSITION");
-
-          await client.query(
-            `UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, paid_at=CASE WHEN $2='PAID' THEN now() ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`,
-            [id, status, admin.id],
-          );
-
-          const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
-          if (isWithdrawal && ["FAILED", "CANCELLED"].includes(status) && ["PENDING", "REVIEW"].includes(before.status)) {
-            await client.query(`UPDATE user_state SET stars_balance = LEAST(500, stars_balance + $2), updated_at = now() WHERE user_id = $1::uuid`, [before.user_id, Number(before.amount)]);
-            await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, after_data) VALUES ($1::uuid,'WITHDRAWAL_REFUNDED','payout',$2,$3::jsonb)`, [admin.id, id, JSON.stringify({ amount: Number(before.amount), reason: status })]);
-          }
-
-          await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`, [admin.id, id, JSON.stringify(before), JSON.stringify({ status })]);
-        });
-
+        const nextStatus = typeof body.status === "string" ? body.status as Status : "" as Status;
+        if (!id || !["PENDING", "REVIEW", "PAID", "FAILED", "CANCELLED"].includes(nextStatus)) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+        await withTransaction(async (client) => { await changePayout(client, admin.id, id, nextStatus); });
         return Response.json({ ok: true });
       } catch (error) {
         console.error("Payout update failed:", error instanceof Error ? error.message : error);
         const code = error instanceof Error ? error.message : "PAYOUT_UPDATE_FAILED";
-        const status = code === "NOT_FOUND" ? 404 : code === "INVALID_TRANSITION" ? 409 : 400;
-        return Response.json({ ok: false, code }, { status });
+        return Response.json({ ok: false, code }, { status: code === "NOT_FOUND" ? 404 : code === "INVALID_TRANSITION" ? 409 : 400 });
+      }
+    },
+
+    POST: async ({ request }) => {
+      try {
+        const body = await request.json() as { initData?: unknown; ids?: unknown; status?: unknown };
+        const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
+        const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
+        const nextStatus = typeof body.status === "string" ? body.status as Status : "" as Status;
+        if (!ids.length || !["REVIEW", "PAID", "FAILED", "CANCELLED"].includes(nextStatus) || ids.length > 100) {
+          return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+        }
+        await withTransaction(async (client) => {
+          for (const id of [...new Set(ids)]) await changePayout(client, admin.id, id, nextStatus);
+        });
+        return Response.json({ ok: true, count: new Set(ids).size });
+      } catch (error) {
+        console.error("Bulk payout update failed:", error instanceof Error ? error.message : error);
+        const code = error instanceof Error ? error.message : "PAYOUT_BULK_FAILED";
+        return Response.json({ ok: false, code }, { status: code === "NOT_FOUND" ? 404 : code === "INVALID_TRANSITION" ? 409 : 400 });
       }
     },
   }}
