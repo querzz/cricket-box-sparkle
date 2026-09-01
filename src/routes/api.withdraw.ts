@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
+import { appendStarsLedger } from "@/server/stars-ledger";
 
 const MINIMUM = 50;
 const LIVE_STATES = ["ACTIVE", "ENDING"] as const;
@@ -64,7 +65,15 @@ export const Route = createFileRoute("/api/withdraw")({
             [user.rows[0].id, amount],
           );
 
-          await client.query(`UPDATE user_state SET stars_balance = stars_balance - $2, updated_at = now() WHERE user_id = $1::uuid`, [user.rows[0].id, amount]);
+          await appendStarsLedger(client, {
+            userId: user.rows[0].id,
+            type: "WITHDRAWAL",
+            amount: -amount,
+            balanceDelta: -amount,
+            referenceId: payout.rows[0].id,
+            idempotencyKey: `withdrawal:${payout.rows[0].id}`,
+            metadata: { amount, seasonState },
+          });
           await client.query(
             `INSERT INTO audit_logs (action, entity_type, entity_id, after_data) VALUES ('WITHDRAWAL_REQUESTED','payout',$1,$2::jsonb)`,
             [payout.rows[0].id, JSON.stringify({ userId: user.rows[0].id, amount, seasonState })],
