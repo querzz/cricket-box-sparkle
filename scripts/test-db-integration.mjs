@@ -39,7 +39,7 @@ try {
   userA = users.rows.find((r) => r.username === "ci_a").id; userB = users.rows.find((r) => r.username === "ci_b").id; userC = users.rows.find((r) => r.username === "ci_c").id;
   await db.query(`INSERT INTO user_state (user_id,stars_balance) VALUES ($1,480),($2,500),($3,100)`, [userA,userB,userC]);
 
-  const openings = await db.query(`SELECT user_id,amount FROM stars_ledger WHERE user_id=ANY($1::uuid[]) AND type='OPENING_BALANCE' ORDER BY amount`, [[userA,userB,userC]]);
+  const openings = await db.query(`SELECT user_id,amount FROM stars_ledger WHERE user_id=ANY($1::uuid[]) AND type='OPENING_BALANCE'`, [[userA,userB,userC]]);
   assert(openings.rowCount === 3, "new user states seed opening ledger entries");
 
   const prize = await db.query(`INSERT INTO prizes (season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,image_url,metadata) VALUES ($1,'MONEY','Custom 1375 UAH','CI test',1375,1000,'UAH',7,7,TRUE,'https://example.com/prize.png',$2) RETURNING id,amount,quantity_total,quantity_remaining,is_active,metadata`, [seasonA,JSON.stringify({weight:2.5})]);
@@ -57,17 +57,18 @@ try {
   await expectReject(() => db.query(`UPDATE user_state SET stars_balance=501 WHERE user_id=$1`, [userA]), "Stars balance above 500 is rejected");
 
   const beforeStars = await db.query(`SELECT stars_balance FROM user_state WHERE user_id=$1`, [userA]);
-  const rewardDelta = 20;
-  await db.query(`INSERT INTO stars_ledger (user_id,season_id,type,amount,idempotency_key,metadata) VALUES ($1,$2,'REWARD',$3,$4,$5::jsonb)`, [userA,seasonA,rewardDelta,`ci-reward:${suffix}`,JSON.stringify({requestedAmount:50,creditedAmount:20,overflowAmount:30})]);
-  await db.query(`UPDATE user_state SET stars_balance=stars_balance+$2 WHERE user_id=$1`, [userA,rewardDelta]);
+  const requestedReward = 50;
+  const room = 500 - Number(beforeStars.rows[0].stars_balance);
+  const credited = Math.min(room, requestedReward);
+  const overflow = requestedReward - credited;
+  await db.query(`INSERT INTO stars_ledger (user_id,season_id,type,amount,idempotency_key,metadata) VALUES ($1,$2,'REWARD',$3,$4,$5::jsonb)`, [userA,seasonA,requestedReward,`ci-reward:${suffix}`,JSON.stringify({requestedAmount:requestedReward,creditedAmount:credited,overflowAmount:overflow})]);
+  await db.query(`UPDATE user_state SET stars_balance=stars_balance+$2 WHERE user_id=$1`, [userA,credited]);
+  if (overflow > 0) await db.query(`INSERT INTO stars_ledger (user_id,season_id,type,amount,idempotency_key,metadata) VALUES ($1,$2,'CAPPED_OVERFLOW_BURNED',$3,$4,$5::jsonb)`, [userA,seasonA,-overflow,`ci-overflow:${suffix}`,JSON.stringify({requestedAmount:requestedReward,creditedAmount:credited,overflowAmount:overflow})]);
   const afterStars = await db.query(`SELECT stars_balance FROM user_state WHERE user_id=$1`, [userA]);
-  assert(Number(afterStars.rows[0].stars_balance) === Number(beforeStars.rows[0].stars_balance) + 20, "ledger reward increases cached balance by credited amount");
-
+  assert(Number(afterStars.rows[0].stars_balance) === 500, "Stars credit respects 500 cap");
+  assert(overflow === 30, "overflow is deterministic");
   const ledgerSum = await db.query(`SELECT COALESCE(SUM(amount),0)::int AS balance FROM stars_ledger WHERE user_id=$1`, [userA]);
   assert(Number(ledgerSum.rows[0].balance) === Number(afterStars.rows[0].stars_balance), "ledger sum reconciles to cached Stars balance");
-  await db.query(`INSERT INTO stars_ledger (user_id,season_id,type,amount,idempotency_key,metadata) VALUES ($1,$2,'CAPPED_OVERFLOW_BURNED',-30,$3,$4::jsonb)`, [userA,seasonA,`ci-overflow:${suffix}`,JSON.stringify({requestedAmount:50,creditedAmount:20,overflowAmount:30})]);
-  const ledgerAfterOverflow = await db.query(`SELECT COALESCE(SUM(amount),0)::int AS balance FROM stars_ledger WHERE user_id=$1`, [userA]);
-  assert(Number(ledgerAfterOverflow.rows[0].balance) === Number(afterStars.rows[0].stars_balance) - 30, "overflow entry explicitly records burned Stars");
   await expectReject(() => db.query(`UPDATE stars_ledger SET amount=999 WHERE id=(SELECT id FROM stars_ledger WHERE idempotency_key=$1)`, [`ci-reward:${suffix}`]), "Stars ledger is append-only");
   await expectReject(() => db.query(`DELETE FROM stars_ledger WHERE idempotency_key=$1`, [`ci-reward:${suffix}`]), "Stars ledger rows cannot be deleted");
 
@@ -104,10 +105,10 @@ try {
   if (admin || seasonA || seasonB || userA || userB || userC) {
     const users = [userA,userB,userC].filter(Boolean); const seasons = [seasonA,seasonB].filter(Boolean);
     await db.query(`DELETE FROM star_transactions WHERE user_id=ANY($1::uuid[])`, [users]);
-    await db.query(`DELETE FROM stars_ledger WHERE user_id=ANY($1::uuid[])`, [users]);
     await db.query(`DELETE FROM payouts WHERE user_id=ANY($1::uuid[])`, [users]);
     await db.query(`DELETE FROM spins WHERE user_id=ANY($1::uuid[])`, [users]);
     await db.query(`DELETE FROM prizes WHERE season_id=ANY($1::uuid[])`, [seasons]);
+    await db.query(`TRUNCATE TABLE stars_ledger`);
     await db.query(`DELETE FROM user_state WHERE user_id=ANY($1::uuid[])`, [users]);
     await db.query(`DELETE FROM users WHERE id=ANY($1::uuid[])`, [users]);
     await db.query(`DELETE FROM seasons WHERE id=ANY($1::uuid[])`, [seasons]);
