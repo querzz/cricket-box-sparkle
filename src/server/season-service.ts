@@ -1,3 +1,4 @@
+import { type PoolClient } from "pg";
 import { query } from "@/server/db";
 
 export type DbSeason = {
@@ -27,6 +28,8 @@ export type DbPrize = {
 
 const SEASON_STATES = ["DRAFT", "SCHEDULED", "ACTIVE", "ENDING", "CLOSED", "PAYOUT", "ARCHIVED"] as const;
 
+type DbExecutor = Pick<PoolClient, "query">;
+
 export async function listSeasons() {
   const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin FROM seasons ORDER BY created_at DESC`);
   return result.rows;
@@ -37,8 +40,9 @@ export async function createSeason(input: { code: string; name: string; paidSpin
   return result.rows[0];
 }
 
-export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>) {
-  const currentResult = await query<{ state: DbSeason["state"] }>(`SELECT state FROM seasons WHERE id = $1`, [id]);
+export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>, executor?: DbExecutor) {
+  const db = executor ?? { query };
+  const currentResult = await db.query<{ state: DbSeason["state"] }>(`SELECT state FROM seasons WHERE id = $1 FOR UPDATE`, [id]);
   if (!currentResult.rows[0]) return undefined;
 
   const requestedState = patch.state;
@@ -48,8 +52,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const startsAt = patch.startsAt ?? null;
   const endsAt = patch.endsAt ?? null;
 
-  // Respect an explicit state from the admin. Never silently replace it with
-  // ACTIVE merely because the configured dates happen to contain "now".
+  // An explicitly selected admin state always wins over date-based inference.
   const nextState = requestedState ?? (
     !patch.state && currentState === "DRAFT" && startsAt && endsAt
       ? (new Date(startsAt) > new Date() ? "SCHEDULED" : currentState)
@@ -57,10 +60,10 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   );
 
   if (nextState === "ACTIVE" || nextState === "ENDING") {
-    await query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
+    await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
   }
 
-  const result = await query<DbSeason>(
+  const result = await db.query<DbSeason>(
     `UPDATE seasons
         SET code = COALESCE($2, code),
             name = COALESCE($3, name),
