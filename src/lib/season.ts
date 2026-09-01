@@ -31,7 +31,6 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const waiting = state === "DRAFT" || state === "SCHEDULED";
   const subscribed = snapshot.user.isSubscribed;
   const participant = snapshot.user.isParticipant;
-  const meta = headlines[state];
 
   let countdownTarget: string | null = null;
   let countdownLabel: string | null = null;
@@ -43,13 +42,14 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     countdownLabel = state === "ENDING" ? "Сезон завершится через" : "Сезон закончится через";
   }
 
+  const meta = headlines[state];
   return {
     isLive: live,
     isFinished: finished,
     isWaiting: waiting,
     canSpin: live && subscribed,
     canClaimGift: live && subscribed && participant && snapshot.stars.amount < snapshot.stars.max,
-    canWithdraw: state === "PAYOUT" || state === "CLOSED" || state === "ARCHIVED",
+    canWithdraw: finished,
     headline: meta.headline,
     note: meta.note,
     ctaLabel: live ? "Крутить" : waiting ? "Ещё не начался" : "Закрыт",
@@ -60,11 +60,11 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
 
 export function errorCopy(code: string): string {
   switch (code) {
-    case "NO_ATTEMPTS": return "Бесплатная попытка уже использована. Купи дополнительную прокрутку за Stars.";
-    case "INSUFFICIENT_STARS": return "Недостаточно Stars для этого действия.";
+    case "NO_ATTEMPTS": return "Бесплатная попытка уже использована. Купи дополнительную прокрутку за Telegram Stars.";
+    case "INSUFFICIENT_STARS": return "Недостаточно Telegram Stars для этого действия.";
     case "STARS_FULL":
-    case "GIFT_BALANCE_FULL": return "Баланс Stars заполнен. Потрать Stars, чтобы освободить место для новых наград.";
-    case "SEASON_CLOSED": return "Сезон завершён.";
+    case "GIFT_BALANCE_FULL": return "Баланс CRICKET BOX Stars заполнен (500/500). Освободи место выводом после завершения сезона.";
+    case "SEASON_CLOSED": return "Сезон завершён: новые прокрутки недоступны.";
     case "SEASON_NOT_ACTIVE": return "Сейчас нет активного сезона.";
     case "SEASON_NOT_STARTED": return "Сезон ещё не начался.";
     case "NOT_SUBSCRIBED": return "Подпишись на канал, чтобы участвовать.";
