@@ -19,6 +19,8 @@ const db = new Client({ connectionString: databaseUrl });
 const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 let admin;
 let season;
+let dueSeason;
+let endingSeason;
 let drop;
 
 const assert = (ok, message) => { if (!ok) throw new Error(`ASSERTION FAILED: ${message}`); };
@@ -43,6 +45,21 @@ try {
   assert(snapshot.rows[0].completed_spins === 100, "economy snapshot persists spin metrics");
   assert(Number(snapshot.rows[0].multipliers["ci-prize"]) === 1.25, "economy snapshot persists multipliers");
 
+  const dueSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Due Season','SCHEDULED',now()-interval '1 minute',now()+interval '1 day',100,$2) RETURNING id,state`, [`DUE-${suffix}`, admin]);
+  dueSeason = dueSeasonResult.rows[0].id;
+  const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
+  endingSeason = endingSeasonResult.rows[0].id;
+
+  const liveops = await import(path.resolve(process.cwd(), "src/server/liveops.ts"));
+  const transitions = await liveops.reconcileSeasonStates(db);
+  const transitionKeys = new Set(transitions.map(item => `${item.id}:${item.to}`));
+  assert(transitionKeys.has(`${dueSeason}:ACTIVE`), "scheduled season becomes active");
+  assert(transitionKeys.has(`${endingSeason}:CLOSED`), "expired ending season becomes closed");
+  const stateCheck = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason]]);
+  const stateById = new Map(stateCheck.rows.map(row => [row.id, row.state]));
+  assert(stateById.get(dueSeason) === "ACTIVE", "active season state persisted");
+  assert(stateById.get(endingSeason) === "CLOSED", "closed season state persisted");
+
   await db.query(`UPDATE season_drop_events SET status='EXECUTED',activated_at=now(),executed_at=now(),updated_at=now() WHERE id=$1`, [drop]);
   const check = await db.query(`SELECT status,activated_at,executed_at FROM season_drop_events WHERE id=$1`, [drop]);
   assert(check.rows[0]?.status === "EXECUTED" && check.rows[0]?.activated_at && check.rows[0]?.executed_at, "drop execution timestamps persist");
@@ -52,6 +69,8 @@ try {
   if (season) await db.query(`DELETE FROM season_economy_snapshots WHERE season_id=$1`, [season]).catch(() => {});
   if (season) await db.query(`DELETE FROM season_drop_events WHERE season_id=$1`, [season]).catch(() => {});
   if (season) await db.query(`DELETE FROM seasons WHERE id=$1`, [season]).catch(() => {});
+  if (dueSeason) await db.query(`DELETE FROM seasons WHERE id=$1`, [dueSeason]).catch(() => {});
+  if (endingSeason) await db.query(`DELETE FROM seasons WHERE id=$1`, [endingSeason]).catch(() => {});
   if (admin) await db.query(`DELETE FROM admins WHERE id=$1`, [admin]).catch(() => {});
   await db.end().catch(() => {});
 }
