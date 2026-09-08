@@ -13,6 +13,7 @@ Repository: `querzz/cricket-box-sparkle`
 - `season_leaderboard` provides season-scoped ranking data.
 - Stars balance changes use the append-only `stars_ledger`; opening balances, rewards, spending, withdrawals, reversals and capped overflow events are recorded with idempotency keys.
 - The legacy duplicate `src/server/db/schema.sql` has been removed; `db/schema.sql` is the single database source of truth.
+- DB integration tests cover schema presence, ledger append-only behavior, Stars cap/reconciliation, payment idempotency, leaderboard isolation and concurrent inventory claims.
 
 ### Telegram identity
 - Mini App `initData` is validated server-side with Telegram HMAC-SHA256.
@@ -76,6 +77,10 @@ The following real admin routes exist and use backend APIs:
 - Veteran
 - Economics
 - Season Sync
+
+### CI / verification
+- GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
+- Local DB integration test cleanup no longer fails because of the append-only ledger; immutable ledger fixtures are intentionally retained.
 
 ## Important remaining production gaps
 
