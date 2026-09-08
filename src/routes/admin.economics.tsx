@@ -1,182 +1,44 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Minus, Plus, RotateCcw } from "lucide-react";
+import { ArrowLeft, RefreshCw, RotateCcw, Save, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
 import { PrimaryButton } from "@/components/kit/PrimaryButton";
 
-export const Route = createFileRoute("/admin/economics")({
-  head: () => ({
-    meta: [
-      { title: "Экономика — CRICKET BOX" },
-      { name: "description", content: "Планировщик экономики для настройки и проверки сезона." },
-    ],
-  }),
-  component: EconomicsScreen,
-});
+export const Route = createFileRoute("/admin/economics")({ head: () => ({ meta: [{ title: "Экономика — CRICKET BOX" }] }), component: EconomicsScreen });
 
-type Planner = {
-  participants: number;
-  activity: number;
-  days: number;
-  paidConversion: number;
-  paidPrice: number;
-  freeSpinsPerDay: number;
-  starsLiability: number;
-  cashCost: number;
-  premiumQuantity: number;
-  premiumUnitCost: number;
-  giftLiability: number;
-};
-
-const baseline: Planner = {
-  participants: 150,
-  activity: 0.5,
-  days: 14,
-  paidConversion: 0.25,
-  paidPrice: 100,
-  freeSpinsPerDay: 1,
-  starsLiability: 670,
-  cashCost: 500,
-  premiumQuantity: 1,
-  premiumUnitCost: 18,
-  giftLiability: 2250,
-};
-
-function EconomicsScreen() {
-  const [p, setP] = useState(baseline);
-  const calc = useMemo(() => {
-    const eligible = Math.max(0, Math.round(p.participants * p.activity));
-    const free = eligible * p.days * p.freeSpinsPerDay;
-    const paid = Math.round((free / Math.max(1, 1 - p.paidConversion)) * p.paidConversion);
-    const total = free + paid;
-    const gross = paid * p.paidPrice;
-    const prizeCostStars = p.starsLiability + p.giftLiability;
-    const estimatedPayoutCost = p.cashCost + p.premiumQuantity * p.premiumUnitCost;
-    const breakEvenPaid = Math.max(0, Math.ceil(prizeCostStars / Math.max(1, p.paidPrice)));
-    const marginStars = gross - prizeCostStars;
-    const breakEvenConversion = paid === 0 ? 1 : Math.min(1, breakEvenPaid / Math.max(1, free));
-    const status = marginStars >= prizeCostStars * 0.25 ? "HEALTHY" : marginStars >= 0 ? "LOW MARGIN" : "LOSS RISK";
-    return { eligible, free, paid, total, gross, prizeCostStars, estimatedPayoutCost, breakEvenPaid, marginStars, breakEvenConversion, status };
-  }, [p]);
-
-  return (
-    <AppShell title="Экономика" nav={false}>
-      <div className="space-y-4 pb-8">
-        <Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link>
-
-        <GlassCard className="px-4 py-4" glow>
-          <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Планировщик экономики</p><h1 className="mt-1 font-display text-xl uppercase">Экономика сезона</h1></div><span className={statusClass(calc.status)}>{calc.status === "HEALTHY" ? "🟢 Выгодно" : calc.status === "LOW MARGIN" ? "🟡 Низкая маржа" : "🔴 Риск убытка"}</span></div>
-          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4"><Metric label="Ожидаемые бесплатные" value={calc.free.toLocaleString("ru-RU")} /><Metric label="Ожидаемые платные" value={calc.paid.toLocaleString("ru-RU")} /><Metric label="Всего прокруток" value={calc.total.toLocaleString("ru-RU")} /><Metric label="Оборот Stars" value={`${calc.gross.toLocaleString("ru-RU")} ⭐`} /></div>
-        </GlassCard>
-
-        <section>
-          <div className="mb-2 flex items-center justify-between"><h2 className="section-label">Параметры</h2><button type="button" onClick={() => setP(baseline)} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"><RotateCcw className="size-3" /> Сбросить</button></div>
-          <GlassCard className="space-y-4 px-4 py-4">
-            <NumberControl label="Участники" value={p.participants} min={1} step={1} onChange={(value) => setP({ ...p, participants: value })} suffix="чел." />
-            <NumberControl label="Активность" value={Math.round(p.activity * 100)} min={10} max={100} step={1} onChange={(value) => setP({ ...p, activity: value / 100 })} suffix="%" />
-            <NumberControl label="Длительность" value={p.days} min={1} step={1} onChange={(value) => setP({ ...p, days: value })} suffix="дней" />
-            <NumberControl label="Конверсия в платные" value={Math.round(p.paidConversion * 100)} min={0} max={100} step={1} onChange={(value) => setP({ ...p, paidConversion: value / 100 })} suffix="%" />
-            <NumberControl label="Цена платной прокрутки" value={p.paidPrice} min={1} step={1} onChange={(value) => setP({ ...p, paidPrice: value })} suffix="⭐" />
-            <NumberControl label="Бесплатных прокруток / день" value={p.freeSpinsPerDay} min={0} max={3} step={1} onChange={(value) => setP({ ...p, freeSpinsPerDay: value })} suffix="шт." />
-          </GlassCard>
-        </section>
-
-        <section>
-          <h2 className="section-label mb-2">Обязательства</h2>
-          <GlassCard className="space-y-3 px-4 py-4">
-            <NumberControl label="Обязательства по Stars-призам" value={p.starsLiability} min={0} step={1} onChange={(value) => setP({ ...p, starsLiability: value })} suffix="⭐" />
-            <NumberControl label="Обязательства Daily Gift" value={p.giftLiability} min={0} step={1} onChange={(value) => setP({ ...p, giftLiability: value })} suffix="⭐" />
-            <NumberControl label="Денежные призы" value={p.cashCost} min={0} step={1} onChange={(value) => setP({ ...p, cashCost: value })} suffix="грн" />
-            <NumberControl label="Telegram Premium" value={p.premiumQuantity} min={0} step={1} onChange={(value) => setP({ ...p, premiumQuantity: value })} suffix="шт." />
-            <NumberControl label="Цена 1 Premium" value={p.premiumUnitCost} min={0} step={1} onChange={(value) => setP({ ...p, premiumUnitCost: value })} suffix="CHF" />
-          </GlassCard>
-        </section>
-
-        <section>
-          <h2 className="section-label mb-2">Результат</h2>
-          <GlassCard className="space-y-2 px-4 py-4">
-            <ResultRow label="Ожидаемый оборот" value={`${calc.gross.toLocaleString("ru-RU")} ⭐`} />
-            <ResultRow label="Обязательства по Stars" value={`${calc.prizeCostStars.toLocaleString("ru-RU")} ⭐`} />
-            <ResultRow label="Примерная маржа по Stars" value={`${calc.marginStars.toLocaleString("ru-RU")} ⭐`} />
-            <ResultRow label="Безубыточность, платных прокруток" value={`${calc.breakEvenPaid}`} />
-            <ResultRow label="Безубыточность, конверсия" value={`${Math.round(calc.breakEvenConversion * 100)}%`} />
-            <ResultRow label="Материальные затраты" value={`${calc.estimatedPayoutCost.toLocaleString("ru-RU")} (грн + CHF)`} />
-            <ResultRow label="Premium" value={`${p.premiumQuantity} шт. × ${p.premiumUnitCost} CHF`} />
-            <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">Планировщик показывает прогноз. Стоимость закупки призов, реальные платежи Telegram и резерв уточняются перед запуском сезона.</div>
-          </GlassCard>
-        </section>
-
-        <PrimaryButton fullWidth onClick={() => alert("Расчёт сохранится вместе с настройками выбранного сезона на этапе подключения backend.")}>Сохранить расчёт</PrimaryButton>
-      </div>
-    </AppShell>
-  );
+type Season={id:string;code:string;name:string;state:string;starts_at:string|null;ends_at:string|null;paid_spin_price:number;paid_spin_enabled:boolean;daily_free_spin:boolean};
+type Economy={season:Season;spins:{hour:number;day:number;week:number;season:number};metrics:{elapsedFraction:number;completedSpins:number;pacePerDay:number;projectedSeasonSpins:number;remainingDays:number};prizes:Array<{id:string;kind:string;title:string;quantityTotal:number;quantityRemaining:number;consumed:number;amount:number;unitCost:number;currency:string|null;multiplier:number;weight:number}>};
+type Drop={id:string;name:string;trigger_type:string;trigger_value:number|null;payload:{prizes?:unknown[]};status:string;created_at:string;executed_at:string|null};
+type Api<T>={ok:boolean;code?:string;season?:T;seasons?:T;drops?:T;metrics?:T;prizes?:T;snapshot?:T};
+const BASE={participants:150,activity:50,days:14,paidConversion:25,avgPaid:3,price:100,safety:1.2};
+function initData(){return (window as Window&{Telegram?:{WebApp?:{initData?:string}}}).Telegram?.WebApp?.initData?.trim()??"";}
+async function api<T>(url:string,method:"GET"|"POST"|"PATCH"="GET",body?:Record<string,unknown>){const r=await fetch(url,{method,headers:{"content-type":"application/json"},...(body?{body:JSON.stringify({...body,initData:initData()})}:{})});const d=await r.json() as Api<T>;if(!r.ok||!d.ok)throw new Error(d.code??"REQUEST_FAILED");return d;}
+function EconomicsScreen(){
+ const [seasons,setSeasons]=useState<Season[]>([]);const [seasonId,setSeasonId]=useState("");const [economy,setEconomy]=useState<Economy|null>(null);const [drops,setDrops]=useState<Drop[]>([]);const [p,setP]=useState(BASE);const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [dropSaving,setDropSaving]=useState(false);const [error,setError]=useState("");const [message,setMessage]=useState("");
+ const [drop,setDrop]=useState({name:"",triggerType:"SPIN_COUNT",triggerValue:"100",payload:JSON.stringify({prizes:[{kind:"STARS",title:"20 Stars",amount:20,quantityTotal:10,active:true}]},null,2)});
+ const calc=useMemo(()=>{const eligible=Math.max(0,Math.round(p.participants*p.activity/100));const free=eligible*p.days;const paid=Math.round(eligible*p.paidConversion/100*p.avgPaid);const total=free+paid;const planning=Math.ceil(total*p.safety);const gross=paid*p.price;const starsLiability=economy?.prizes.filter(x=>x.kind==="STARS").reduce((s,x)=>s+x.amount*x.quantityTotal,0)??0;const material=(economy?.prizes.reduce((s,x)=>s+x.unitCost*x.quantityTotal,0)??0);const breakEven=Math.ceil((starsLiability+Math.max(0,material))/Math.max(1,p.price));const margin=gross-starsLiability;const status=margin>=starsLiability*0.25?"HEALTHY":margin>=0?"LOW MARGIN":"LOSS RISK";return{eligible,free,paid,total,planning,gross,starsLiability,material,breakEven,margin,status,maxFree:p.participants*p.days};},[p,economy]);
+ const loadSeasons=async()=>{setLoading(true);setError("");try{const d=await api<Season[]>(`/api/admin/seasons?initData=${encodeURIComponent(initData())}`);const list=d.seasons??[];setSeasons(list);setSeasonId(v=>v&&list.some(x=>x.id===v)?v:list.find(x=>x.state==="ACTIVE")?.id??list.find(x=>x.state==="ENDING")?.id??list[0]?.id??"");}catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить сезоны.");}finally{setLoading(false);}};
+ const load=async(id:string)=>{if(!id){setEconomy(null);setDrops([]);return;}setError("");try{const [e,d]=await Promise.all([api<Economy>(`/api/admin/economy?seasonId=${encodeURIComponent(id)}&initData=${encodeURIComponent(initData())}`),api<Drop[]>(`/api/admin/drops?seasonId=${encodeURIComponent(id)}&initData=${encodeURIComponent(initData())}`)]);setEconomy(e as unknown as Economy);setDrops(d.drops??[]);}catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить экономику.");}};
+ useEffect(()=>{void loadSeasons();},[]);useEffect(()=>{void load(seasonId);},[seasonId]);
+ const snapshot=async()=>{if(!seasonId)return;setSaving(true);setError("");try{await api(`/api/admin/economy","POST",{seasonId});setMessage("Снимок экономики сохранён в журнале.");await load(seasonId);}catch(e){setError(e instanceof Error?e.message:"Не удалось сохранить снимок.");}finally{setSaving(false);}};
+ const createDrop=async()=>{if(!seasonId||!drop.name.trim())return;let payload:unknown;try{payload=JSON.parse(drop.payload);}catch{setError("Payload должен быть валидным JSON.");return;}setDropSaving(true);setError("");try{await api(`/api/admin/drops","POST",{seasonId,name:drop.name.trim(),triggerType:drop.triggerType,triggerValue:drop.triggerType==="MANUAL"?null:Number(drop.triggerValue),payload});setMessage("LiveOps-дроп запланирован.");setDrop({name:"",triggerType:"SPIN_COUNT",triggerValue:"100",payload:drop.payload});await load(seasonId);}catch(e){setError(e instanceof Error?e.message:"Не удалось создать дроп.");}finally{setDropSaving(false);}};
+ const dropAction=async(id:string,action:"ACTIVATE"|"CANCEL")=>{try{await api(`/api/admin/drops","PATCH",{id,seasonId,action});setMessage(action==="ACTIVATE"?"Дроп активирован.":"Дроп отменён.");await load(seasonId);}catch(e){setError(e instanceof Error?e.message:"Операция с дропом не выполнена.");}};
+ return <AppShell title="Экономика" nav={false}><div className="space-y-4 pb-8"><Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5"/> Админ-панель</Link>
+  <GlassCard className="px-4 py-4" glow><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Live economy</p><h1 className="mt-1 font-display text-xl uppercase">{economy?.season.code??"Экономика сезона"}</h1></div><button type="button" onClick={()=>void load(seasonId)} className="grid size-9 place-items-center rounded-xl border border-glass-border"><RefreshCw className="size-4"/></button></div><select value={seasonId} onChange={e=>setSeasonId(e.target.value)} className="admin-input mt-4 w-full">{seasons.map(s=><option key={s.id} value={s.id}>{s.code} · {s.state}</option>)}</select>
+  {economy&&<div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5"><Metric label="Спинов" value={String(economy.metrics.completedSpins)}/><Metric label="/ день" value={economy.metrics.pacePerDay.toFixed(1)}/><Metric label="Прогноз" value={economy.metrics.projectedSeasonSpins.toFixed(0)}/><Metric label="Осталось" value={`${economy.metrics.remainingDays.toFixed(1)} д.`}/><Metric label="Прогресс" value={`${Math.round(economy.metrics.elapsedFraction*100)}%`}/></div>}</GlassCard>
+  {error&&<GlassCard className="border-destructive/30 bg-destructive/5 px-4 py-3 text-[11px] text-destructive">{error}</GlassCard>}{message&&<GlassCard className="border-primary/25 bg-primary/5 px-4 py-3 text-[11px]">{message}</GlassCard>}
+  <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Сценарий</h2><button type="button" onClick={()=>setP(BASE)} className="text-[10px] text-muted-foreground"><RotateCcw className="mr-1 inline size-3"/>Сбросить</button></div><GlassCard className="space-y-3 px-4 py-4">{[['Участники','participants','чел.'],['Активность','activity','%'],['Дни','days','дней'],['Конверсия','paidConversion','%'],['Платных/покупателя','avgPaid','шт.'],['Цена paid spin','price','⭐'],['Safety multiplier','safety','×']].map(([label,key,suffix])=><Row key={key} label={label} value={p[key as keyof typeof p]} suffix={suffix} onChange={v=>setP({...p,[key]:v})}/>)}</GlassCard></section>
+  <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Прогноз</h2><span className={statusClass(calc.status)}>{calc.status}</span></div><div className="mt-3 grid grid-cols-2 gap-2"><Metric label="Free expected" value={calc.free.toLocaleString("ru-RU")}/><Metric label="Free maximum" value={calc.maxFree.toLocaleString("ru-RU")}/><Metric label="Paid expected" value={calc.paid.toLocaleString("ru-RU")}/><Metric label="Planning volume" value={calc.planning.toLocaleString("ru-RU")}/></div><div className="mt-3 space-y-1"><ResultRow label="Оборот" value={`${calc.gross.toLocaleString("ru-RU")} ⭐`}/><ResultRow label="Stars liability" value={`${calc.starsLiability.toLocaleString("ru-RU")} ⭐`}/><ResultRow label="Материальные затраты" value={calc.material.toFixed(2)}/><ResultRow label="Break-even paid spins" value={String(calc.breakEven)}/><ResultRow label="Маржа по Stars" value={`${calc.margin.toLocaleString("ru-RU")} ⭐`}/></div><div className="mt-3 rounded-2xl border border-primary/20 bg-primary/5 p-3 text-[10px] leading-relaxed text-muted-foreground">Live multiplier считается на сервере по фактическому расходу inventory и позиции сезона. Планировщик отдельно показывает стресс через safety multiplier {p.safety.toFixed(2)}×.</div></GlassCard>
+  <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Prize economy</h2><Link to="/admin/prizes" className="text-[10px] text-primary-glow">Настроить фонд →</Link></div><div className="mt-3 space-y-2">{economy?.prizes.map(x=><div key={x.id} className="rounded-xl border border-glass-border bg-muted/10 px-3 py-2"><div className="flex justify-between gap-3"><span className="truncate text-xs font-semibold">{x.title}</span><span className="text-xs font-semibold">×{x.multiplier.toFixed(2)}</span></div><p className="mt-1 text-[9px] text-muted-foreground">{x.kind} · {x.quantityRemaining}/{x.quantityTotal} · weight {x.weight}</p></div>)}</div></GlassCard>
+  <PrimaryButton fullWidth disabled={saving||loading||!seasonId} onClick={()=>void snapshot()}><Save className="mr-2 size-4"/>Сохранить live snapshot</PrimaryButton>
+  <section><h2 className="section-label mb-2">LiveOps drops</h2><GlassCard className="space-y-3 px-4 py-4"><div className="grid grid-cols-2 gap-2"><Field label="Название"><input value={drop.name} onChange={e=>setDrop({...drop,name:e.target.value})} placeholder="Например: 1000-й спин" className="admin-input w-full"/></Field><Field label="Триггер"><select value={drop.triggerType} onChange={e=>setDrop({...drop,triggerType:e.target.value})} className="admin-input w-full"><option value="SPIN_COUNT">По спинам</option><option value="SEASON_PERCENT">По % сезона</option><option value="AT">По времени (Unix sec)</option><option value="MANUAL">Вручную</option></select></Field></div>{drop.triggerType!=="MANUAL"&&<Field label="Значение"><input type="number" value={drop.triggerValue} onChange={e=>setDrop({...drop,triggerValue:e.target.value})} className="admin-input w-full"/></Field>}<Field label="Payload JSON"><textarea value={drop.payload} onChange={e=>setDrop({...drop,payload:e.target.value})} rows={9} className="admin-input w-full font-mono text-[10px]"/></Field><PrimaryButton fullWidth disabled={dropSaving||!seasonId||!drop.name.trim()} onClick={()=>void createDrop()}><Zap className="mr-2 size-4"/>Запланировать дроп</PrimaryButton></GlassCard>
+  <div className="mt-3 space-y-2">{drops.length===0&&<p className="text-center text-[10px] text-muted-foreground">Дропов пока нет.</p>}{drops.map(x=><GlassCard key={x.id} className="px-3 py-3"><div className="flex items-center gap-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{x.name}</p><p className="mt-1 text-[9px] text-muted-foreground">{x.trigger_type}{x.trigger_value!==null?` · ${x.trigger_value}`:""} · {x.status}</p></div>{x.status==="SCHEDULED"&&<><button type="button" onClick={()=>void dropAction(x.id,"ACTIVATE")} className="grid size-8 place-items-center rounded-lg border border-primary/25 bg-primary/5"><Zap className="size-3"/></button><button type="button" onClick={()=>void dropAction(x.id,"CANCEL")} className="grid size-8 place-items-center rounded-lg border border-destructive/20 bg-destructive/5 text-destructive"><X className="size-3"/></button></>}</div></GlassCard>)}</div></section>
+ </div></AppShell>;
 }
-
-function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>; }
-function ResultRow({ label, value }: { label: string; value: string }) { return <div className="flex items-center justify-between gap-4 border-b border-glass-border py-2 last:border-0"><span className="text-[11px] text-muted-foreground">{label}</span><span className="text-right text-sm font-semibold tabular-nums">{value}</span></div>; }
-function statusClass(status: string) { return status === "HEALTHY" ? "rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold" : status === "LOW MARGIN" ? "rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-[10px] font-semibold" : "rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-[10px] font-semibold"; }
-
-function NumberControl({ label, value, min = 0, max = 100000, step = 1, suffix, onChange }: { label: string; value: number; min?: number; max?: number; step?: number; suffix: string; onChange: (value: number) => void }) {
-  const [text, setText] = useState(String(value));
-
-  useEffect(() => {
-    setText(String(value));
-  }, [value]);
-
-  const clamp = (next: number) => Math.min(max, Math.max(min, Number.isFinite(next) ? next : min));
-
-  const commitText = () => {
-    if (text.trim() === "") {
-      const fallback = clamp(min);
-      setText(String(fallback));
-      onChange(fallback);
-      return;
-    }
-    const parsed = Number(text);
-    if (!Number.isFinite(parsed)) {
-      setText(String(value));
-      return;
-    }
-    const next = Math.round(clamp(parsed));
-    setText(String(next));
-    onChange(next);
-  };
-
-  const changeBy = (delta: number) => {
-    const parsed = Number(text);
-    const base = Number.isFinite(parsed) ? parsed : value;
-    const next = Math.round(clamp(base + delta));
-    setText(String(next));
-    onChange(next);
-  };
-
-  return (
-    <div className="flex items-center gap-3">
-      <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{label}</p></div>
-      <div className="flex items-center gap-1 rounded-xl border border-glass-border bg-muted/20 p-1">
-        <button type="button" onClick={() => changeBy(-step)} aria-label={`Уменьшить: ${label}`} className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-muted/40"><Minus className="size-3" /></button>
-        <input
-          aria-label={label}
-          type="number"
-          inputMode="numeric"
-          value={text}
-          min={min}
-          max={max}
-          step="1"
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commitText}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.currentTarget.blur();
-            }
-          }}
-          className="w-20 bg-transparent text-center text-sm font-semibold outline-none"
-        />
-        <button type="button" onClick={() => changeBy(step)} aria-label={`Увеличить: ${label}`} className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-muted/40"><Plus className="size-3" /></button>
-      </div>
-      <span className="w-14 text-[10px] text-muted-foreground">{suffix}</span>
-    </div>
-  );
-}
+function Metric({label,value}:{label:string;value:string}){return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.15em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>}
+function ResultRow({label,value}:{label:string;value:string}){return <div className="flex justify-between gap-3 border-b border-glass-border py-2 last:border-0"><span className="text-[10px] text-muted-foreground">{label}</span><span className="text-right text-xs font-semibold tabular-nums">{value}</span></div>}
+function Row({label,value,suffix,onChange}:{label:string;value:number;suffix:string;onChange:(v:number)=>void}){return <label className="flex items-center gap-3"><span className="min-w-0 flex-1 text-xs font-semibold">{label}</span><input type="number" value={value} min={0} step="0.01" onChange={e=>onChange(Number(e.target.value)||0)} className="admin-input w-24 text-center"/><span className="w-12 text-[9px] text-muted-foreground">{suffix}</span></label>}
+function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="block"><span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>{children}</label>}
+function statusClass(s:string){return s==="HEALTHY"?"rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[9px] font-semibold":s==="LOW MARGIN"?"rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2 py-1 text-[9px] font-semibold":"rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-[9px] font-semibold"}
