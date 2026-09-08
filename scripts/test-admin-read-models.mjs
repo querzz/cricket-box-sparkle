@@ -101,13 +101,14 @@ try {
        FROM users u
        LEFT JOIN spin_stats ss ON ss.user_id=u.id
        LEFT JOIN reward_stats rs ON rs.user_id=u.id
-      WHERE ($2='' OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR u.first_name ILIKE $1 OR COALESCE(u.last_name,'') ILIKE $1)
+      WHERE u.username IN ($1,$2)
       ORDER BY COALESCE(ss.last_activity,u.last_seen_at) DESC
-      LIMIT $4`,
-    [`%ci_read_${suffix}%`, `%ci_read_${suffix}%`, seasonId, 50],
+      LIMIT 50`,
+    [`ci_read_${suffix}`, `ci_read_2_${suffix}`, seasonId],
   );
   assert(participantRows.rowCount === 2, "participants query executes and returns both scoped CI users");
   assert(participantRows.rows.some((row) => row.spins === 2 && row.rewards === 1), "participants query aggregates spins and rewards");
+  assert(participantRows.rows.some((row) => row.spins === 1 && row.rewards === 0), "participants query retains the second CI user");
 
   const statsRows = await db.query(
     `SELECT COUNT(*)::text AS value
