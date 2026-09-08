@@ -52,6 +52,7 @@ let userA;
 let userB;
 let userC;
 let admin;
+let liveTestSeason;
 
 try {
   await db.connect();
@@ -67,6 +68,9 @@ try {
   const view = await db.query(`SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='season_leaderboard'`);
   assert(view.rowCount === 1, "season_leaderboard view exists");
 
+  const liveSeasonCount = await db.query(`SELECT COUNT(*)::int AS count FROM seasons WHERE state IN ('ACTIVE','ENDING')`);
+  assert(Number(liveSeasonCount.rows[0]?.count ?? 0) <= 1, "at most one live season exists");
+
   const adminResult = await db.query(
     `INSERT INTO admins (telegram_id, username, role, is_active)
      VALUES ($1,$2,'OWNER',TRUE) RETURNING id`,
@@ -75,7 +79,7 @@ try {
   admin = adminResult.rows[0].id;
   const seasons = await db.query(
     `INSERT INTO seasons (code,name,state,paid_spin_price,daily_free_spin,created_by)
-     VALUES ($1,'CI Season A','ACTIVE',100,TRUE,$3),
+     VALUES ($1,'CI Season A','CLOSED',100,TRUE,$3),
             ($2,'CI Season B','CLOSED',100,TRUE,$3)
      RETURNING id,code`,
     [`CI-${suffix}-A`, `CI-${suffix}-B`, admin],
@@ -201,17 +205,45 @@ try {
   const remaining = await db.query(`SELECT quantity_remaining FROM prizes WHERE id=$1`, [racePrize.rows[0].id]);
   assert(Number(remaining.rows[0].quantity_remaining) === 0, "inventory cannot become negative or remain consumed twice");
 
+  const liveSeason = await db.query(`SELECT id FROM seasons WHERE state IN ('ACTIVE','ENDING') LIMIT 1`);
+  if (liveSeason.rows[0]) {
+    await expectReject(
+      () => db.query(
+        `INSERT INTO seasons (code,name,state,paid_spin_price,daily_free_spin,created_by)
+         VALUES ($1,'CI Live Conflict','ACTIVE',100,TRUE,$2) RETURNING id`,
+        [`CI-${suffix}-LIVE-CONFLICT`, admin],
+      ),
+      "unique live-season constraint rejects a second active season",
+    );
+  } else {
+    const createdLive = await db.query(
+      `INSERT INTO seasons (code,name,state,paid_spin_price,daily_free_spin,created_by)
+       VALUES ($1,'CI Live Test','ACTIVE',100,TRUE,$2) RETURNING id`,
+      [`CI-${suffix}-LIVE`, admin],
+    );
+    liveTestSeason = createdLive.rows[0]?.id;
+    await expectReject(
+      () => db.query(
+        `INSERT INTO seasons (code,name,state,paid_spin_price,daily_free_spin,created_by)
+         VALUES ($1,'CI Live Conflict','ACTIVE',100,TRUE,$2) RETURNING id`,
+        [`CI-${suffix}-LIVE-CONFLICT`, admin],
+      ),
+      "unique live-season constraint rejects a second active season",
+    );
+  }
+
   console.log("✅ DB integration tests passed");
 } finally {
   if (admin || seasonA || seasonB) {
     const users = [userA, userB, userC].filter(Boolean);
-    const seasons = [seasonA, seasonB].filter(Boolean);
+    const seasons = [seasonA, seasonB, liveTestSeason].filter(Boolean);
     await db.query(`DELETE FROM star_transactions WHERE user_id=ANY($1::uuid[])`, [users]).catch(() => {});
     await db.query(`DELETE FROM payouts WHERE user_id=ANY($1::uuid[])`, [users]).catch(() => {});
     await db.query(`DELETE FROM spins WHERE user_id=ANY($1::uuid[])`, [users]).catch(() => {});
     await db.query(`DELETE FROM prizes WHERE season_id=ANY($1::uuid[])`, [seasons]).catch(() => {});
-    // stars_ledger is intentionally append-only, so its test fixtures and their referenced users/seasons stay intact.
+    await db.query(`DELETE FROM seasons WHERE id=ANY($1::uuid[])`, [seasons]).catch(() => {});
     if (admin) await db.query(`DELETE FROM admins WHERE id=$1`, [admin]).catch(() => {});
+    await db.query(`DELETE FROM users WHERE id=ANY($1::uuid[])`, [users]).catch(() => {});
   }
   await db.end();
 }
