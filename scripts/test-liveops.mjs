@@ -21,6 +21,7 @@ let admin;
 let season;
 let dueSeason;
 let endingSeason;
+let liveSeason;
 let drop;
 
 const assert = (ok, message) => { if (!ok) throw new Error(`ASSERTION FAILED: ${message}`); };
@@ -45,20 +46,31 @@ try {
   assert(snapshot.rows[0].completed_spins === 100, "economy snapshot persists spin metrics");
   assert(Number(snapshot.rows[0].multipliers["ci-prize"]) === 1.25, "economy snapshot persists multipliers");
 
+  const liveSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Existing Live Season','ACTIVE',now()-interval '1 hour',now()+interval '1 day',100,$2) RETURNING id`, [`LIVE-${suffix}`, admin]);
+  liveSeason = liveSeasonResult.rows[0].id;
+
   const dueSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Due Season','SCHEDULED',now()-interval '1 minute',now()+interval '1 day',100,$2) RETURNING id,state`, [`DUE-${suffix}`, admin]);
   dueSeason = dueSeasonResult.rows[0].id;
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   endingSeason = endingSeasonResult.rows[0].id;
 
-  await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING') AND id<>$1::uuid`, [dueSeason]);
-  const activated = await db.query(`UPDATE seasons SET state='ACTIVE',updated_at=now() WHERE id=$1::uuid AND state='SCHEDULED' RETURNING id::text,state`, [dueSeason]);
-  assert(activated.rows[0]?.state === "ACTIVE", "scheduled season becomes active");
-  const closed = await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,state`, [endingSeason]);
-  assert(closed.rows.some(row => row.id === endingSeason && row.state === "CLOSED"), "expired ending season becomes closed");
-  const stateCheck = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason]]);
+  await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING') AND id<>$1::uuid AND id<>$2::uuid`, [dueSeason, endingSeason]);
+  const activeCountBefore = await db.query(`SELECT COUNT(*)::int AS count FROM seasons WHERE state IN ('ACTIVE','ENDING')`);
+  assert(activeCountBefore.rows[0]?.count === 1, "test fixture has a single live season before activation");
+
+  const liveops = await import(path.resolve(process.cwd(), "src/server/liveops.ts"));
+  const transitions = await liveops.reconcileSeasonStates(db);
+  const transitionKeys = new Set(transitions.map(item => `${item.id}:${item.to}`));
+  assert(transitionKeys.has(`${dueSeason}:ACTIVE`), "scheduled season becomes active");
+  assert(transitionKeys.has(`${endingSeason}:CLOSED`), "expired ending season becomes closed");
+  const stateCheck = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason, liveSeason]]);
   const stateById = new Map(stateCheck.rows.map(row => [row.id, row.state]));
   assert(stateById.get(dueSeason) === "ACTIVE", "active season state persisted");
   assert(stateById.get(endingSeason) === "CLOSED", "closed season state persisted");
+  assert(stateById.get(liveSeason) === "CLOSED", "previous live season is closed when a scheduled season starts");
+
+  const activeCountAfter = await db.query(`SELECT COUNT(*)::int AS count FROM seasons WHERE state IN ('ACTIVE','ENDING')`);
+  assert(activeCountAfter.rows[0]?.count === 1, "only one live season remains after reconciliation");
 
   await db.query(`UPDATE season_drop_events SET status='EXECUTED',activated_at=now(),executed_at=now(),updated_at=now() WHERE id=$1`, [drop]);
   const check = await db.query(`SELECT status,activated_at,executed_at FROM season_drop_events WHERE id=$1`, [drop]);
@@ -71,6 +83,7 @@ try {
   if (season) await db.query(`DELETE FROM seasons WHERE id=$1`, [season]).catch(() => {});
   if (dueSeason) await db.query(`DELETE FROM seasons WHERE id=$1`, [dueSeason]).catch(() => {});
   if (endingSeason) await db.query(`DELETE FROM seasons WHERE id=$1`, [endingSeason]).catch(() => {});
+  if (liveSeason) await db.query(`DELETE FROM seasons WHERE id=$1`, [liveSeason]).catch(() => {});
   if (admin) await db.query(`DELETE FROM admins WHERE id=$1`, [admin]).catch(() => {});
   await db.end().catch(() => {});
 }
