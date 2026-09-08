@@ -30,12 +30,14 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 function configuredWeight(prize: DynamicPrize) {
   const configured = Number(prize.metadata?.weight ?? 1);
-  return Number.isFinite(configured) && configured > 0 ? configured : 1;
+  // weight=0 is an explicit valid choice: the outcome stays visible in the
+  // prize catalogue but cannot be selected until the weight is raised.
+  return Number.isFinite(configured) && configured >= 0 ? configured : 1;
 }
 
 /**
- * Transparent Season #001 selection model:
- * each remaining inventory unit contributes its configured weight.
+ * Canonical Season selection model.
+ * Every remaining inventory unit contributes its configured weight.
  * No hidden pacing, pity, anti-streak or time-based probability changes.
  */
 export function buildDynamicWeights<T extends DynamicPrize>(
@@ -62,7 +64,8 @@ export function buildDynamicWeights<T extends DynamicPrize>(
 
 function selectByWeights<T>(weighted: Array<{ prize: T; weight: number }>, randomUnit: () => number): T {
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
-  if (!(total > 0)) return weighted[weighted.length - 1]!.prize;
+  if (!(total > 0)) throw new Error("NO_PRIZES");
+
   let cursor = clamp(randomUnit(), 0, 0.9999999999999999) * total;
   for (const item of weighted) {
     cursor -= item.weight;
@@ -77,11 +80,13 @@ export function pickDynamicPrize<T extends DynamicPrize>(
   context: DynamicSelectionContext = {},
 ): DynamicSelectionResult<T> {
   if (!prizes.length) throw new Error("NO_PRIZES");
+
   const weighted = buildDynamicWeights(prizes, context);
   const selected = selectByWeights(
     weighted.map((item) => ({ prize: item.prize, weight: item.diagnostics.finalWeight })),
     randomUnit,
   );
+
   return {
     prize: selected,
     diagnostics: Object.fromEntries(weighted.map((item) => [item.prize.id, item.diagnostics])),
