@@ -163,7 +163,7 @@ export const Route = createFileRoute("/api/session")({
           `SELECT id::text,kind,title,subtitle,amount::text,quantity_remaining,quantity_total,metadata,image_url FROM prizes WHERE season_id=$1::uuid AND is_active=TRUE ORDER BY created_at ASC`, [season.id]);
         const spinStats = await query<{total:string}>(`SELECT COUNT(*)::text AS total FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND status='COMPLETED'`, [user.id,season.id]);
         const freeToday = await query<{exists:boolean}>(
-          `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type IN ('FREE','ACTIVITY_BONUS') AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id],
+          `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id],
         );
         const live = season.state === "ACTIVE" || season.state === "ENDING";
         const dailyAvailable = season.daily_free_spin && live && isSubscribed && storedState.is_participant && !freeToday.rows[0]?.exists ? 1 : 0;
