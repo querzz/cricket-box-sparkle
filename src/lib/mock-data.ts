@@ -8,26 +8,12 @@ export const WITHDRAWAL_MINIMUM = 50;
 
 export function createInitialSnapshot(): SessionSnapshot {
   return {
-    user: {
-      id: "u_1",
-      username: "@username",
-      isParticipant: true,
-      isSubscribed: true,
-      xp: 0,
-      level: 1,
-    },
-    season: {
-      id: "s_001",
-      code: "CRICKET BOX #001",
-      title: "Founder Season",
-      state: "ACTIVE",
-      startsAt: new Date(now - 2 * day).toISOString(),
-      endsAt: new Date(now + 12 * day).toISOString(),
-      paidSpinPrice: 100,
-    },
+    user: { id: "u_1", username: "@username", isParticipant: true, isSubscribed: true, xp: 0, level: 1 },
+    season: { id: "s_001", code: "CRICKET BOX #001", title: "Founder Season", state: "ACTIVE", startsAt: new Date(now - 2 * day).toISOString(), endsAt: new Date(now + 12 * day).toISOString(), paidSpinPrice: 100 },
     stars: { amount: 125, max: STARS_MAX },
     spin: { freeSpins: 1, paidSpinPrice: 100, totalSpins: 0 },
     gift: { state: "AVAILABLE", availableAt: new Date(now).toISOString() },
+    activity: { points: 0, pointsPerBonus: 10, pointsToNext: 10, progressPercent: 0, reactions: 0, comments: 0, joins: 0, activeDays: 0, bonusSpinsGranted: 0, bonusSpinsRemaining: 0, maxBonusSpins: 20 },
     prizes: [
       { id: "p_money", kind: "MONEY", title: "500 грн", remaining: 1, total: 1, weight: 1, amount: 500 },
       { id: "p_prem3", kind: "PREMIUM", title: "Telegram Premium", subtitle: "3 месяца", remaining: 1, total: 1, weight: 1 },
