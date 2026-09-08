@@ -11,6 +11,7 @@
     "test:db": "node scripts/test-db-integration.mjs",
     "test:liveops": "node scripts/test-liveops.mjs",
     "test:payment-security": "node scripts/test-payment-security.mjs",
+    "test:spin-idempotency": "node scripts/test-spin-idempotency.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
