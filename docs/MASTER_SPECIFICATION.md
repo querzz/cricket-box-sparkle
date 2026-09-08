@@ -8,7 +8,7 @@
 - User-facing UI must be **Russian** by default. Code and variable names may remain English. Architecture must support future `en`/`uk` i18n.
 - Current repository: `querzz/cricket-box-sparkle`.
 - Current user frontend is an existing TanStack Start + React mock implementation. Preserve it; do not rebuild from scratch.
-- Production backend, database, Telegram integration, admin panel, and production security are still missing.
+- The repository now contains the PostgreSQL-backed backend, Telegram integration, admin panel, and production-shaped security controls described below; remaining production gaps are tracked in `docs/IMPLEMENTATION_STATUS.md`.
 
 ## 1. Current state — already implemented
 
@@ -159,7 +159,7 @@ Required:
 - total/paid/remaining;
 - Stars owed;
 - copy/export winner list;
-- immutable history.
+- immutable payout history.
 
 ### Statistics
 Dashboard with:
@@ -183,7 +183,6 @@ Owner-only actions: add/remove/disable admins, transfer ownership, critical corr
 Immutable log with:
 - timestamp;
 - actor admin;
-- action;
 - target type/id;
 - before/after JSON;
 - metadata/reason.
