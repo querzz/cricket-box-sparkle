@@ -134,7 +134,7 @@ try {
       const result = await client.query(
         `INSERT INTO star_transactions(user_id,amount,status,payload,telegram_charge_id)
          VALUES($1,100,'PENDING',$2,$3) RETURNING id`,
-        [user, 100, JSON.stringify({ payload: racePayload, type: "PAID_SPIN", seasonId: season, userId: user }), raceChargeId],
+        [user, JSON.stringify({ payload: racePayload, type: "PAID_SPIN", seasonId: season, userId: user }), raceChargeId],
       );
       await client.query("COMMIT");
       return { ok: true, id: result.rows[0].id };
