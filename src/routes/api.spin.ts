@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
+import { secureRandomUnit } from "@/server/secure-random";
 import { appendStarsLedger } from "@/server/stars-ledger";
 
 const MAX_STARS = 500;
@@ -29,7 +30,7 @@ function pickWeighted(prizes: PrizeRow[]) {
   });
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
   if (!(total > 0)) return weighted[0]!.prize;
-  let cursor = Math.random() * total;
+  let cursor = secureRandomUnit() * total;
   for (const item of weighted) {
     cursor -= item.weight;
     if (cursor < 0) return item.prize;
