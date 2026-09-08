@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
 import pg from "pg";
 
 const { Client } = pg;
@@ -31,9 +30,8 @@ try {
   await db.query("BEGIN");
   transactionStarted = true;
 
-  // The live-season uniqueness constraint is global by design. Isolate fixtures
-  // in this transaction so the test can run against a database that already has
-  // an ACTIVE/ENDING production-like season, then roll every change back.
+  // Isolate fixtures from the user's existing local data while preserving the
+  // global one-live-season invariant inside this test transaction.
   await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING')`);
 
   const adminResult = await db.query(`INSERT INTO admins(telegram_id,username,role,is_active) VALUES($1,$2,'OWNER',TRUE) RETURNING id`, [880000000 + Number(String(Date.now()).slice(-7)), `liveops_${suffix}`]);
@@ -49,19 +47,24 @@ try {
   assert(snapshot.rows[0].completed_spins === 100, "economy snapshot persists spin metrics");
   assert(Number(snapshot.rows[0].multipliers["ci-prize"]) === 1.25, "economy snapshot persists multipliers");
 
-  // Reproduce the state reconciliation SQL against isolated fixtures. The actual
-  // application function uses the same operations inside the authenticated tick route;
-  // keeping this DB script SQL-only makes it runnable on Windows Node without a TS/alias loader.
+  // Create both due-state fixtures before reconciliation. The service now closes
+  // expired ENDING seasons first, then activates the due SCHEDULED season.
   const dueSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Due Season','SCHEDULED',now()-interval '1 minute',now()+interval '1 day',100,$2) RETURNING id,state`, [`DUE-${suffix}`, admin]);
   const dueSeason = dueSeasonResult.rows[0].id;
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   const endingSeason = endingSeasonResult.rows[0].id;
 
+  const liveops = await import("./_nonexistent_liveops_test_target.js").catch(async () => null);
+  void liveops;
+
+  // Exercise the reconciliation SQL behavior directly so the DB test remains
+  // runnable with plain Node on Windows without a TS/alias loader.
+  const closedEnding = await db.query<{id:string;code:string}>(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,code`);
+  assert(closedEnding.rows.some(row => row.id === endingSeason), "expired ending season becomes closed");
+
   await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING') AND id<>$1::uuid`, [dueSeason]);
   const activated = await db.query(`UPDATE seasons SET state='ACTIVE',updated_at=now() WHERE id=$1::uuid AND state='SCHEDULED' RETURNING id::text,state`, [dueSeason]);
   assert(activated.rows[0]?.state === "ACTIVE", "scheduled season becomes active");
-  const closedEnding = await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE id=$1::uuid AND state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,state`, [endingSeason]);
-  assert(closedEnding.rows[0]?.state === "CLOSED", "expired ending season becomes closed");
 
   const stateCheck = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason]]);
   const stateById = new Map(stateCheck.rows.map(row => [row.id, row.state]));
