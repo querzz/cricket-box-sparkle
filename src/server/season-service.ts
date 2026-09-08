@@ -29,6 +29,16 @@ export type DbPrize = {
 };
 
 const SEASON_STATES = ["DRAFT", "SCHEDULED", "ACTIVE", "ENDING", "CLOSED", "PAYOUT", "ARCHIVED"] as const;
+type SeasonState = (typeof SEASON_STATES)[number];
+const ALLOWED_TRANSITIONS: Record<SeasonState, readonly SeasonState[]> = {
+  DRAFT: ["DRAFT", "SCHEDULED", "ACTIVE", "CLOSED"],
+  SCHEDULED: ["SCHEDULED", "DRAFT", "ACTIVE", "CLOSED"],
+  ACTIVE: ["ACTIVE", "ENDING", "CLOSED"],
+  ENDING: ["ENDING", "CLOSED"],
+  CLOSED: ["CLOSED", "PAYOUT", "ARCHIVED"],
+  PAYOUT: ["PAYOUT", "ARCHIVED"],
+  ARCHIVED: ["ARCHIVED"],
+};
 const PRIZE_KINDS = ["STARS", "PREMIUM", "MONEY", "NFT", "PHYSICAL", "CUSTOM", "FREE_SPIN", "EMPTY"] as const;
 
 type DbExecutor = Pick<PoolClient, "query">;
@@ -39,22 +49,55 @@ export async function listSeasons() {
 }
 
 export async function createSeason(input: { code: string; name: string; paidSpinPrice: number; dailyFreeSpin: boolean; adminId: string }) {
+  if (!Number.isSafeInteger(input.paidSpinPrice) || input.paidSpinPrice <= 0) throw new Error("INVALID_PAID_SPIN_PRICE");
   const result = await query<DbSeason>(`INSERT INTO seasons (code, name, paid_spin_price, daily_free_spin, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`, [input.code, input.name, input.paidSpinPrice, input.dailyFreeSpin, input.adminId]);
   return result.rows[0];
 }
 
 export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>, executor?: DbExecutor) {
   const db = executor ?? { query };
-  const currentResult = await db.query<{ state: DbSeason["state"] }>(`SELECT state FROM seasons WHERE id = $1 FOR UPDATE`, [id]);
+  const currentResult = await db.query<DbSeason>(
+    `SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin
+       FROM seasons WHERE id = $1 FOR UPDATE`,
+    [id],
+  );
   if (!currentResult.rows[0]) return undefined;
 
+  const current = currentResult.rows[0];
   const requestedState = patch.state;
   if (requestedState && !SEASON_STATES.includes(requestedState)) throw new Error("INVALID_STATE");
 
-  const currentState = currentResult.rows[0].state;
-  const startsAt = patch.startsAt ?? null;
-  const endsAt = patch.endsAt ?? null;
-  const nextState = requestedState ?? (!patch.state && currentState === "DRAFT" && startsAt && endsAt && new Date(startsAt) > new Date() ? "SCHEDULED" : currentState);
+  const nextState = requestedState ?? current.state;
+  if (!ALLOWED_TRANSITIONS[current.state].includes(nextState)) throw new Error("INVALID_SEASON_TRANSITION");
+
+  const startsAt = patch.startsAt === undefined ? current.starts_at : patch.startsAt;
+  const endsAt = patch.endsAt === undefined ? current.ends_at : patch.endsAt;
+  if (startsAt && Number.isNaN(new Date(startsAt).getTime())) throw new Error("INVALID_START_DATE");
+  if (endsAt && Number.isNaN(new Date(endsAt).getTime())) throw new Error("INVALID_END_DATE");
+  if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) throw new Error("INVALID_SEASON_DATES");
+
+  if (nextState === "SCHEDULED" && (!startsAt || new Date(startsAt) <= new Date())) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
+  if (["ACTIVE", "ENDING"].includes(nextState) && endsAt && new Date(endsAt) <= new Date()) throw new Error("SEASON_END_ALREADY_PASSED");
+
+  const requestedPrice = patch.paidSpinPrice;
+  if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
+
+  if (requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) {
+    const paidSpinResult = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM star_transactions
+        WHERE user_id IN (SELECT id FROM users WHERE id IN (SELECT user_id FROM spins WHERE season_id=$1::uuid))
+          AND status='SUCCESS'
+          AND payload->>'seasonId'=$1`,
+      [id],
+    );
+    const paidSpinsFallback = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM spins WHERE season_id=$1::uuid AND type='PAID' AND status IN ('COMPLETED','PENDING')`,
+      [id],
+    );
+    if (Number(paidSpinResult.rows[0]?.count ?? 0) > 0 || Number(paidSpinsFallback.rows[0]?.count ?? 0) > 0) throw new Error("PAID_SPIN_PRICE_LOCKED");
+  }
 
   if (nextState === "ACTIVE" || nextState === "ENDING") {
     await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
@@ -67,7 +110,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
             daily_free_spin = COALESCE($8, daily_free_spin), updated_at = now()
       WHERE id = $1
       RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`,
-    [id, patch.code ?? null, patch.name ?? null, nextState, startsAt, endsAt, patch.paidSpinPrice ?? null, patch.dailyFreeSpin ?? null],
+    [id, patch.code ?? null, patch.name ?? null, nextState, startsAt, endsAt, requestedPrice ?? null, patch.dailyFreeSpin ?? null],
   );
   return result.rows[0];
 }
