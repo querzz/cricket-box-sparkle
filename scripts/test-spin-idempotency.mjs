@@ -49,11 +49,15 @@ try {
   assert(duplicate.rows[0].prize_id === prizeId, "retry resolves to the original prize");
 
   let rejected = false;
+  await db.query("SAVEPOINT duplicate_key_check");
   try {
     await db.query(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status,idempotency_key,completed_at) VALUES($1,$2,'FREE',0,$3,'COMPLETED',$4,now())`, [userId, seasonId, prizeId, key]);
   } catch (error) {
     rejected = true;
     assert(String(error?.message ?? "").includes("ux_spins_user_idempotency") || String(error?.message ?? "").toLowerCase().includes("duplicate key"), "duplicate request key is rejected by the unique index");
+  } finally {
+    await db.query("ROLLBACK TO SAVEPOINT duplicate_key_check");
+    await db.query("RELEASE SAVEPOINT duplicate_key_check");
   }
   assert(rejected, "duplicate request key cannot create a second spin");
 
