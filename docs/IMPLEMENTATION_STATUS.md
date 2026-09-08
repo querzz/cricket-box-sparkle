@@ -65,8 +65,9 @@ Repository: `querzz/cricket-box-sparkle`
 - Drop trigger values are validated for trigger semantics and bounded payload size.
 - Automatic due-drop activation is executed inside the same transaction as the spin/payment settlement.
 - `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
-- `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates.
+- `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates while advancing economy progress through the simulated season.
 - `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
+- `src/server/economy-guardrails.ts` evaluates finite inventory coverage, Stars liability, material exposure and simulated exhaustion risk before an economy scenario is considered healthy.
 - `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based drops even when no users are spinning.
 
 ### Payouts / withdrawals
