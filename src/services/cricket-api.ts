@@ -8,6 +8,12 @@ type BackendSpinResponse = { ok: boolean; reward?: Reward; spin?: { id: string }
 type BackendGiftResponse = { ok: boolean; reward?: Reward; code?: string };
 type BackendWithdrawalResponse = { ok: boolean; withdrawal?: Withdrawal; code?: string; minimum?: number };
 type BackendInvoiceResponse = { ok: boolean; invoiceUrl?: string; code?: string; price?: number; payload?: string; recovery?: boolean };
+type BackendPaymentStatusResponse = {
+  ok: boolean;
+  status?: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
+  code?: string;
+  spin?: { reward?: { kind: string; title: string; subtitle?: string; amount?: number; status?: string; payoutStatus?: string | null } } | null;
+};
 type BackendDevResponse = { ok: boolean; code?: string };
 
 function initData() {
@@ -65,6 +71,19 @@ async function backendFreeSpin(idempotencyKey: string): Promise<ServiceResult<Re
     return fail("NETWORK", "Не удалось связаться с сервером. Повторяем попытку…");
   }
 }
+async function backendPaymentStatus(payload: string): Promise<ServiceResult<Reward | null>> {
+  try {
+    const response = await fetch(`/api/payment/status?initData=${encodeURIComponent(initData())}&payload=${encodeURIComponent(payload)}`);
+    const data = (await response.json()) as BackendPaymentStatusResponse;
+    if (!response.ok || !data.ok) return { ok: false, error: mapBackendError(data.code ?? "PAYMENT_STATUS_FAILED") };
+    if (data.status !== "SUCCESS") return ok(null);
+    const rewardData = data.spin?.reward;
+    if (!rewardData) return ok(null);
+    return ok({ kind: rewardData.kind as RewardKind, title: rewardData.title, subtitle: rewardData.subtitle, amount: rewardData.amount, wonAt: new Date().toISOString(), status: rewardData.status === "RECEIVED" ? "RECEIVED" : "PENDING", payoutNote: rewardData.payoutStatus === "PAID" ? "Выдано." : "Награда записана и ожидает выдачи." });
+  } catch {
+    return fail("NETWORK", "Не удалось проверить статус оплаты.");
+  }
+}
 async function devState(action: "SET_STARS" | "SET_SUBSCRIBED" | "RESET_FREE_SPIN", value?: number | boolean): Promise<ServiceResult<true>> {
   if (!inTelegram()) return fail("NETWORK", "Инструмент доступен только внутри Telegram.");
   try { const response = await fetch("/api/dev/user-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), action, value }) }); const data = (await response.json()) as BackendDevResponse; if (!response.ok || !data.ok) return fail("NETWORK", data.code === "ADMIN_ACCESS_DENIED" ? "Доступ только для администратора." : "Не удалось изменить тестовое состояние."); return ok(true); }
@@ -77,13 +96,21 @@ async function openStarsInvoice(price: number, beforeSpinCount: number): Promise
   try {
     const response = await fetch("/api/payment/invoice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData() }) });
     const data = (await response.json()) as BackendInvoiceResponse;
-    if (!response.ok || !data.ok || !data.invoiceUrl) return { ok: false, error: mapBackendError(data.code ?? "INVOICE_FAILED") };
+    if (!response.ok || !data.ok || !data.invoiceUrl || !data.payload) return { ok: false, error: mapBackendError(data.code ?? "INVOICE_FAILED") };
     if (Number(data.price) !== price) return fail("NETWORK", "Цена прокрутки изменилась. Обнови страницу и попробуй снова.");
+    const payload = data.payload;
+    const initialStatus = await backendPaymentStatus(payload);
+    if (initialStatus.ok && initialStatus.data) return initialStatus;
     const status = await new Promise<string>((resolve) => { let settled = false; const finish = (value: string) => { if (!settled) { settled = true; resolve(value); } }; tg.openInvoice?.(data.invoiceUrl!, (value) => finish(value)); window.setTimeout(() => finish("timeout"), 60000); });
     if (status === "cancelled") return fail("PAYMENT_REQUIRED", "Оплата отменена.");
     if (status === "failed") return fail("NETWORK", "Telegram не смог завершить оплату.");
-    if (status === "timeout") return fail("NETWORK", "Оплата слишком долго обрабатывается. Обнови экран через несколько секунд.");
-    for (let attempt = 0; attempt < 12; attempt += 1) { await new Promise((resolve) => window.setTimeout(resolve, 1000)); const session = await backendSession(); if (!session.ok) continue; const latest = session.data.rewards[0]; if (session.data.spin.totalSpins > beforeSpinCount && latest) return ok(latest); }
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const payment = await backendPaymentStatus(payload);
+      if (payment.ok && payment.data) return payment;
+      const session = await backendSession();
+      if (session.ok && session.data.spin.totalSpins > beforeSpinCount && session.data.rewards[0]) return ok(session.data.rewards[0]);
+    }
     return fail("NETWORK", "Платёж получен, но результат ещё обрабатывается. Открой экран снова через несколько секунд.");
   } catch { return fail("NETWORK", "Не удалось открыть оплату Telegram Stars."); }
 }
