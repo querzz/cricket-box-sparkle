@@ -44,6 +44,17 @@ try {
   await client.query(schema);
 
   await client.query(`
+    CREATE TABLE IF NOT EXISTS api_rate_limit_buckets (
+      bucket_key TEXT NOT NULL,
+      bucket_start TIMESTAMPTZ NOT NULL,
+      hits INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (bucket_key, bucket_start)
+    );
+    CREATE INDEX IF NOT EXISTS idx_api_rate_limit_buckets_time
+      ON api_rate_limit_buckets(bucket_start);
+  `);
+
+  await client.query(`
     ALTER TABLE user_state
       ADD COLUMN IF NOT EXISTS bonus_free_spins INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
