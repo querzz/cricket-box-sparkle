@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS prizes (
 CREATE TABLE IF NOT EXISTS spins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT, season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE RESTRICT, type TEXT NOT NULL CHECK (type IN ('FREE','PAID','OWNER_GIFT','ACTIVITY_BONUS','VETERAN_BONUS')), price_stars INTEGER NOT NULL DEFAULT 0, prize_id UUID REFERENCES prizes(id) ON DELETE SET NULL, status TEXT NOT NULL CHECK (status IN ('PENDING','COMPLETED','FAILED','REFUNDED')) DEFAULT 'PENDING', telegram_payment_charge_id TEXT, idempotency_key TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), completed_at TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX IF NOT EXISTS ux_spins_user_idempotency ON spins(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 ALTER TABLE spins ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_spins_user_idempotency ON spins(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS payouts (
