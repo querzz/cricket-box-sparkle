@@ -34,6 +34,11 @@ try {
   const user = await db.query(`INSERT INTO users(telegram_id,username,first_name) VALUES($1,$2,'Idempotency') RETURNING id`, [850000000 + Number(String(Date.now()).slice(-7)), `spin_idem_user_${suffix}`]);
   userId = user.rows[0].id;
   await db.query(`INSERT INTO user_state(user_id,stars_balance) VALUES($1,125)`, [userId]);
+
+  // The full schema may contain a seeded ACTIVE season. Close it inside this
+  // transaction so this isolated fixture can own the single-live-season slot.
+  await db.query(`UPDATE seasons SET state='ENDED', ends_at=LEAST(COALESCE(ends_at, now()), now()) WHERE state='ACTIVE'`);
+
   const season = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Idempotency Season','ACTIVE',now()-interval '1 hour',now()+interval '1 day',100,$2) RETURNING id`, [`IDEM-${suffix}`, adminId]);
   seasonId = season.rows[0].id;
   const prize = await db.query(`INSERT INTO prizes(season_id,kind,title,amount,quantity_total,quantity_remaining) VALUES($1,'CUSTOM','Idempotent Prize',42,10,10) RETURNING id`, [seasonId]);
