@@ -85,15 +85,14 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
   if (requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) {
-    const paidSpinResult = await db.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM spins WHERE season_id=$1::uuid AND type='PAID' AND status IN ('COMPLETED','PENDING') AND price_stars > 0`,
+    const pendingPaymentResult = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM star_transactions WHERE status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$1::text`,
       [id],
     );
-    if (Number(paidSpinResult.rows[0]?.count ?? 0) > 0) throw new Error("PAID_SPIN_PRICE_LOCKED");
+    if (Number(pendingPaymentResult.rows[0]?.count ?? 0) > 0) throw new Error("PAID_SPIN_PRICE_LOCKED");
   }
 
   if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) throw new Error("PAID_SPIN_REENABLE_LOCKED");
-
   if (nextState === "ACTIVE" || nextState === "ENDING") await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
 
   const result = await db.query<DbSeason>(
@@ -119,6 +118,7 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
     const current = await query<{ id: string; season_id: string; kind: string; amount: string; unit_cost: string; currency: string | null; quantity_total: number; quantity_remaining: number; metadata: Record<string, unknown> | null; title: string }>(`SELECT id, season_id, kind, amount::text, unit_cost::text, currency, quantity_total, quantity_remaining, metadata, title FROM prizes WHERE id = $1::uuid FOR UPDATE`, [input.id]);
     if (!current.rows[0]) throw new Error("PRIZE_NOT_FOUND");
     if (current.rows[0].season_id !== input.seasonId) throw new Error("PRIZE_SEASON_MISMATCH");
+
     const spinCount = await query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id = $1::uuid`, [input.seasonId]);
     const hasStarted = Number(spinCount.rows[0]?.count ?? 0) > 0;
     const old = current.rows[0];
@@ -129,13 +129,16 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
     const oldCurrency = old.currency ?? null;
     const newCurrency = input.currency ?? null;
     if (hasStarted && (old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency || old.quantity_total !== input.quantityTotal || oldWeight !== newWeight)) throw new Error("PRIZE_ECONOMICS_LOCKED");
+
     const won = old.quantity_total - old.quantity_remaining;
     if (input.quantityTotal < won) throw new Error("PRIZE_QUANTITY_BELOW_WON");
     const requestedRemaining = input.quantityRemaining == null ? Math.max(old.quantity_remaining, old.quantity_remaining + (input.quantityTotal - old.quantity_total)) : input.quantityRemaining;
     const quantityRemaining = Math.min(input.quantityTotal, Math.max(won, Math.floor(requestedRemaining)));
+
     const result = await query<DbPrize>(`UPDATE prizes SET kind=$2, title=$3, subtitle=$4, amount=$5, unit_cost=$6, currency=$7, quantity_total=$8, quantity_remaining=$9, is_active=$10, image_url=$11, metadata=$12, updated_at=now() WHERE id=$1::uuid RETURNING id,season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,image_url,metadata`, [input.id, input.kind, input.title.trim(), input.subtitle ?? null, input.amount, input.unitCost, input.currency ?? null, input.quantityTotal, quantityRemaining, input.active !== false, input.imageUrl ?? null, input.metadata ?? {}]);
     return result.rows[0];
   }
+
   const quantityTotal = Math.floor(input.quantityTotal);
   const quantityRemaining = Math.min(quantityTotal, Math.max(0, Math.floor(input.quantityRemaining ?? quantityTotal)));
   const result = await query<DbPrize>(`INSERT INTO prizes (season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,image_url,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,image_url,metadata`, [input.seasonId, input.kind, input.title.trim(), input.subtitle ?? null, input.amount, input.unitCost, input.currency ?? null, quantityTotal, quantityRemaining, input.active !== false, input.imageUrl ?? null, input.metadata ?? {}]);
