@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
@@ -14,8 +13,13 @@ const BOT_HEADER = "x-cricket-bot-token";
 const MAX_STARS = 500;
 
 function pickWeighted(prizes: PrizeRow[]) {
-  const weighted = prizes.map((prize) => ({ prize, weight: (Number(prize.metadata?.weight ?? 1) > 0 ? Number(prize.metadata?.weight ?? 1) : 1) * prize.quantity_remaining }));
+  const weighted = prizes.map((prize) => {
+    const configuredWeight = Number(prize.metadata?.weight ?? 1);
+    const weight = Number.isFinite(configuredWeight) && configuredWeight > 0 ? configuredWeight : 1;
+    return { prize, weight };
+  });
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  if (!(total > 0)) return weighted[0]!.prize;
   let cursor = Math.random() * total;
   for (const item of weighted) { cursor -= item.weight; if (cursor < 0) return item.prize; }
   return weighted[weighted.length - 1]!.prize;
