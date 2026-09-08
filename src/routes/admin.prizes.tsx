@@ -52,6 +52,7 @@ function AdminPrizes() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const selectedSeason = useMemo(() => seasons.find((season) => season.id === seasonId), [seasons, seasonId]);
@@ -87,22 +88,34 @@ function AdminPrizes() {
   };
 
   const update = (index: number, patch: Partial<Draft>) => setDrafts((all) => all.map((draft, i) => i === index ? { ...draft, ...patch } : draft));
-  const remove = (index: number) => setDrafts((all) => all.filter((_, i) => i !== index));
+  const remove = async (index: number) => {
+    const draft = drafts[index];
+    if (!draft) return;
+    setError(""); setMessage("");
+    if (draft.id) {
+      setRemoving(draft.id);
+      try {
+        await api<{ deactivated: boolean }>("/api/admin/prizes", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: draft.id, seasonId, initData: initData() }) });
+      } catch (e) { setError(e instanceof Error ? e.message : "Не удалось убрать награду."); return; }
+      finally { setRemoving(null); }
+    }
+    setDrafts((all) => all.filter((_, i) => i !== index));
+  };
   const remaining = (draft: Draft) => Math.max(0, draft.quantity - draft.won);
 
   const save = async () => {
     if (!seasonId) return;
-    const invalid = drafts.find((draft) => !draft.title.trim() || draft.quantity < draft.won || draft.weight < 0 || draft.amount < 0 || draft.unitCost < 0);
+    const invalid = drafts.find((draft) => !draft.title.trim() || draft.quantity < draft.won || draft.weight < 0 || !Number.isFinite(draft.weight) || draft.amount < 0 || !Number.isFinite(draft.amount) || draft.unitCost < 0 || !Number.isFinite(draft.unitCost));
     if (invalid) { setError("Проверь название, количество, сумму и weight у всех наград."); return; }
     setSaving(true); setError(""); setMessage("");
     try {
       for (const draft of drafts) {
         const payload = {
           id: draft.id, seasonId, kind: draft.kind, title: draft.title.trim(), subtitle: draft.subtitle.trim() || null,
-          amount: Number(draft.amount) || 0, unitCost: Number(draft.unitCost) || 0,
+          amount: draft.amount, unitCost: draft.unitCost,
           currency: draft.kind === "MONEY" ? "UAH" : draft.kind === "STARS" ? "XTR" : draft.currency || null,
           quantityTotal: Math.max(draft.quantity, draft.won), quantityRemaining: remaining(draft), active: draft.active,
-          imageUrl: draft.imageUrl.trim() || null, metadata: { weight: Math.max(0, Number(draft.weight) || 0) },
+          imageUrl: draft.imageUrl.trim() || null, metadata: { weight: draft.weight },
         };
         await api("/api/admin/prizes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, initData: initData() }) });
       }
@@ -146,7 +159,7 @@ function AdminPrizes() {
               <div className="flex items-start gap-3">
                 <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-glass-border bg-muted/10">{draft.imageUrl ? <img src={draft.imageUrl} alt="" className="size-full object-cover" /> : <Gift className="size-4 text-primary-glow" />}</div>
                 <div className="min-w-0 flex-1"><p className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">{labelForKind(draft.kind)}</p><p className="mt-1 truncate text-sm font-semibold">{draft.title || "Новая награда"}</p><p className="text-[10px] text-muted-foreground">Выдано {draft.won} · доступно {remaining(draft)}</p></div>
-                <button type="button" aria-label="Удалить награду" onClick={() => remove(index)} className="grid size-8 place-items-center rounded-lg border border-destructive/20 bg-destructive/5 text-destructive"><Trash2 className="size-3.5" /></button>
+                <button type="button" aria-label="Удалить награду" disabled={removing === draft.id || saving} onClick={() => void remove(index)} className="grid size-8 place-items-center rounded-lg border border-destructive/20 bg-destructive/5 text-destructive disabled:opacity-50"><Trash2 className="size-3.5" /></button>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Название"><input value={draft.title} onChange={(e) => update(index, { title: e.target.value })} placeholder="Например, 250 грн" className="admin-input w-full" /></Field>
@@ -162,7 +175,7 @@ function AdminPrizes() {
           ))}
         </section>
 
-        <PrimaryButton fullWidth disabled={loading || saving || !seasonId} onClick={() => void save()}><Save className="size-4" />{saving ? "Сохраняем…" : "Сохранить призовой фонд"}</PrimaryButton>
+        <PrimaryButton fullWidth disabled={loading || saving || !!removing || !seasonId} onClick={() => void save()}><Save className="size-4" />{saving ? "Сохраняем…" : "Сохранить призовой фонд"}</PrimaryButton>
       </div>
     </AppShell>
   );
