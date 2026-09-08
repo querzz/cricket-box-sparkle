@@ -5,9 +5,10 @@ import { withTransaction } from "@/server/db";
 import { activateDueDrops } from "@/server/liveops";
 import { secureRandomUnit } from "@/server/secure-random";
 import { appendStarsLedger } from "@/server/stars-ledger";
-import { pickWeightedPrize } from "@/server/prize-selection";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
+import { seasonElapsedFraction } from "@/server/season-economy";
+import { pickDynamicPrize } from "@/server/dynamic-prize-selection";
 
 const MAX_STARS = 500;
 type PrizeKind = "STARS" | "PREMIUM" | "MONEY" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN" | "EMPTY";
@@ -62,7 +63,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       if(membership!==null&&membership!==state?.is_subscribed)await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`,[user.id,membership]);
       if(!state||!subscribed)throw new Error("NOT_SUBSCRIBED");
       if(!state.is_participant)throw new Error("NOT_PARTICIPANT");
-      const seasonResult=await client.query<{id:string;code:string;state:string;daily_free_spin:boolean;paid_spin_price:number}>(`SELECT id::text,code,state,daily_free_spin,paid_spin_price FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
+      const seasonResult=await client.query<{id:string;code:string;state:string;daily_free_spin:boolean;paid_spin_price:number;starts_at:string|null;ends_at:string|null}>(`SELECT id::text,code,state,daily_free_spin,paid_spin_price,starts_at::text,ends_at::text FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
       const season=seasonResult.rows[0];
       if(!season)throw new Error("SEASON_NOT_ACTIVE");
       await activateDueDrops(client,season.id);
@@ -74,9 +75,17 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const useActivity=!useDaily&&activityRemaining>0;
       const useGift=!useDaily&&!useActivity&&Number(state.bonus_free_spins??0)>0;
       if(!useDaily&&!useActivity&&!useGift)throw new Error("NO_ATTEMPTS");
+
+      const recent=await client.query<{kind:PrizeKind}>(`SELECT p.kind FROM spins s JOIN prizes p ON p.id=s.prize_id WHERE s.user_id=$1::uuid AND s.season_id=$2::uuid AND s.status='COMPLETED' ORDER BY s.created_at DESC LIMIT 30`,[user.id,season.id]);
+      const recentKinds=recent.rows.map(row=>row.kind);
+      let emptyStreak=0;
+      for(const kind of recentKinds){if(kind!=="EMPTY")break;emptyStreak+=1;}
+      const elapsedFraction=seasonElapsedFraction(season.starts_at,season.ends_at);
+
       const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`,[season.id,Number(state.stars_balance??0),MAX_STARS]);
       if(!prizes.rows.length)throw new Error("NO_PRIZES");
-      const picked=pickWeightedPrize(prizes.rows,secureRandomUnit);
+      const selection=pickDynamicPrize(prizes.rows,secureRandomUnit,{elapsedFraction,emptyStreak,recentKinds});
+      const picked=selection.prize;
       const inventory=await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`,[picked.id]);
       if(!inventory.rows[0])throw new Error("NO_PRIZES");
       const spinType=useActivity?"ACTIVITY_BONUS":"FREE";
@@ -97,7 +106,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
         const payout=await client.query<{id:string}>(`INSERT INTO payouts(spin_id,user_id,prize_id,kind,amount,currency,status,note,paid_at) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::numeric,$6,$7,$8,CASE WHEN $7='PAID' THEN now() ELSE NULL END) RETURNING id::text`,[spin.rows[0].id,user.id,picked.id,picked.kind,picked.amount,picked.currency,payoutStatus,note]);
         payoutId=payout.rows[0].id;
       }
-      await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('SPIN_COMPLETED','spin',$1,$2::jsonb)`,[spin.rows[0].id,JSON.stringify({userId:user.id,seasonId:season.id,prizeId:picked.id,type:spinType,idempotencyKey,usedDaily:useDaily,usedActivityBonus:useActivity,usedGiftBonus:useGift,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow})]);
+      await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('SPIN_COMPLETED','spin',$1,$2::jsonb)`,[spin.rows[0].id,JSON.stringify({userId:user.id,seasonId:season.id,prizeId:picked.id,type:spinType,idempotencyKey,usedDaily:useDaily,usedActivityBonus:useActivity,usedGiftBonus:useGift,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,algorithmVersion:"dynamic-v1",elapsedFraction,emptyStreak,recentKinds:recentKinds.slice(0,8),selection:selection.diagnostics[picked.id]})]);
       return {spinId:spin.rows[0].id,payoutId,createdAt:spin.rows[0].created_at,prize:picked,credited,rewardStars,spinType,duplicate:false};
     });
     return Response.json(rewardResponse(result));
