@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import pg from "pg";
 
 const { Client } = pg;
@@ -54,7 +55,7 @@ try {
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   const endingSeason = endingSeasonResult.rows[0].id;
 
-  const liveops = await import(path.resolve(process.cwd(), "src/server/liveops.ts"));
+  const liveops = await import(pathToFileURL(path.resolve(process.cwd(), "src/server/liveops.ts")).href);
   const transitions = await liveops.reconcileSeasonStates(db);
   const transitionKeys = new Set(transitions.map(item => `${item.id}:${item.to}`));
   assert(transitionKeys.has(`${dueSeason}:ACTIVE`), "scheduled season becomes active");
