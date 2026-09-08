@@ -35,17 +35,17 @@ Repository: `querzz/cricket-box-sparkle`
 - Once all spin-linked payouts are terminal (`PAID`, `FAILED`, `CANCELLED`), the season can automatically transition to `ARCHIVED`.
 - Automatic season state transitions are written to `audit_logs` with source `liveops`.
 
-### Spin engine / adaptive economy
+### Spin engine
 - `/api/spin` is server-authoritative and transactional.
 - Finite prize inventory is decremented atomically.
 - Exhausted and inactive prizes are excluded.
 - Stars prizes are excluded when the user's Stars balance is at the cap.
-- Selection uses configured weight × remaining inventory × server-side economy multiplier, with personal empty-streak and anti-streak adjustments.
-- Economy multiplier reacts to actual inventory consumption versus season progress and is bounded to prevent extreme swings.
+- Production selection uses configured weight × remaining inventory with server-side randomness: weighted sampling without replacement, matching the MVP specification.
+- Adaptive pacing, empty-streak bonuses and anti-streak penalties are not applied to production spins; the adaptive selector remains isolated for simulator/scenario analysis only.
 - LiveOps drops can be activated automatically when their time, spin-count or season-progress trigger becomes due.
 - `EMPTY` outcomes do not create payout records.
 - XP is awarded on completed spins.
-- Free-spin requests now send a client-generated idempotency key and retry once with the same key after a network failure.
+- Free-spin requests use a client-generated idempotency key and retry once with the same key after a network failure.
 
 ### Daily Gift
 - Daily Gift is persisted in PostgreSQL.
@@ -66,6 +66,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Stale `PENDING` payments are intentionally kept recoverable instead of being auto-failed solely because they are old.
 - A pending paid-spin reuses its stored invoice URL when available, preventing multiple invoice links for the same pending transaction.
 - The user client polls the exact payment transaction after Telegram callback/timeout so a successful payment is not lost because the Mini App callback arrives late.
+- If a successful Telegram payment cannot be settled because inventory disappears during the race, the bot has an explicit refund path; when the refund itself fails, the transaction remains recoverable instead of being silently marked paid.
 
 ### LiveOps / economy administration
 - `/api/admin/economy` exposes live season metrics, inventory consumption and current per-prize multipliers.
@@ -75,7 +76,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Drop trigger values are validated for trigger semantics and bounded payload size.
 - Automatic due-drop activation is executed inside the same transaction as the spin/payment settlement.
 - `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
-- `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates while advancing economy progress through the simulated season.
+- `src/server/season-simulator.ts` can simulate adaptive prize-economy scenarios with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates without mutating production inventory.
 - `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
 - `src/server/economy-guardrails.ts` evaluates finite reward inventory coverage, Stars liability, material exposure and simulated exhaustion risk; `EMPTY` is not counted as finite reward inventory.
 - `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that reconciles season states, finalizes payout/archive lifecycle and processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based operations even when no users are spinning.
@@ -85,12 +86,12 @@ Repository: `querzz/cricket-box-sparkle`
 - Withdrawal requests are restricted to post-season states and duplicate pending requests are blocked.
 - Failed/cancelled Stars withdrawals return the reserved balance through the Stars ledger.
 - Payout type labels distinguish Stars, Premium, Money, NFT, Physical, Custom and Free Spin.
-- Manual fulfillment for Premium, money, NFT and other non-Stars rewards remains the current model.
+- Manual fulfillment for Premium, money and NFT rewards remains the current model.
 - Season payout orchestration now has an explicit CLOSED → PAYOUT → ARCHIVED policy guarded by outstanding payout status.
 
 ### Statistics
 - `/api/admin/statistics` serves PostgreSQL-backed current-season and historical views.
-- Statistics now include completed vs attempted/failed spins, paid-user conversion, repeat-user rate, winner rate, and D1/D7 retention cohorts derived from first completed spins.
+- Statistics include completed vs attempted/failed spins, paid-user conversion, repeat-user rate, winner rate, and D1/D7 retention cohorts derived from first completed spins.
 - D1/D7 denominators exclude immature cohorts so current-day users do not distort retention rates.
 - Admin statistics UI exposes funnel and retention cards alongside operational totals.
 
@@ -114,25 +115,25 @@ The following real admin routes exist and use backend APIs:
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
 - GitHub DB integration tests remain the safety net for schema/inventory/idempotency invariants.
 - Payment security CI runs the payment regression suite against a clean PostgreSQL service.
-- Previous local verification reached passing TypeScript, production build, DB integration and lint checks; the latest dependency pin is being re-verified in CI after package-resolution failures on the runner.
+- The latest CI line must still complete cleanly after the recent dependency and MVP selection synchronization before the repository is considered verified-green.
 
 ## Important remaining production gaps
 
 1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
 2. Statistics are substantially expanded, but external acquisition sources/attribution and true impression/session-level funnel data are not persisted, so those cannot yet be reconstructed historically.
-3. Full replay/double-click/payment-recovery security regression against the live HTTP application endpoints still needs runtime-level execution; DB-level coverage is present and the payment security suite now also covers stale `PENDING` recovery semantics.
+3. Full replay/double-click/payment-recovery security regression against the live HTTP application endpoints still needs runtime-level execution; DB-level coverage is present and payment-security CI covers stale `PENDING` recovery semantics.
 4. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 5. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
 6. The scheduler endpoint now performs the full lifecycle, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
 7. Stars cross-season policy remains intentionally explicit at product/season level; the system does not silently reset, transfer, or burn eligible user Stars during lifecycle transitions.
-8. Paid-payment inventory reservation is not yet implemented; a successful paid payment can still race with the final available prize being consumed between invoice creation and completion. This needs either reservation semantics or a deliberate refund path before production money movement is considered fully closed.
+8. Paid-payment inventory is not reserved at invoice time. The current safety model instead requires successful-payment completion and a compensating Telegram refund when the final prize disappears before settlement; automated reconciliation for any failed refund is still a production requirement.
 
 ## Documentation audit
 
 - `docs/IMPLEMENTATION_STATUS.md` is the current verified implementation tracker.
-- `docs/MASTER_PLAN.md` remains the product roadmap and still contains historical phase descriptions; those phase labels should not be read as a statement that the current repository is still at that phase.
-- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline, but its opening “production backend/admin missing” wording is stale relative to the current implementation and should be updated in a future documentation-sync pass.
-- `docs/ADMIN_SPEC.md` matches the implemented admin surface broadly; some advanced integrations remain intentionally backend/manual rather than provider-automated.
+- `docs/MASTER_PLAN.md` remains the product roadmap and contains historical phase descriptions; those phase labels must not be read as a statement that the current repository is still at that phase.
+- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline; its opening “production backend/admin missing” sentence is historical and should be corrected in the next documentation-sync pass.
+- `docs/ADMIN_SPEC.md` broadly matches the implemented admin surface; provider-automated fulfillment remains intentionally outside the current implementation.
 - `docs/QA_CHECKLIST.md` is a Phase 1 mock-frontend checklist and is now historical; production readiness requires the remaining runtime Telegram/browser/security checks above.
 - `docs/PRODUCT_DECISIONS.md`, `docs/ECONOMICS.md`, and `docs/HOME_UX.md` remain decision/requirements references and should continue to be read before changing product behavior.
 
