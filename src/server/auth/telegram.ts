@@ -1,3 +1,7 @@
+import type { PoolClient } from "pg";
+
+import { enforceRateLimit } from "@/server/rate-limit";
+
 type TelegramInitDataUser = {
   id: number;
   first_name?: string;
@@ -56,5 +60,7 @@ export async function validateTelegramInitData(initData: string, botToken: strin
   } catch {
     throw new Error("Invalid Telegram user payload");
   }
+
+  if (user?.id) await enforceRateLimit(`telegram:${user.id}`, 120);
   return { authDate, user, queryId: params.get("query_id") ?? undefined };
 }
