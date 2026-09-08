@@ -72,12 +72,20 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
 
   const startsAt = patch.startsAt === undefined ? current.starts_at : patch.startsAt;
   const endsAt = patch.endsAt === undefined ? current.ends_at : patch.endsAt;
+  const currentStart = current.starts_at ? new Date(current.starts_at) : null;
+  const currentEnd = current.ends_at ? new Date(current.ends_at) : null;
+  const now = new Date();
   if (startsAt && Number.isNaN(new Date(startsAt).getTime())) throw new Error("INVALID_START_DATE");
   if (endsAt && Number.isNaN(new Date(endsAt).getTime())) throw new Error("INVALID_END_DATE");
   if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) throw new Error("INVALID_SEASON_DATES");
 
-  if (nextState === "SCHEDULED" && (!startsAt || new Date(startsAt) <= new Date())) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
-  if (["ACTIVE", "ENDING"].includes(nextState) && endsAt && new Date(endsAt) <= new Date()) throw new Error("SEASON_END_ALREADY_PASSED");
+  const hasStarted = current.state !== "DRAFT" && current.state !== "SCHEDULED" || Boolean(currentStart && currentStart <= now);
+  if (hasStarted && startsAt !== current.starts_at) throw new Error("SEASON_START_LOCKED");
+  if (hasStarted && currentEnd && endsAt && new Date(endsAt) < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
+  if (hasStarted && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
+
+  if (nextState === "SCHEDULED" && (!startsAt || new Date(startsAt) <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
+  if (["ACTIVE", "ENDING"].includes(nextState) && endsAt && new Date(endsAt) <= now) throw new Error("SEASON_END_ALREADY_PASSED");
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
@@ -86,7 +94,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
     const paidSpinResult = await db.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
          FROM star_transactions
-        WHERE user_id IN (SELECT id FROM users WHERE id IN (SELECT user_id FROM spins WHERE season_id=$1::uuid))
+        WHERE user_id IN (SELECT user_id FROM spins WHERE season_id=$1::uuid)
           AND status='SUCCESS'
           AND payload->>'seasonId'=$1`,
       [id],
