@@ -30,7 +30,7 @@ export const Route = createFileRoute("/api/admin/participants")({
                       COUNT(*) FILTER (WHERE status='COMPLETED')::int AS spins,
                       COUNT(*) FILTER (WHERE status='COMPLETED' AND type='FREE')::int AS free_spins,
                       COUNT(*) FILTER (WHERE status='COMPLETED' AND type='PAID')::int AS paid_spins,
-                      MAX(created_at)::text AS last_activity
+                      MAX(created_at) AS last_activity
                  FROM spins
                 WHERE season_id = (SELECT id FROM current_season)
                 GROUP BY user_id
@@ -48,7 +48,7 @@ export const Route = createFileRoute("/api/admin/participants")({
                     u.created_at::text, u.last_seen_at::text, u.is_premium, u.xp, u.level,
                     COALESCE(ss.spins,0)::int AS spins, COALESCE(ss.free_spins,0)::int AS free_spins,
                     COALESCE(ss.paid_spins,0)::int AS paid_spins, COALESCE(rs.rewards,0)::int AS rewards,
-                    COALESCE(rs.stars,0)::int AS stars, ss.last_activity
+                    COALESCE(rs.stars,0)::int AS stars, ss.last_activity::text
                FROM users u
                LEFT JOIN spin_stats ss ON ss.user_id=u.id
                LEFT JOIN reward_stats rs ON rs.user_id=u.id
