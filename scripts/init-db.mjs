@@ -47,6 +47,7 @@ try {
     ALTER TABLE user_state
       ADD COLUMN IF NOT EXISTS bonus_free_spins INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
+    ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
     ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
     ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
     ALTER TABLE prizes DROP CONSTRAINT IF EXISTS prizes_kind_check;
@@ -89,7 +90,6 @@ try {
   `);
 
   await client.query(`
-    -- Backfill the append-only Stars ledger without changing existing balances.
     INSERT INTO stars_ledger (user_id, type, amount, idempotency_key, metadata)
     SELECT us.user_id, 'OPENING_BALANCE', us.stars_balance, 'opening:' || us.user_id::text,
            jsonb_build_object('source','legacy_user_state_migration')
@@ -138,7 +138,7 @@ try {
     await client.query(`INSERT INTO admins (telegram_id,username,role,is_active) VALUES ($1,NULL,'ADMIN',TRUE) ON CONFLICT (telegram_id) DO UPDATE SET role='ADMIN',is_active=TRUE,updated_at=now()`, [adminId]);
   }
   if (adminIds.length > 0) console.log(`✅ Seeded ${adminIds.length} admin access record(s).`);
-  console.log("✅ Stars ledger migration/backfill, payment idempotency guard, prize controls, avatar storage and leaderboard view are ready.");
+  console.log("✅ Database initialization and migrations are ready.");
 } catch (error) {
   console.error("❌ Database initialization failed:", error);
   process.exitCode = 1;
