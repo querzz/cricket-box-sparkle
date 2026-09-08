@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query } from "@/server/db";
+import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 export const Route = createFileRoute("/api/payment/status")({
   server: { handlers: {
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/api/payment/status")({
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
+        await enforceRateLimit(`payment-status:${telegramId}`, 60);
 
         const user = await query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id=$1 LIMIT 1`, [telegramId]);
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
@@ -76,6 +78,7 @@ export const Route = createFileRoute("/api/payment/status")({
           } : null,
         });
       } catch (error) {
+        if (error instanceof RateLimitError) return Response.json({ ok: false, code: "RATE_LIMITED" }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
         console.error("Payment status API failed:", error instanceof Error ? error.message : error);
         return Response.json({ ok: false, code: "PAYMENT_STATUS_FAILED" }, { status: 400 });
       }
