@@ -206,12 +206,12 @@ try {
   if (admin || seasonA || seasonB) {
     const users = [userA, userB, userC].filter(Boolean);
     const seasons = [seasonA, seasonB].filter(Boolean);
-    await db.query(`DELETE FROM star_transactions WHERE user_id=ANY($1::uuid[])`, [users]);
-    await db.query(`DELETE FROM payouts WHERE user_id=ANY($1::uuid[])`, [users]);
-    await db.query(`DELETE FROM spins WHERE user_id=ANY($1::uuid[])`, [users]);
-    await db.query(`DELETE FROM prizes WHERE season_id=ANY($1::uuid[])`, [seasons]);
-    await db.query(`DELETE FROM seasons WHERE id=ANY($1::uuid[])`, [seasons]);
-    if (admin) await db.query(`DELETE FROM admins WHERE id=$1`, [admin]);
+    await db.query(`DELETE FROM star_transactions WHERE user_id=ANY($1::uuid[])`, [users]).catch(() => {});
+    await db.query(`DELETE FROM payouts WHERE user_id=ANY($1::uuid[])`, [users]).catch(() => {});
+    await db.query(`DELETE FROM spins WHERE user_id=ANY($1::uuid[])`, [users]).catch(() => {});
+    await db.query(`DELETE FROM prizes WHERE season_id=ANY($1::uuid[])`, [seasons]).catch(() => {});
+    // stars_ledger is intentionally append-only, so its test fixtures and their referenced users/seasons stay intact.
+    if (admin) await db.query(`DELETE FROM admins WHERE id=$1`, [admin]).catch(() => {});
   }
   await db.end();
 }
