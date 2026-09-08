@@ -24,6 +24,16 @@ const headlines: Record<SeasonState, { headline: string; note: string }> = {
   ARCHIVED: { headline: "Сезон в архиве", note: "Этот сезон теперь доступен в истории." },
 };
 
+export function displaySeasonTitle(code: string, name: string): string {
+  const cleanCode = code.trim();
+  const codeMatch = cleanCode.match(/^(?:CB|C)(\d+)(?:[-_].*)?$/i);
+  if (codeMatch) return `CRICKET BOX #${codeMatch[1]!.padStart(3, "0")}`;
+  const cleanName = name.trim();
+  const nameMatch = cleanName.match(/^CRICKET\s+BOX\s*#?(\d+)(?:[-_].*)?$/i);
+  if (nameMatch) return `CRICKET BOX #${nameMatch[1]!.padStart(3, "0")}`;
+  return cleanName || "CRICKET BOX";
+}
+
 export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const state = snapshot.season.state;
   const live = state === "ACTIVE" || state === "ENDING";
@@ -48,7 +58,6 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     isFinished: finished,
     isWaiting: waiting,
     canSpin: live && subscribed,
-    // The gift itself can contain XP, bonus spins or NOTHING, so a full Stars balance must not lock it.
     canClaimGift: live && subscribed && participant,
     canWithdraw: finished,
     headline: meta.headline,
