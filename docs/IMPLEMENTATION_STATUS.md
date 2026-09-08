@@ -67,6 +67,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Completion validates payload, user, season and amount before settlement.
 - DEV paid-spin flow exists for QA without spending real Telegram Stars.
 - `/api/payment/status` authenticates the Telegram user and exposes the exact transaction state and settled reward for a payment payload.
+- Payment-status polling is rate-limited per authenticated Telegram user at a higher threshold suitable for the Mini App's post-checkout polling loop.
 - Stale `PENDING` payments are intentionally kept recoverable instead of being auto-failed solely because they are old.
 - A pending paid-spin reuses its stored invoice URL when available, preventing multiple invoice links for the same pending transaction.
 - Paid invoice creation is rate-limited per authenticated Telegram user.
@@ -80,11 +81,10 @@ Repository: `querzz/cricket-box-sparkle`
 - Drop payloads validate prize type, quantity, amount and unit cost before insertion.
 - Drop trigger values are validated for trigger semantics and bounded payload size.
 - Automatic due-drop activation is executed inside the same transaction as the spin/payment settlement.
-- `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
-- `src/server/season-simulator.ts` can simulate adaptive prize-economy scenarios with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates without mutating production inventory.
 - `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
 - `src/server/economy-guardrails.ts` evaluates finite reward inventory coverage, Stars liability, material exposure and simulated exhaustion risk; `EMPTY` is not counted as finite reward inventory.
 - `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that reconciles season states, finalizes payout/archive lifecycle and processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based operations even when no users are spinning.
+- The repository's GitHub Actions scheduler now exits cleanly with an explicit configuration message when `CRICKET_BOX_APP_URL` or `LIVEOPS_CRON_SECRET` repository secrets are absent, rather than generating false-red scheduled failures; once those secrets are configured, the same workflow calls the protected tick endpoint with connection and request timeouts.
 
 ### Payouts / withdrawals
 - Payout lifecycle and bulk admin processing exist.
@@ -129,7 +129,7 @@ The following real admin routes exist and use backend APIs:
 3. Full replay/double-click/payment-recovery security regression against the live HTTP application endpoints still needs runtime-level execution; DB-level coverage plus dedicated PostgreSQL rate-limit/payment tests are present.
 4. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 5. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
-6. The scheduler endpoint now performs the full lifecycle, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
+6. The scheduler endpoint is implemented and the repository workflow is configuration-safe, but a deployed app URL and `LIVEOPS_CRON_SECRET` still need to be configured as repository secrets (or an equivalent external cron provider must call the endpoint) before automated production ticks occur.
 7. Stars cross-season policy remains intentionally explicit at product/season level; the system does not silently reset, transfer, or burn eligible user Stars during lifecycle transitions.
 8. Paid-payment inventory is not reserved at invoice time. The current safety model instead requires successful-payment completion and a compensating Telegram refund when the final prize disappears before settlement; automated reconciliation for any failed refund is still a production requirement.
 
