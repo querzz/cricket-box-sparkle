@@ -18,16 +18,14 @@ import { formatRange } from "@/lib/format";
 import { useSession } from "@/store/session";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "CRICKET BOX — сезонный розыгрыш" },
-      { name: "description", content: "Открывай CRICKET BOX, участвуй в сезоне, крути коробку и забирай призы." },
-      { property: "og:title", content: "CRICKET BOX — сезонный розыгрыш" },
-      { property: "og:description", content: "Крути Cricket Box, получай призы и участвуй в ежедневных подарках." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => ({ meta: [
+    { title: "CRICKET BOX — сезонный розыгрыш" },
+    { name: "description", content: "Открывай CRICKET BOX, участвуй в сезоне, крути коробку и забирай призы." },
+    { property: "og:title", content: "CRICKET BOX — сезонный розыгрыш" },
+    { property: "og:description", content: "Крути Cricket Box, получай призы и участвуй в ежедневных подарках." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary_large_image" },
+  ] }),
   component: HomeScreen,
 });
 
@@ -35,24 +33,14 @@ function HomeScreen() {
   const { snapshot, loading, error, refresh } = useSession();
   const navigate = useNavigate();
 
-  if (loading && !snapshot)
-    return (
-      <AppShell bare>
-        <LoadingState label="Открываем коробку" />
-      </AppShell>
-    );
-  if (!snapshot)
-    return (
-      <AppShell bare>
-        <div className="pt-24">
-          <ErrorState onRetry={() => void refresh()} description={error?.message} />
-        </div>
-      </AppShell>
-    );
+  if (loading && !snapshot) return <AppShell bare><LoadingState label="Открываем коробку" /></AppShell>;
+  if (!snapshot) return <AppShell bare><div className="pt-24"><ErrorState onRetry={() => void refresh()} description={error?.message} /></div></AppShell>;
 
   const ui = seasonUi(snapshot);
   const attempts = snapshot.spin.freeSpins;
   const latestReward = snapshot.rewards.find((reward) => reward.kind !== "EMPTY");
+  const activity = snapshot.activity;
+  const activityProgress = Math.max(0, Math.min(100, activity.progressPercent));
 
   return (
     <AppShell bare className="pt-[env(safe-area-inset-top)]">
@@ -63,18 +51,14 @@ function HomeScreen() {
         <div className="relative px-4 pb-5 pt-[calc(0.75rem+env(safe-area-inset-top))]">
           <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
             <Link to="/profile" aria-label="Профиль"><Avatar size={40} /></Link>
-            <div className="flex justify-end">
-              <Link to="/withdraw" className="press glass-panel gloss-top relative flex items-center gap-1.5 rounded-full px-3 py-1.5">
-                <StarsBalance balance={snapshot.stars} size="sm" showMax={false} />
-              </Link>
-            </div>
+            <div className="flex justify-end"><Link to="/withdraw" className="press glass-panel gloss-top relative flex items-center gap-1.5 rounded-full px-3 py-1.5"><StarsBalance balance={snapshot.stars} size="sm" showMax={false} /></Link></div>
             <GiftButton gift={snapshot.gift} />
           </div>
 
           <div className="mt-5 flex items-end justify-between gap-2">
             <div>
               <h1 className="font-display text-[2.6rem] font-bold uppercase leading-[0.9] tracking-[0.03em] text-gradient-primary drop-shadow-[0_0_28px_oklch(0.72_0.22_350_/_45%)]">Cricket<br />Box</h1>
-              <p className="mt-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">{snapshot.season.code}</p>
+              <p className="mt-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">{snapshot.season.title}</p>
               <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">{formatRange(snapshot.season.startsAt, snapshot.season.endsAt)}</p>
             </div>
             <CricketBox phase={ui.canSpin ? "idle" : "disabled"} size="sm" className="-mb-2 shrink-0" />
@@ -82,14 +66,7 @@ function HomeScreen() {
 
           <GlassCard className="mt-4 px-4 py-3.5">
             <div className="flex items-start justify-between gap-3">
-              {ui.countdownTarget ? (
-                <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} />
-              ) : (
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Статус сезона</p>
-                  <p className="mt-1 font-display text-lg uppercase tracking-[0.12em] text-gradient-primary">{ui.headline}</p>
-                </div>
-              )}
+              {ui.countdownTarget ? <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} /> : <div><p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Статус сезона</p><p className="mt-1 font-display text-lg uppercase tracking-[0.12em] text-gradient-primary">{ui.headline}</p></div>}
               <StatusBadge status={{ type: "season", value: snapshot.season.state }} />
             </div>
             <div className="mt-3 border-t border-glass-border pt-3 text-[11px] text-muted-foreground">
@@ -99,88 +76,38 @@ function HomeScreen() {
           </GlassCard>
 
           <div className="mt-4">
-            {ui.isFinished ? (
-              <div className="space-y-2">
-                <PrimaryButton fullWidth size="lg" onClick={() => void navigate({ to: "/prizes" })}>Мои призы</PrimaryButton>
-                {ui.canWithdraw && <PrimaryButton variant="outline" fullWidth onClick={() => void navigate({ to: "/withdraw" })}>Вывести Stars</PrimaryButton>}
-              </div>
-            ) : (
-              <PrimaryButton fullWidth size="lg" disabled={!ui.canSpin} onClick={() => void navigate({ to: "/draw" })}>{ui.ctaLabel}</PrimaryButton>
-            )}
+            {ui.isFinished ? <div className="space-y-2"><PrimaryButton fullWidth size="lg" onClick={() => void navigate({ to: "/prizes" })}>Мои призы</PrimaryButton>{ui.canWithdraw && <PrimaryButton variant="outline" fullWidth onClick={() => void navigate({ to: "/withdraw" })}>Вывести Stars</PrimaryButton>}</div> : <PrimaryButton fullWidth size="lg" disabled={!ui.canSpin} onClick={() => void navigate({ to: "/draw" })}>{ui.ctaLabel}</PrimaryButton>}
           </div>
         </div>
       </section>
 
       <section className="mt-5 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Возможные призы</h2>
-          <Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Все <ChevronRight className="size-3.5" /></Link>
-        </div>
+        <div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Возможные призы</h2><Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Все <ChevronRight className="size-3.5" /></Link></div>
         <PrizeStrip prizes={snapshot.prizes} />
       </section>
 
       <section className="mt-5 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Твои призы</h2>
-          <Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Все <ChevronRight className="size-3.5" /></Link>
-        </div>
-        <Link to="/prizes" className="block">
-          <GlassCard className="press flex items-center gap-3 px-4 py-3.5">
-            {latestReward ? (
-              <>
-                <img src={rewardArt[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">Последний приз</p>
-                  <p className="mt-1 truncate text-sm font-semibold">{latestReward.title}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{latestReward.status === "RECEIVED" ? "Получен" : latestReward.status === "PROBLEM" ? "Требует решения" : "Ожидает выдачи"}</p>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </>
-            ) : (
-              <>
-                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10"><Gift className="size-6 text-primary-glow" /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">Пока здесь пусто</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Крути бокс, чтобы получить свой первый приз.</p>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </>
-            )}
-          </GlassCard>
-        </Link>
+        <div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Твои призы</h2><Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Все <ChevronRight className="size-3.5" /></Link></div>
+        <Link to="/prizes" className="block"><GlassCard className="press flex items-center gap-3 px-4 py-3.5">{latestReward ? <><img src={rewardArt[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" /><div className="min-w-0 flex-1"><p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">Последний приз</p><p className="mt-1 truncate text-sm font-semibold">{latestReward.title}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{latestReward.status === "RECEIVED" ? "Получен" : latestReward.status === "PROBLEM" ? "Требует решения" : "Ожидает выдачи"}</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></> : <><span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10"><Gift className="size-6 text-primary-glow" /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Пока здесь пусто</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Крути бокс, чтобы получить свой первый приз.</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></>}</GlassCard></Link>
       </section>
 
       <section className="mt-5 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Как это работает</h2>
-          <Link to="/profile/$section" params={{ section: "rules" }} className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Подробнее <ChevronRight className="size-3.5" /></Link>
-        </div>
-        <GlassCard className="grid grid-cols-3 gap-2 px-3 py-4">
-          {[
-            ["01", "🎰", "Крутишь"],
-            ["02", "🎁", "Получаешь"],
-            ["03", "⭐", "Используешь или выводишь"],
-          ].map(([number, icon, label]) => (
-            <div key={number} className="text-center">
-              <p className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">{number}</p>
-              <p className="mt-1 text-xl">{icon}</p>
-              <p className="mt-1 text-[10px] font-semibold leading-tight">{label}</p>
-            </div>
-          ))}
+        <div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Активность канала</h2><Link to="/profile" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Профиль <ChevronRight className="size-3.5" /></Link></div>
+        <GlassCard className="px-4 py-4">
+          <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">⭐ Очки активности</p><p className="mt-1 font-display text-xl">{activity.points}</p></div><div className="text-right"><p className="text-[10px] text-muted-foreground">Бонусные спины</p><p className="mt-1 text-sm font-semibold">{activity.bonusSpinsRemaining} / {activity.maxBonusSpins}</p></div></div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted/40"><div className="h-full rounded-full [background-image:var(--gradient-primary)]" style={{ width: `${activityProgress}%` }} /></div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground"><span>{activity.pointsToNext ? `Ещё ${activity.pointsToNext} очк. → +1 спин` : "Лимит бонусных спинов достигнут"}</span><span>{activity.activeDays} дн.</span></div>
         </GlassCard>
       </section>
 
-      <GlassCard className="mt-5 flex items-center gap-3 px-3.5 py-3">
-        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">🔥 Уже сыграно {snapshot.spin.totalSpins} прокруток в этом сезоне.</p>
-        <span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span>
-      </GlassCard>
+      <section className="mt-5 space-y-2.5">
+        <div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Как это работает</h2><Link to="/profile/$section" params={{ section: "rules" }} className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Подробнее <ChevronRight className="size-3.5" /></Link></div>
+        <GlassCard className="grid grid-cols-3 gap-2 px-3 py-4">{[["01", "🎰", "Крутишь"], ["02", "🎁", "Получаешь"], ["03", "⭐", "Используешь или выводишь"]].map(([number, icon, label]) => <div key={number} className="text-center"><p className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">{number}</p><p className="mt-1 text-xl">{icon}</p><p className="mt-1 text-[10px] font-semibold leading-tight">{label}</p></div>)}</GlassCard>
+      </section>
 
+      <GlassCard className="mt-5 flex items-center gap-3 px-3.5 py-3"><p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">🔥 Уже сыграно {snapshot.spin.totalSpins} прокруток в этом сезоне.</p><span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span></GlassCard>
       {!snapshot.user.isSubscribed && <NoticeBar tone="warning" className="mt-4">Подпишись на канал, чтобы открыть прокрутки и ежедневный подарок.</NoticeBar>}
-
-      <GlassCard className="mt-4 flex items-center gap-3 px-3.5 py-3">
-        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">Подпишись на канал и получай больше шансов выиграть в каждом сезоне.</p>
-        <span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span>
-      </GlassCard>
+      <GlassCard className="mt-4 flex items-center gap-3 px-3.5 py-3"><p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">Подпишись на канал и получай больше шансов выиграть в каждом сезоне.</p><span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span></GlassCard>
     </AppShell>
   );
 }
