@@ -98,6 +98,17 @@ try {
     "replayed Telegram charge id cannot create a second transaction",
   );
 
+  // A stale PENDING payment must remain recoverable instead of being silently failed.
+  // The invoice endpoint can then reuse its payload/invoice after a client timeout or reload.
+  await db.query(`UPDATE star_transactions SET created_at=now()-interval '1 day' WHERE id=$1`, [first.rows[0].id]);
+  const stale = await db.query(
+    `SELECT status,created_at::text,payload->>'payload' AS payload
+       FROM star_transactions WHERE id=$1::uuid`,
+    [first.rows[0].id],
+  );
+  assert(stale.rows[0]?.status === "PENDING", "stale paid transaction remains PENDING for recovery");
+  assert(stale.rows[0]?.payload === payload, "stale payment keeps the same recovery payload");
+
   await db.query(
     `UPDATE star_transactions SET status='SUCCESS',processed_at=now(),spin_id=NULL WHERE id=$1`,
     [first.rows[0].id],
