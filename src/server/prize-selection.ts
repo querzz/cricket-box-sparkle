@@ -23,6 +23,29 @@ function economyMultiplier(prize: AdaptivePrize) {
   return Number.isFinite(configured) && configured > 0 ? configured : 1;
 }
 
+/**
+ * MVP production selector: weighted sampling without replacement.
+ * Each remaining inventory unit contributes its configured weight.
+ * It deliberately does not apply adaptive pacing, streak bonuses, or penalties.
+ */
+export function pickWeightedPrize<T extends AdaptivePrize>(prizes: T[], randomUnit: () => number): T {
+  if (!prizes.length) throw new Error("NO_PRIZES");
+
+  const weighted = prizes.map((prize) => ({
+    prize,
+    weight: configuredWeight(prize) * Math.max(0, Number(prize.quantity_remaining) || 0),
+  }));
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  if (!(total > 0)) return prizes[0]!;
+
+  let cursor = clamp(randomUnit(), 0, 0.9999999999999999) * total;
+  for (const item of weighted) {
+    cursor -= item.weight;
+    if (cursor < 0) return item.prize;
+  }
+  return weighted[weighted.length - 1]!.prize;
+}
+
 export function pickAdaptivePrize<T extends AdaptivePrize>(
   prizes: T[],
   randomUnit: () => number,
