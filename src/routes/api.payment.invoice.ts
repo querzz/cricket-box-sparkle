@@ -5,7 +5,6 @@ import { requireBotToken } from "@/server/config";
 import { query } from "@/server/db";
 
 const MAX_STARS = 500;
-
 type PendingPayment = { payload: string; amount: string; created_at: string };
 
 export const Route = createFileRoute("/api/payment/invoice")({
@@ -43,7 +42,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
             LIMIT 1`,
           [user.rows[0].id, current.id],
         );
-        const existing = pending.rows[0];
+        let existing = pending.rows[0];
         const starsBalance = Number(state.rows[0]?.stars_balance ?? 0);
         const price = Number(current.paid_spin_price);
         if (!Number.isSafeInteger(price) || price <= 0) return Response.json({ ok:false, code:"PAID_SPIN_DISABLED" }, { status:409 });
@@ -53,11 +52,8 @@ export const Route = createFileRoute("/api/payment/invoice")({
           if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) return Response.json({ ok:false, code:"NO_PRIZES" }, { status:409 });
         }
 
-        const payload = existing?.payload ?? `paidspin:v1:${user.rows[0].id}:${current.id}:${crypto.randomUUID().replaceAll("-","")}`;
-        const transactionAmount = existing ? Number(existing.amount) : price;
-        if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount !== price) {
-          return Response.json({ ok:false, code:"PAYMENT_AMOUNT_MISMATCH" }, { status:409 });
-        }
+        let payload = existing?.payload ?? `paidspin:v1:${user.rows[0].id}:${current.id}:${crypto.randomUUID().replaceAll("-","")}`;
+        let transactionAmount = existing ? Number(existing.amount) : price;
 
         if (!existing) {
           try {
@@ -67,10 +63,17 @@ export const Route = createFileRoute("/api/payment/invoice")({
             if (message.includes("ux_pending_paid_spin_user_season") || message.toLowerCase().includes("duplicate key")) {
               const raced = await query<PendingPayment>(`SELECT payload->>'payload' AS payload,amount::text,created_at::text FROM star_transactions WHERE user_id=$1::uuid AND status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$2 ORDER BY created_at DESC,id DESC LIMIT 1`, [user.rows[0].id,current.id]);
               if (!raced.rows[0]?.payload) return Response.json({ ok:false, code:"PAYMENT_PROCESSING" }, { status:409 });
-              return Response.json({ ok:true, invoiceUrl:null, price:Number(raced.rows[0].amount), payload:raced.rows[0].payload, recovery:true });
+              existing = raced.rows[0];
+              payload = existing.payload;
+              transactionAmount = Number(existing.amount);
+            } else {
+              throw error;
             }
-            throw error;
           }
+        }
+
+        if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount !== price) {
+          return Response.json({ ok:false, code:"PAYMENT_AMOUNT_MISMATCH" }, { status:409 });
         }
 
         const telegramResponse = await fetch(`https://api.telegram.org/bot${requireBotToken()}/createInvoiceLink`, {
@@ -79,10 +82,10 @@ export const Route = createFileRoute("/api/payment/invoice")({
         });
         const telegramData = (await telegramResponse.json()) as { ok:boolean; result?:string; description?:string };
         if (!telegramData.ok || !telegramData.result) {
-          if (!existing) await query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE payload->>'payload'=$1 AND status='PENDING'`, [payload]);
+          if (!existing?.payload) await query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE payload->>'payload'=$1 AND status='PENDING'`, [payload]);
           return Response.json({ ok:false, code:"INVOICE_CREATE_FAILED", detail:telegramData.description }, { status:502 });
         }
-        return Response.json({ ok:true, invoiceUrl:telegramData.result, price:transactionAmount, payload, recovery:Boolean(existing) });
+        return Response.json({ ok:true, invoiceUrl:telegramData.result, price:transactionAmount, payload, recovery:Boolean(existing?.payload) });
       } catch (error) {
         console.error("Payment invoice failed:", error instanceof Error ? error.message : error);
         return Response.json({ ok:false, code:"INVOICE_FAILED" }, { status:400 });
