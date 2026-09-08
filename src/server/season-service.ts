@@ -80,6 +80,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   if (hasStarted && currentEnd && endsAt && new Date(endsAt) < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
   if (hasStarted && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
   if (nextState === "SCHEDULED" && (!startsAt || new Date(startsAt) <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
+  if (["ACTIVE", "ENDING"].includes(nextState) && (!startsAt || new Date(startsAt) > now)) throw new Error("ACTIVE_START_MUST_BE_NOW_OR_PAST");
   if (["ACTIVE", "ENDING"].includes(nextState) && endsAt && new Date(endsAt) <= now) throw new Error("SEASON_END_ALREADY_PASSED");
 
   const requestedPrice = patch.paidSpinPrice;
