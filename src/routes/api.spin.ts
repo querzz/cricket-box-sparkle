@@ -7,6 +7,7 @@ import { secureRandomUnit } from "@/server/secure-random";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { appendStarsLedger } from "@/server/stars-ledger";
 import { pickAdaptivePrize } from "@/server/prize-selection";
+import { getEconomyMultiplier } from "@/server/season-economy";
 
 const MAX_STARS = 500;
 
@@ -19,6 +20,7 @@ type PrizeRow = {
   amount: string;
   unit_cost: string;
   currency: string | null;
+  quantity_total: number;
   quantity_remaining: number;
   metadata: Record<string, unknown> | null;
 };
@@ -51,7 +53,7 @@ export const Route = createFileRoute("/api/spin")({
             if (!state || !subscribed) throw new Error("NOT_SUBSCRIBED");
             if (!state.is_participant) throw new Error("NOT_PARTICIPANT");
 
-            const season = await client.query<{ id: string; code: string; state: string; paid_spin_price: number; daily_free_spin: boolean }>(`SELECT id::text,code,state,paid_spin_price,daily_free_spin FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
+            const season = await client.query<{ id: string; code: string; state: string; starts_at: string | null; ends_at: string | null; paid_spin_price: number; daily_free_spin: boolean }>(`SELECT id::text,code,state,starts_at::text,ends_at::text,paid_spin_price,daily_free_spin FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
             const currentSeason = season.rows[0];
             if (!currentSeason) throw new Error("SEASON_NOT_ACTIVE");
 
@@ -70,9 +72,20 @@ export const Route = createFileRoute("/api/spin")({
             const recentKinds = recent.rows.map((row) => row.kind).filter(Boolean);
             const emptyStreak = recentKinds.reduce((count, kind) => count < recentKinds.length && kind === "EMPTY" ? count + 1 : count, 0);
 
-            const prizes = await client.query<PrizeRow>(`SELECT id::text,kind,title,subtitle,amount::text,unit_cost::text,currency,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`, [currentSeason.id,Number(state.stars_balance ?? 0),MAX_STARS]);
+            const prizes = await client.query<PrizeRow>(`SELECT id::text,kind,title,subtitle,amount::text,unit_cost::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`, [currentSeason.id,Number(state.stars_balance ?? 0),MAX_STARS]);
             if (!prizes.rows.length) throw new Error("NO_PRIZES");
-            const picked = pickAdaptivePrize(prizes.rows, secureRandomUnit, { emptyStreak, recentKinds });
+
+            const elapsedStart = currentSeason.starts_at ? new Date(currentSeason.starts_at).getTime() : Number.NaN;
+            const elapsedEnd = currentSeason.ends_at ? new Date(currentSeason.ends_at).getTime() : Number.NaN;
+            const elapsedFraction = Number.isFinite(elapsedStart) && Number.isFinite(elapsedEnd) && elapsedEnd > elapsedStart ? Math.min(1, Math.max(0, (Date.now() - elapsedStart) / (elapsedEnd - elapsedStart))) : 0;
+            const economyPrizes = prizes.rows.map((prize) => ({
+              ...prize,
+              metadata: {
+                ...(prize.metadata ?? {}),
+                economyMultiplier: getEconomyMultiplier({ quantityTotal: prize.quantity_total, quantityRemaining: prize.quantity_remaining, elapsedFraction }),
+              },
+            }));
+            const picked = pickAdaptivePrize(economyPrizes, secureRandomUnit, { emptyStreak, recentKinds });
             const inventoryUpdate = await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`, [picked.id]);
             if (!inventoryUpdate.rows[0]) throw new Error("NO_PRIZES");
 
@@ -99,7 +112,7 @@ export const Route = createFileRoute("/api/spin")({
               payoutId=payout.rows[0].id;
             }
 
-            await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('SPIN_COMPLETED','spin',$1,$2::jsonb)`, [spin.rows[0].id,JSON.stringify({userId:user.rows[0].id,seasonId:currentSeason.id,prizeId:picked.id,type:spinType,usedDaily:useDaily,usedActivityBonus:useActivityBonus,usedGiftBonus:useGiftBonus,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,emptyStreakBefore:emptyStreak})]);
+            await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('SPIN_COMPLETED','spin',$1,$2::jsonb)`, [spin.rows[0].id,JSON.stringify({userId:user.rows[0].id,seasonId:currentSeason.id,prizeId:picked.id,type:spinType,usedDaily:useDaily,usedActivityBonus:useActivityBonus,usedGiftBonus:useGiftBonus,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,emptyStreakBefore:emptyStreak,economyMultiplier:Number(picked.metadata?.economyMultiplier ?? 1)})]);
             return {spinId:spin.rows[0].id,payoutId,createdAt:spin.rows[0].created_at,prize:picked,credited,rewardStars,spinType};
           });
 
