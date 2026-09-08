@@ -67,6 +67,7 @@ Repository: `querzz/cricket-box-sparkle`
 - `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
 - `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates.
 - `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
+- `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based drops even when no users are spinning.
 
 ### Payouts / withdrawals
 - Payout lifecycle and bulk admin processing exist.
@@ -104,7 +105,7 @@ The following real admin routes exist and use backend APIs:
 4. Complete replay/double-click/payment-recovery security regression tests still need to run against the current application.
 5. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 6. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
-7. LiveOps has no independent background scheduler yet, so a time-based drop cannot execute while the application receives zero spin/payment traffic.
+7. The scheduler endpoint now exists, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
 
 ## Deliberately not implementing now
 
