@@ -1,5 +1,5 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
-import { ChevronRight, Trophy, Medal, ScrollText, HelpCircle, History, LifeBuoy } from "lucide-react";
+import { Trophy, Medal, ScrollText, HelpCircle, History, LifeBuoy } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
@@ -8,6 +8,15 @@ import { EmptyState, LoadingState } from "@/components/kit/States";
 import { StatusBadge } from "@/components/kit/StatusBadge";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/store/session";
+
+type SupportContact = { username: string | null; url: string | null };
+type SupportInfo = { ok?: boolean; support?: SupportContact | null };
+
+function openTelegramLink(url: string) {
+  const webApp = (window as Window & { Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } } }).Telegram?.WebApp;
+  if (webApp?.openTelegramLink) webApp.openTelegramLink(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
 
 export const Route = createFileRoute("/profile/$section")({
   head: () => ({ meta: [{ title: "Информация — CRICKET BOX" }, { name: "description", content: "Таблица лидеров, правила, FAQ, история и поддержка." }] }),
@@ -34,26 +43,23 @@ const faq = [
   { q: "Когда приходит выигранный приз?", a: "Результат фиксируется сразу, а выдача Premium, денег и других материальных призов может требовать проверки и ручной обработки администратором." },
 ];
 
-type SupportInfo = { ok?: boolean; support?: { username: string | null; url: string | null } };
-
-function openTelegramLink(url: string) {
-  const webApp = (window as Window & { Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } } }).Telegram?.WebApp;
-  if (webApp?.openTelegramLink) webApp.openTelegramLink(url);
-  else window.open(url, "_blank", "noopener,noreferrer");
-}
-
 function SectionScreen() {
   const { section } = useParams({ from: "/profile/$section" });
   const { snapshot, loading } = useSession();
-  const [support, setSupport] = useState<SupportInfo["support"]>(null);
+  const [support, setSupport] = useState<SupportContact | undefined>(undefined);
   const title = titles[section] ?? "Раздел";
 
   useEffect(() => {
     if (section !== "support") return;
     let mounted = true;
-    void fetch("/api/public-links").then((response) => response.json() as Promise<SupportInfo>).then((data) => {
-      if (mounted) setSupport(data.support ?? null);
-    }).catch(() => {});
+    void fetch("/api/public-links")
+      .then((response) => response.json() as Promise<SupportInfo>)
+      .then((data) => {
+        if (mounted) setSupport(data.support ?? undefined);
+      })
+      .catch(() => {
+        if (mounted) setSupport(undefined);
+      });
     return () => { mounted = false; };
   }, [section]);
 
@@ -74,7 +80,7 @@ function SectionScreen() {
       {section === "rules" && <div className="space-y-2.5"><GlassCard className="px-4 py-4"><p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Как работают Stars</p><p className="mt-2 text-sm font-semibold">Баланс CRICKET BOX отдельно от оплаты Telegram</p><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Наградные Stars хранятся на балансе CRICKET BOX. Обычная дополнительная прокрутка оплачивается отдельно через Telegram Stars.</p></GlassCard><GlassCard className="space-y-3 px-4 py-4">{rules.map((rule) => <p key={rule} className="text-xs leading-relaxed text-muted-foreground">— {rule}</p>)}</GlassCard></div>}
       {section === "faq" && <div className="space-y-2.5">{faq.map((item) => <GlassCard key={item.q} className="px-4 py-3.5"><p className="text-sm font-semibold">{item.q}</p><p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{item.a}</p></GlassCard>)}</div>}
       {section === "history" && <div className="space-y-2.5">{historyRewards.length > 0 ? historyRewards.map((reward) => <GlassCard key={reward.id} className="flex items-center gap-3 px-4 py-3"><div className="min-w-0 flex-1"><p className="truncate text-sm">{reward.title}</p><p className="text-[11px] text-muted-foreground">{formatDate(reward.wonAt)}</p></div><StatusBadge status={{ type: "reward", value: reward.status }} /></GlassCard>) : <EmptyState title="Активность пока отсутствует" description="Полученные награды появятся здесь." />}</div>}
-      {section === "support" && <div className="space-y-2.5"><GlassCard className="px-4 py-5 text-center"><div className="mx-auto grid size-11 place-items-center rounded-2xl border border-primary/25 bg-primary/10"><LifeBuoy className="size-5 text-primary-glow" /></div><p className="mt-3 font-display text-sm uppercase tracking-[0.16em]">Нужна помощь?</p><p className="mt-2 text-xs leading-relaxed text-muted-foreground">По вопросам участия, призов и оплаты напиши в поддержку CRICKET BOX.</p>{support?.url ? <button type="button" onClick={() => openTelegramLink(support.url!)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold"><span>{support.username}</span><ChevronRight className="size-4" /></button> : <p className="mt-3 text-[10px] text-muted-foreground">Контакт поддержки пока не настроен.</p>}</GlassCard></div>}
+      {section === "support" && <div className="space-y-2.5"><GlassCard className="px-4 py-5 text-center"><div className="mx-auto grid size-11 place-items-center rounded-2xl border border-primary/25 bg-primary/10"><LifeBuoy className="size-5 text-primary-glow" /></div><p className="mt-3 font-display text-sm uppercase tracking-[0.16em]">Нужна помощь?</p><p className="mt-2 text-xs leading-relaxed text-muted-foreground">По вопросам участия, призов и оплаты напиши в поддержку CRICKET BOX.</p>{support?.url ? <button type="button" onClick={() => openTelegramLink(support.url!)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold"><span>{support.username}</span><span aria-hidden>›</span></button> : <p className="mt-3 text-[10px] text-muted-foreground">Контакт поддержки пока не настроен.</p>}</GlassCard></div>}
       {!(section in titles) && <EmptyState title="Раздел не найден" description="Такой страницы не существует." />}
     </AppShell>
   );
