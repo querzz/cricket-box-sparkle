@@ -6,6 +6,7 @@ import { withTransaction } from "@/server/db";
 import { secureRandomUnit } from "@/server/secure-random";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { appendStarsLedger } from "@/server/stars-ledger";
+import { pickAdaptivePrize } from "@/server/prize-selection";
 
 const MAX_STARS = 500;
 
@@ -21,22 +22,6 @@ type PrizeRow = {
   quantity_remaining: number;
   metadata: Record<string, unknown> | null;
 };
-
-function pickWeighted(prizes: PrizeRow[]) {
-  const weighted = prizes.map((prize) => {
-    const configuredWeight = Number(prize.metadata?.weight ?? 1);
-    const weight = Number.isFinite(configuredWeight) && configuredWeight > 0 ? configuredWeight : 1;
-    return { prize, weight };
-  });
-  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
-  if (!(total > 0)) return weighted[0]!.prize;
-  let cursor = secureRandomUnit() * total;
-  for (const item of weighted) {
-    cursor -= item.weight;
-    if (cursor < 0) return item.prize;
-  }
-  return weighted[weighted.length - 1]!.prize;
-}
 
 export const Route = createFileRoute("/api/spin")({
   server: {
@@ -81,9 +66,13 @@ export const Route = createFileRoute("/api/spin")({
             const useGiftBonus = !useDaily && !useActivityBonus && Number(state.bonus_free_spins ?? 0) > 0;
             if (!useDaily && !useActivityBonus && !useGiftBonus) throw new Error("NO_ATTEMPTS");
 
+            const recent = await client.query<{ kind: string }>(`SELECT p.kind FROM spins s LEFT JOIN prizes p ON p.id=s.prize_id WHERE s.user_id=$1::uuid AND s.season_id=$2::uuid AND s.status='COMPLETED' ORDER BY s.created_at DESC LIMIT 20`, [user.rows[0].id,currentSeason.id]);
+            const recentKinds = recent.rows.map((row) => row.kind).filter(Boolean);
+            const emptyStreak = recentKinds.reduce((count, kind) => count < recentKinds.length && kind === "EMPTY" ? count + 1 : count, 0);
+
             const prizes = await client.query<PrizeRow>(`SELECT id::text,kind,title,subtitle,amount::text,unit_cost::text,currency,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`, [currentSeason.id,Number(state.stars_balance ?? 0),MAX_STARS]);
             if (!prizes.rows.length) throw new Error("NO_PRIZES");
-            const picked = pickWeighted(prizes.rows);
+            const picked = pickAdaptivePrize(prizes.rows, secureRandomUnit, { emptyStreak, recentKinds });
             const inventoryUpdate = await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`, [picked.id]);
             if (!inventoryUpdate.rows[0]) throw new Error("NO_PRIZES");
 
@@ -110,7 +99,7 @@ export const Route = createFileRoute("/api/spin")({
               payoutId=payout.rows[0].id;
             }
 
-            await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('SPIN_COMPLETED','spin',$1,$2::jsonb)`, [spin.rows[0].id,JSON.stringify({userId:user.rows[0].id,seasonId:currentSeason.id,prizeId:picked.id,type:spinType,usedDaily:useDaily,usedActivityBonus:useActivityBonus,usedGiftBonus:useGiftBonus,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow})]);
+            await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('SPIN_COMPLETED','spin',$1,$2::jsonb)`, [spin.rows[0].id,JSON.stringify({userId:user.rows[0].id,seasonId:currentSeason.id,prizeId:picked.id,type:spinType,usedDaily:useDaily,usedActivityBonus:useActivityBonus,usedGiftBonus:useGiftBonus,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,emptyStreakBefore:emptyStreak})]);
             return {spinId:spin.rows[0].id,payoutId,createdAt:spin.rows[0].created_at,prize:picked,credited,rewardStars,spinType};
           });
 
