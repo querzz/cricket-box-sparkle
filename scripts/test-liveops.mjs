@@ -51,7 +51,7 @@ try {
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   const endingSeason = endingSeasonResult.rows[0].id;
 
-  const closedEnding = await db.query<{id:string;code:string}>(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,code`);
+  const closedEnding = await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,code`);
   assert(closedEnding.rows.some(row => row.id === endingSeason), "expired ending season becomes closed");
 
   await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING') AND id<>$1::uuid`, [dueSeason]);
