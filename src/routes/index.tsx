@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, Gift, Heart } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { assets, rewardArt } from "@/components/assets";
 import { AppShell } from "@/components/kit/AppShell";
@@ -11,11 +12,19 @@ import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { PrizeStrip } from "@/components/kit/PrizePool";
 import { Avatar } from "@/components/kit/ProfileHeader";
 import { StatusBadge } from "@/components/kit/StatusBadge";
-import { ErrorState, LoadingState, NoticeBar } from "@/components/kit/States";
+import { ErrorState, LoadingState } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
 import { seasonUi } from "@/lib/season";
 import { formatRange } from "@/lib/format";
 import { useSession } from "@/store/session";
+
+type PublicLinks = { channel?: { title: string; username: string | null; url: string | null }; support?: { username: string | null; url: string | null } };
+
+function openTelegramLink(url: string) {
+  const webApp = (window as Window & { Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } } }).Telegram?.WebApp;
+  if (webApp?.openTelegramLink) webApp.openTelegramLink(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [
@@ -32,6 +41,15 @@ export const Route = createFileRoute("/")({
 function HomeScreen() {
   const { snapshot, loading, error, refresh } = useSession();
   const navigate = useNavigate();
+  const [publicLinks, setPublicLinks] = useState<PublicLinks>({});
+
+  useEffect(() => {
+    let mounted = true;
+    void fetch("/api/public-links").then((response) => response.json() as Promise<PublicLinks & { ok?: boolean }>).then((data) => {
+      if (mounted) setPublicLinks(data);
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   if (loading && !snapshot) return <AppShell bare><LoadingState label="Открываем коробку" /></AppShell>;
   if (!snapshot) return <AppShell bare><div className="pt-24"><ErrorState onRetry={() => void refresh()} description={error?.message} /></div></AppShell>;
@@ -41,6 +59,7 @@ function HomeScreen() {
   const latestReward = snapshot.rewards.find((reward) => reward.kind !== "EMPTY");
   const activity = snapshot.activity;
   const activityProgress = Math.max(0, Math.min(100, activity.progressPercent));
+  const channel = publicLinks.channel;
 
   return (
     <AppShell bare className="pt-[env(safe-area-inset-top)]">
@@ -102,12 +121,27 @@ function HomeScreen() {
 
       <section className="mt-5 space-y-2.5">
         <div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Как это работает</h2><Link to="/profile/$section" params={{ section: "rules" }} className="flex items-center gap-0.5 text-[11px] text-muted-foreground">Подробнее <ChevronRight className="size-3.5" /></Link></div>
-        <GlassCard className="grid grid-cols-3 gap-2 px-3 py-4">{[["01", "🎰", "Крутишь"], ["02", "🎁", "Получаешь"], ["03", "⭐", "Используешь или выводишь"]].map(([number, icon, label]) => <div key={number} className="text-center"><p className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">{number}</p><p className="mt-1 text-xl">{icon}</p><p className="mt-1 text-[10px] font-semibold leading-tight">{label}</p></div>)}</GlassCard>
+        <GlassCard className="overflow-hidden px-0 py-1">
+          {[["01", "Крути", "Открывай бокс, когда есть бесплатная попытка."], ["02", "Забирай", "Результат фиксируется сразу после прокрутки."], ["03", "Используй", "Stars можно вывести после завершения сезона."]].map(([number, title, text], index) => (
+            <div key={number} className={`flex items-center gap-3 px-4 py-3.5 ${index > 0 ? "border-t border-glass-border" : ""}`}>
+              <span className="grid size-8 shrink-0 place-items-center rounded-full border border-primary/30 bg-primary/10 text-[9px] font-bold text-primary-glow">{number}</span>
+              <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{title}</p><p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{text}</p></div>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground/70" />
+            </div>
+          ))}
+        </GlassCard>
       </section>
 
       <GlassCard className="mt-5 flex items-center gap-3 px-3.5 py-3"><p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">🔥 Уже сыграно {snapshot.spin.totalSpins} прокруток в этом сезоне.</p><span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span></GlassCard>
-      {!snapshot.user.isSubscribed && <NoticeBar tone="warning" className="mt-4">Подпишись на канал, чтобы открыть прокрутки и ежедневный подарок.</NoticeBar>}
-      <GlassCard className="mt-4 flex items-center gap-3 px-3.5 py-3"><p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">Подпишись на канал и получай больше шансов выиграть в каждом сезоне.</p><span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span></GlassCard>
+
+      {!snapshot.user.isSubscribed && channel?.url && (
+        <button type="button" onClick={() => openTelegramLink(channel.url!)} className="mt-4 block w-full text-left">
+          <GlassCard className="press flex items-center gap-3 border-warning/25 bg-warning/5 px-3.5 py-3.5">
+            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Подпишись на канал</p><p className="mt-1 text-[11px] text-muted-foreground">{channel.username ?? channel.title} · это нужно для участия и подарков.</p></div>
+            <span className="shrink-0 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[10px] font-semibold">Открыть</span>
+          </GlassCard>
+        </button>
+      )}
     </AppShell>
   );
 }
