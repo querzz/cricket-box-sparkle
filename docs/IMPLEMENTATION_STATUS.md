@@ -42,8 +42,9 @@ Repository: `querzz/cricket-box-sparkle`
 - Finite prize inventory is decremented atomically.
 - Exhausted and inactive prizes are excluded.
 - Stars prizes are excluded when the user's Stars balance is at the cap.
-- Production selection uses configured weight × remaining inventory with server-side randomness: weighted sampling without replacement, matching the MVP specification.
-- Adaptive pacing, empty-streak bonuses and anti-streak penalties are not applied to production spins; the adaptive selector remains isolated for simulator/scenario analysis only.
+- Production selection now uses the dynamic season-economy pipeline: configured base weight × remaining inventory × global inventory-pressure multiplier × soft player pity × anti-streak correction, followed by server-side cryptographically secure selection.
+- Dynamic balancing is bounded and soft: the global multiplier is clamped, pity is capped at 30 consecutive low-value outcomes, and anti-streak only reduces excessive repetition rather than guaranteeing a better prize.
+- The dynamic selection inputs and diagnostics are written into the spin completion audit record, including `algorithmVersion`, elapsed season fraction, recent result kinds, and per-selected-prize weight diagnostics.
 - LiveOps drops can be activated automatically when their time, spin-count or season-progress trigger becomes due.
 - `EMPTY` outcomes do not create payout records.
 - XP is awarded on completed spins.
@@ -71,11 +72,12 @@ Repository: `querzz/cricket-box-sparkle`
 - Stale `PENDING` payments are intentionally kept recoverable instead of being auto-failed solely because they are old.
 - A pending paid-spin reuses its stored invoice URL when available, preventing multiple invoice links for the same pending transaction.
 - Paid invoice creation is rate-limited per authenticated Telegram user.
+- The paid-spin settlement path uses the same dynamic season-economy selection and records selection diagnostics in the payment completion audit event.
 - The user client polls the exact payment transaction after Telegram callback/timeout so a successful payment is not lost because the Mini App callback arrives late.
 - If a successful Telegram payment cannot be settled because inventory disappears during the race, the bot has an explicit refund path; when the refund itself fails, the transaction remains recoverable instead of being silently marked paid.
 
 ### LiveOps / economy administration
-- `/api/admin/economy` exposes live season metrics, inventory consumption and current per-prize multipliers.
+- `/api/admin/economy` exposes live season metrics, inventory consumption, effective dynamic weights and current per-prize `currentChance` values for the current global economy state.
 - Economy snapshots can be persisted with an audit record and historical snapshots can be requested from the same endpoint.
 - `/api/admin/drops` supports scheduled and manual drops, cancellation and manual activation.
 - Drop payloads validate prize type, quantity, amount and unit cost before insertion.
@@ -99,6 +101,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Statistics include completed vs attempted/failed spins, paid-user conversion, repeat-user rate, winner rate, and D1/D7 retention cohorts derived from first completed spins.
 - D1/D7 denominators exclude immature cohorts so current-day users do not distort retention rates.
 - Admin statistics UI exposes funnel and retention cards alongside operational totals.
+- Participant and statistics read models were corrected for two PostgreSQL query bugs: mixed timestamp/text `COALESCE` ordering in participants and an incorrect season alias in the repeat-user predicate.
 
 ### Admin WebApp
 The following real admin routes exist and use backend APIs:
@@ -120,7 +123,7 @@ The following real admin routes exist and use backend APIs:
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
 - GitHub DB integration tests remain the safety net for schema/inventory/idempotency invariants.
 - Payment security CI runs the payment regression suite against a clean PostgreSQL service, including rate-limit regression coverage.
-- `main` must still finish its newest CI runs cleanly after the latest security changes before it is considered verified-green.
+- New dynamic-selection and admin-read-model changes must finish the newest CI runs cleanly before the branch is considered verified-green.
 
 ## Important remaining production gaps
 
@@ -132,15 +135,17 @@ The following real admin routes exist and use backend APIs:
 6. The scheduler endpoint is implemented and the repository workflow is configuration-safe, but a deployed app URL and `LIVEOPS_CRON_SECRET` still need to be configured as repository secrets (or an equivalent external cron provider must call the endpoint) before automated production ticks occur.
 7. Stars cross-season policy remains intentionally explicit at product/season level; the system does not silently reset, transfer, or burn eligible user Stars during lifecycle transitions.
 8. Paid-payment inventory is not reserved at invoice time. The current safety model instead requires successful-payment completion and a compensating Telegram refund when the final prize disappears before settlement; automated reconciliation for any failed refund is still a production requirement.
+9. Dynamic-economy transparency/UI still needs a final product/legal review before exposing exact numeric probabilities to users in live paid-spin flows.
 
 ## Documentation audit
 
 - `docs/IMPLEMENTATION_STATUS.md` is the current verified implementation tracker.
 - `docs/MASTER_PLAN.md` remains the product roadmap and contains historical phase descriptions; those phase labels must not be read as a statement that the current repository is still at that phase.
-- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline and now accurately describes the backend/admin/security implementation state in its opening section.
+- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline; its original MVP selection model is narrower than the later specialized dynamic-economy specification and should be treated as the older baseline where the documents conflict.
+- `docs/SEASON-DYNAMIC-ECONOMY.md` is the active specialized design for the dynamic season balancer, soft pity, anti-streak, scheduled drops, simulation, guardrails, transparency and auditability requirements.
 - `docs/ADMIN_SPEC.md` broadly matches the implemented admin surface; provider-automated fulfillment remains intentionally outside the current implementation.
 - `docs/QA_CHECKLIST.md` is a Phase 1 mock-frontend checklist and is now historical; production readiness requires the remaining runtime Telegram/browser/security checks above.
-- `docs/PRODUCT_DECISIONS.md`, `docs/ECONOMICS.md`, and `docs/HOME_UX.md` remain decision/requirements references and should continue to be read before changing product behavior.
+- `docs/PRODUCT_DECISIONS.md`, `docs/ECONOMICS.md`, `docs/HOME_UX.md`, `docs/PRODUCT_IDEAS.md`, and `docs/economy-roadmap.md` remain decision/requirements/future-reference documents and should be read before changing product behavior.
 
 ## Deliberately not implementing now
 
