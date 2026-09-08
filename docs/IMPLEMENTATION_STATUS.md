@@ -29,6 +29,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Only one ACTIVE/ENDING season is allowed by the service lock.
 - Paid spins can be disabled, but cannot be re-enabled mid-season when disabled from the start.
 - Paid-spin price is locked after the first paid spin.
+- The protected LiveOps tick automatically reconciles a due `SCHEDULED` season into `ACTIVE` and moves expired `ACTIVE` seasons into `ENDING` before processing due drops.
 
 ### Spin engine / adaptive economy
 - `/api/spin` is server-authoritative and transactional.
@@ -67,8 +68,8 @@ Repository: `querzz/cricket-box-sparkle`
 - `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
 - `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates while advancing economy progress through the simulated season.
 - `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
-- `src/server/economy-guardrails.ts` evaluates finite inventory coverage, Stars liability, material exposure and simulated exhaustion risk before an economy scenario is considered healthy.
-- `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based drops even when no users are spinning.
+- `src/server/economy-guardrails.ts` evaluates finite reward inventory coverage, Stars liability, material exposure and simulated exhaustion risk; `EMPTY` is not counted as finite reward inventory.
+- `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that reconciles season states and processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based drops even when no users are spinning.
 
 ### Payouts / withdrawals
 - Payout lifecycle and bulk admin processing exist.
@@ -102,7 +103,7 @@ The following real admin routes exist and use backend APIs:
 
 1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
 2. Statistics still do not expose every KPI from the full specification, especially full funnel/retention reporting across all historical cohorts.
-3. Full automatic season transition jobs are not implemented; state changes are currently guarded by the service when requests occur.
+3. Final `ENDING → CLOSED → PAYOUT` orchestration still needs a defined payout policy; the protected LiveOps tick now handles `SCHEDULED → ACTIVE` and `ACTIVE → ENDING`.
 4. Complete replay/double-click/payment-recovery security regression tests still need to run against the current application.
 5. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 6. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
