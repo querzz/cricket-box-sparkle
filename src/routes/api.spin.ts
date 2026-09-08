@@ -106,7 +106,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
         const payout=await client.query<{id:string}>(`INSERT INTO payouts(spin_id,user_id,prize_id,kind,amount,currency,status,note,paid_at) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::numeric,$6,$7,$8,CASE WHEN $7='PAID' THEN now() ELSE NULL END) RETURNING id::text`,[spin.rows[0].id,user.id,picked.id,picked.kind,picked.amount,picked.currency,payoutStatus,note]);
         payoutId=payout.rows[0].id;
       }
-      await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('SPIN_COMPLETED','spin',$1,$2::jsonb)`,[spin.rows[0].id,JSON.stringify({userId:user.id,seasonId:season.id,prizeId:picked.id,type:spinType,idempotencyKey,usedDaily:useDaily,usedActivityBonus:useActivity,usedGiftBonus:useGift,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,algorithmVersion:"dynamic-v1",elapsedFraction,emptyStreak,recentKinds:recentKinds.slice(0,8),selection:selection.diagnostics[picked.id]})]);
+      await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('SPIN_COMPLETED','spin',$1,$2::jsonb)`,[spin.rows[0].id,JSON.stringify({userId:user.id,seasonId:season.id,prizeId:picked.id,type:spinType,idempotencyKey,usedDaily:useDaily,usedActivityBonus:useActivity,usedGiftBonus:useGift,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,algorithmVersion:"finite-pool-v1",elapsedFraction,emptyStreak,recentKinds:recentKinds.slice(0,8),selection:selection.diagnostics[picked.id]})]);
       return {spinId:spin.rows[0].id,payoutId,createdAt:spin.rows[0].created_at,prize:picked,credited,rewardStars,spinType,duplicate:false};
     });
     return Response.json(rewardResponse(result));
