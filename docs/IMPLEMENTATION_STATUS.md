@@ -45,6 +45,7 @@ Repository: `querzz/cricket-box-sparkle`
 - LiveOps drops can be activated automatically when their time, spin-count or season-progress trigger becomes due.
 - `EMPTY` outcomes do not create payout records.
 - XP is awarded on completed spins.
+- Free-spin requests now send a client-generated idempotency key and retry once with the same key after a network failure.
 
 ### Daily Gift
 - Daily Gift is persisted in PostgreSQL.
@@ -61,6 +62,10 @@ Repository: `querzz/cricket-box-sparkle`
 - Invoice and completion flows both respect the season paid-spin ON/OFF setting.
 - Completion validates payload, user, season and amount before settlement.
 - DEV paid-spin flow exists for QA without spending real Telegram Stars.
+- `/api/payment/status` authenticates the Telegram user and exposes the exact transaction state and settled reward for a payment payload.
+- Stale `PENDING` payments are intentionally kept recoverable instead of being auto-failed solely because they are old.
+- A pending paid-spin reuses its stored invoice URL when available, preventing multiple invoice links for the same pending transaction.
+- The user client polls the exact payment transaction after Telegram callback/timeout so a successful payment is not lost because the Mini App callback arrives late.
 
 ### LiveOps / economy administration
 - `/api/admin/economy` exposes live season metrics, inventory consumption and current per-prize multipliers.
@@ -109,17 +114,27 @@ The following real admin routes exist and use backend APIs:
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
 - GitHub DB integration tests remain the safety net for schema/inventory/idempotency invariants.
 - Payment security CI runs the payment regression suite against a clean PostgreSQL service.
-- Local verification has reached passing TypeScript, production build, DB integration and lint checks on the current development line.
+- Previous local verification reached passing TypeScript, production build, DB integration and lint checks; the latest dependency pin is being re-verified in CI after package-resolution failures on the runner.
 
 ## Important remaining production gaps
 
 1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
 2. Statistics are substantially expanded, but external acquisition sources/attribution and true impression/session-level funnel data are not persisted, so those cannot yet be reconstructed historically.
-3. Complete replay/double-click/payment-recovery security regression tests against the live application endpoints still need to run; DB-level payment idempotency coverage is present.
+3. Full replay/double-click/payment-recovery security regression against the live HTTP application endpoints still needs runtime-level execution; DB-level coverage is present and the payment security suite now also covers stale `PENDING` recovery semantics.
 4. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 5. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
 6. The scheduler endpoint now performs the full lifecycle, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
 7. Stars cross-season policy remains intentionally explicit at product/season level; the system does not silently reset, transfer, or burn eligible user Stars during lifecycle transitions.
+8. Paid-payment inventory reservation is not yet implemented; a successful paid payment can still race with the final available prize being consumed between invoice creation and completion. This needs either reservation semantics or a deliberate refund path before production money movement is considered fully closed.
+
+## Documentation audit
+
+- `docs/IMPLEMENTATION_STATUS.md` is the current verified implementation tracker.
+- `docs/MASTER_PLAN.md` remains the product roadmap and still contains historical phase descriptions; those phase labels should not be read as a statement that the current repository is still at that phase.
+- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline, but its opening “production backend/admin missing” wording is stale relative to the current implementation and should be updated in a future documentation-sync pass.
+- `docs/ADMIN_SPEC.md` matches the implemented admin surface broadly; some advanced integrations remain intentionally backend/manual rather than provider-automated.
+- `docs/QA_CHECKLIST.md` is a Phase 1 mock-frontend checklist and is now historical; production readiness requires the remaining runtime Telegram/browser/security checks above.
+- `docs/PRODUCT_DECISIONS.md`, `docs/ECONOMICS.md`, and `docs/HOME_UX.md` remain decision/requirements references and should continue to be read before changing product behavior.
 
 ## Deliberately not implementing now
 
