@@ -25,17 +25,20 @@ function assert(condition, message) {
 let savepointCounter = 0;
 async function expectReject(db, fn, message) {
   const savepoint = `payment_security_assert_${++savepointCounter}`;
+  await db.query("BEGIN");
   await db.query(`SAVEPOINT ${savepoint}`);
   try {
     await fn();
   } catch {
     await db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
     await db.query(`RELEASE SAVEPOINT ${savepoint}`);
+    await db.query("COMMIT");
     return;
   }
 
   await db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
   await db.query(`RELEASE SAVEPOINT ${savepoint}`);
+  await db.query("ROLLBACK");
   throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
@@ -52,7 +55,6 @@ let season;
 try {
   await db.connect();
   await db.query(await fs.readFile(path.resolve(process.cwd(), "db/schema.sql"), "utf8"));
-  await db.query("BEGIN");
 
   const adminResult = await db.query(
     `INSERT INTO admins(telegram_id,username,role,is_active)
@@ -69,10 +71,8 @@ try {
   user = userResult.rows[0].id;
   await db.query(`INSERT INTO user_state(user_id,stars_balance) VALUES($1,125)`, [user]);
 
-  // The payment-security assertions below exercise transaction/idempotency invariants,
-  // not season activation. Keep the fixture non-live so the test can run safely against
-  // a development database that already has an ACTIVE/ENDING season protected by
-  // ux_one_live_season.
+  // Keep the fixture non-live so the test can run safely against a development database
+  // that already has an ACTIVE/ENDING season protected by ux_one_live_season.
   const seasonResult = await db.query(
     `INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by)
      VALUES($1,'Payment Security','DRAFT',NULL,NULL,100,$2) RETURNING id`,
@@ -135,6 +135,14 @@ try {
     "replayed settlement cannot duplicate a ledger idempotency key",
   );
 
+  // Commit all fixture state before opening independent clients for the real race test.
+  // Otherwise their FK/partial-unique checks would wait on this connection's locks.
+  await db.query(
+    `UPDATE star_transactions SET status='SUCCESS',processed_at=now()
+     WHERE user_id=$1 AND status='PENDING'`,
+    [user],
+  );
+
   const raceChargeId = `security-race-${suffix}`;
   const racePayload = `${payload}:race`;
   const insertCharge = async () => {
@@ -157,18 +165,26 @@ try {
     }
   };
 
-  await db.query(`UPDATE star_transactions SET status='SUCCESS',processed_at=now() WHERE user_id=$1 AND status='PENDING'`, [user]);
   const race = await Promise.all([insertCharge(), insertCharge()]);
   assert(race.filter((item) => item.ok).length === 1, "concurrent replay of one Telegram charge has exactly one winner");
 
-  const duplicateCount = await db.query(`SELECT COUNT(*)::int AS count FROM star_transactions WHERE telegram_charge_id=$1`, [raceChargeId]);
+  const duplicateCount = await db.query(
+    `SELECT COUNT(*)::int AS count FROM star_transactions WHERE telegram_charge_id=$1`,
+    [raceChargeId],
+  );
   assert(Number(duplicateCount.rows[0].count) === 1, "Telegram charge id remains globally unique");
 
-  await db.query("ROLLBACK");
   console.log("✅ Payment security DB tests passed");
 } finally {
   if (admin || user || season) {
-    await db.query("ROLLBACK").catch(() => {});
+    await db.query("BEGIN").catch(() => {});
+    await db.query(`DELETE FROM stars_ledger WHERE user_id=$1 OR season_id=$2`, [user, season]).catch(() => {});
+    await db.query(`DELETE FROM star_transactions WHERE user_id=$1`, [user]).catch(() => {});
+    await db.query(`DELETE FROM user_state WHERE user_id=$1`, [user]).catch(() => {});
+    await db.query(`DELETE FROM users WHERE id=$1`, [user]).catch(() => {});
+    await db.query(`DELETE FROM seasons WHERE id=$1`, [season]).catch(() => {});
+    await db.query(`DELETE FROM admins WHERE id=$1`, [admin]).catch(() => {});
+    await db.query("COMMIT").catch(() => {});
   }
   await db.end().catch(() => {});
 }
