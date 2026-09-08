@@ -6,6 +6,8 @@ import { query } from "@/server/db";
 
 const MAX_STARS = 500;
 
+type PendingPayment = { payload: string; amount: string; created_at: string };
+
 export const Route = createFileRoute("/api/payment/invoice")({
   server: { handlers: {
     POST: async ({ request }) => {
@@ -30,38 +32,57 @@ export const Route = createFileRoute("/api/payment/invoice")({
         if (!current) return Response.json({ ok: false, code: "SEASON_NOT_ACTIVE" }, { status: 409 });
         if (!current.paid_spin_enabled) return Response.json({ ok: false, code: "PAID_SPIN_DISABLED" }, { status: 409 });
 
-        await query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE user_id=$1::uuid AND status='PENDING' AND payload->>'type'='PAID_SPIN' AND created_at < now()-interval '15 minutes'`, [user.rows[0].id]);
-
-        const pending = await query<{ payload: string }>(`SELECT payload->>'payload' AS payload FROM star_transactions WHERE user_id=$1::uuid AND status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$2 ORDER BY created_at DESC LIMIT 1`, [user.rows[0].id,current.id]);
-        if (pending.rows[0]?.payload) return Response.json({ ok:false, code:"PAYMENT_PROCESSING" }, { status:409 });
-
+        const pending = await query<PendingPayment>(
+          `SELECT payload->>'payload' AS payload,amount::text,created_at::text
+             FROM star_transactions
+            WHERE user_id=$1::uuid
+              AND status='PENDING'
+              AND payload->>'type'='PAID_SPIN'
+              AND payload->>'seasonId'=$2
+            ORDER BY created_at DESC,id DESC
+            LIMIT 1`,
+          [user.rows[0].id, current.id],
+        );
+        const existing = pending.rows[0];
         const starsBalance = Number(state.rows[0]?.stars_balance ?? 0);
-        const prizeAvailability = await query<{ total_remaining: string }>(`SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer)`, [current.id,starsBalance,MAX_STARS]);
-        if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) return Response.json({ ok:false, code:"NO_PRIZES" }, { status:409 });
-
         const price = Number(current.paid_spin_price);
         if (!Number.isSafeInteger(price) || price <= 0) return Response.json({ ok:false, code:"PAID_SPIN_DISABLED" }, { status:409 });
-        const nonce = crypto.randomUUID().replaceAll("-","");
-        const payload = `paidspin:v1:${user.rows[0].id}:${current.id}:${nonce}`;
 
-        try {
-          await query(`INSERT INTO star_transactions (user_id,amount,status,payload) VALUES ($1::uuid,$2,'PENDING',$3::jsonb)`, [user.rows[0].id,price,JSON.stringify({ payload,userId:user.rows[0].id,seasonId:current.id,type:"PAID_SPIN" })]);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "";
-          if (message.includes("ux_pending_paid_spin_user_season") || message.toLowerCase().includes("duplicate key")) return Response.json({ ok:false, code:"PAYMENT_PROCESSING" }, { status:409 });
-          throw error;
+        if (!existing?.payload) {
+          const prizeAvailability = await query<{ total_remaining: string }>(`SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer)`, [current.id,starsBalance,MAX_STARS]);
+          if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) return Response.json({ ok:false, code:"NO_PRIZES" }, { status:409 });
+        }
+
+        const payload = existing?.payload ?? `paidspin:v1:${user.rows[0].id}:${current.id}:${crypto.randomUUID().replaceAll("-","")}`;
+        const transactionAmount = existing ? Number(existing.amount) : price;
+        if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount !== price) {
+          return Response.json({ ok:false, code:"PAYMENT_AMOUNT_MISMATCH" }, { status:409 });
+        }
+
+        if (!existing) {
+          try {
+            await query(`INSERT INTO star_transactions (user_id,amount,status,payload) VALUES ($1::uuid,$2,'PENDING',$3::jsonb)`, [user.rows[0].id,price,JSON.stringify({ payload,userId:user.rows[0].id,seasonId:current.id,type:"PAID_SPIN" })]);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            if (message.includes("ux_pending_paid_spin_user_season") || message.toLowerCase().includes("duplicate key")) {
+              const raced = await query<PendingPayment>(`SELECT payload->>'payload' AS payload,amount::text,created_at::text FROM star_transactions WHERE user_id=$1::uuid AND status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$2 ORDER BY created_at DESC,id DESC LIMIT 1`, [user.rows[0].id,current.id]);
+              if (!raced.rows[0]?.payload) return Response.json({ ok:false, code:"PAYMENT_PROCESSING" }, { status:409 });
+              return Response.json({ ok:true, invoiceUrl:null, price:Number(raced.rows[0].amount), payload:raced.rows[0].payload, recovery:true });
+            }
+            throw error;
+          }
         }
 
         const telegramResponse = await fetch(`https://api.telegram.org/bot${requireBotToken()}/createInvoiceLink`, {
           method:"POST", headers:{ "content-type":"application/json" },
-          body:JSON.stringify({ title:"CRICKET BOX — дополнительная прокрутка",description:`Дополнительная прокрутка сезона ${current.code}`,payload,currency:"XTR",prices:[{ label:"Дополнительная прокрутка",amount:price }] }),
+          body:JSON.stringify({ title:"CRICKET BOX — дополнительная прокрутка",description:`Дополнительная прокрутка сезона ${current.code}`,payload,currency:"XTR",prices:[{ label:"Дополнительная прокрутка",amount:transactionAmount }] }),
         });
         const telegramData = (await telegramResponse.json()) as { ok:boolean; result?:string; description?:string };
         if (!telegramData.ok || !telegramData.result) {
-          await query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE payload->>'payload'=$1 AND status='PENDING'`, [payload]);
+          if (!existing) await query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE payload->>'payload'=$1 AND status='PENDING'`, [payload]);
           return Response.json({ ok:false, code:"INVOICE_CREATE_FAILED", detail:telegramData.description }, { status:502 });
         }
-        return Response.json({ ok:true, invoiceUrl:telegramData.result, price, payload });
+        return Response.json({ ok:true, invoiceUrl:telegramData.result, price:transactionAmount, payload, recovery:Boolean(existing) });
       } catch (error) {
         console.error("Payment invoice failed:", error instanceof Error ? error.message : error);
         return Response.json({ ok:false, code:"INVOICE_FAILED" }, { status:400 });
