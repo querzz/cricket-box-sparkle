@@ -172,6 +172,9 @@ CREATE TABLE IF NOT EXISTS stars_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_stars_ledger_user_time ON stars_ledger(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stars_ledger_season_time ON stars_ledger(season_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season
+  ON star_transactions (user_id, (payload->>'seasonId'))
+  WHERE status = 'PENDING' AND payload->>'type' = 'PAID_SPIN';
 
 CREATE OR REPLACE FUNCTION prevent_stars_ledger_mutation() RETURNS trigger AS $$
 BEGIN
