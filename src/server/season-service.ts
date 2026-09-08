@@ -84,13 +84,6 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
-  if (requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) {
-    const pendingPaymentResult = await db.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM star_transactions WHERE status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$1::text`,
-      [id],
-    );
-    if (Number(pendingPaymentResult.rows[0]?.count ?? 0) > 0) throw new Error("PAID_SPIN_PRICE_LOCKED");
-  }
 
   if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) throw new Error("PAID_SPIN_REENABLE_LOCKED");
   if (nextState === "ACTIVE" || nextState === "ENDING") await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
