@@ -42,7 +42,7 @@ function createRng(seed: number) {
 export function simulateSeason(input: SimulationInput): SimulationResult {
   const spins = Math.max(1, Math.min(100_000, Math.floor(input.spins)));
   const trials = Math.max(1, Math.min(200, Math.floor(input.trials ?? 50)));
-  const elapsedFraction = Math.min(1, Math.max(0, input.elapsedFraction ?? 0));
+  const startElapsedFraction = Math.min(1, Math.max(0, input.elapsedFraction ?? 0));
   const baseSeed = Number.isFinite(input.seed) ? Math.trunc(input.seed!) : 123456789;
   const source = input.prizes.filter(p => p.quantity_remaining > 0 && p.quantity_total > 0);
   const wins = new Map<string, number>();
@@ -64,9 +64,15 @@ export function simulateSeason(input: SimulationInput): SimulationResult {
         trialEmpty += 1;
         continue;
       }
+      const progress = startElapsedFraction >= 1
+        ? 1
+        : startElapsedFraction + ((1 - startElapsedFraction) * (spin / Math.max(1, spins - 1)));
       const economyPrizes = available.map(p => ({
         ...p,
-        metadata: { ...(p.metadata ?? {}), economyMultiplier: getEconomyMultiplier({ quantityTotal: p.quantity_total, quantityRemaining: p.quantity_remaining, elapsedFraction }) },
+        metadata: {
+          ...(p.metadata ?? {}),
+          economyMultiplier: getEconomyMultiplier({ quantityTotal: p.quantity_total, quantityRemaining: p.quantity_remaining, elapsedFraction: progress }),
+        },
       }));
       const selected = pickAdaptivePrize(economyPrizes, rng, { emptyStreak: trialEmpty, recentKinds });
       const actual = trialPrizes.find(p => p.id === selected.id);
@@ -81,8 +87,7 @@ export function simulateSeason(input: SimulationInput): SimulationResult {
     completed += trialCompleted;
     empty += trialEmpty;
     for (const p of trialPrizes) {
-      const prior = remaining.get(p.id) ?? 0;
-      remaining.set(p.id, prior + p.quantity_remaining);
+      remaining.set(p.id, (remaining.get(p.id) ?? 0) + p.quantity_remaining);
       if (p.quantity_remaining === 0) exhaustedTrials.set(p.id, (exhaustedTrials.get(p.id) ?? 0) + 1);
     }
   }
