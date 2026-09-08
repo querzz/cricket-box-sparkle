@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
+import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 const MAX_STARS = 500;
 type PendingPayment = { id: string; payload: string; amount: string; created_at: string; metadata: Record<string, unknown> };
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
+        await enforceRateLimit(`payment-invoice:${telegramId}`, 6);
 
         const user = await query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id = $1 LIMIT 1`, [telegramId]);
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
@@ -111,6 +113,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
 
         return Response.json({ ok:true, ...result });
       } catch (error) {
+        if (error instanceof RateLimitError) return Response.json({ ok:false, code:"RATE_LIMITED" }, { status:429, headers:{ "Retry-After":String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
         const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_AMOUNT_MISMATCH" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
