@@ -4,6 +4,8 @@ import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query } from "@/server/db";
 
+const MAX_STARS = 500;
+
 export const Route = createFileRoute("/api/payment/invoice")({
   server: { handlers: {
     POST: async ({ request }) => {
@@ -22,8 +24,9 @@ export const Route = createFileRoute("/api/payment/invoice")({
         );
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
 
-        const state = await query<{ is_subscribed: boolean; is_participant: boolean }>(
-          `SELECT is_subscribed, is_participant FROM user_state WHERE user_id = $1::uuid LIMIT 1`,
+        const state = await query<{ is_subscribed: boolean; is_participant: boolean; stars_balance: number }>(
+          `SELECT is_subscribed, is_participant, stars_balance
+             FROM user_state WHERE user_id = $1::uuid LIMIT 1`,
           [user.rows[0].id],
         );
         if (!state.rows[0]?.is_subscribed) return Response.json({ ok: false, code: "NOT_SUBSCRIBED" }, { status: 403 });
@@ -50,8 +53,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
           [user.rows[0].id],
         );
 
-        // One live paid-spin order per user/season. The database migration also adds
-        // a unique partial index so two concurrent requests cannot create two invoices.
+        // One live paid-spin order per user/season. The database index protects the race between requests.
         const pending = await query<{ payload: string }>(
           `SELECT payload->>'payload' AS payload
              FROM star_transactions
@@ -67,19 +69,22 @@ export const Route = createFileRoute("/api/payment/invoice")({
           return Response.json({ ok: false, code: "PAYMENT_PROCESSING" }, { status: 409 });
         }
 
+        const starsBalance = Number(state.rows[0]?.stars_balance ?? 0);
         const prizeAvailability = await query<{ total_remaining: string }>(
           `SELECT COALESCE(SUM(quantity_remaining), 0)::text AS total_remaining
              FROM prizes
             WHERE season_id = $1::uuid
-              AND quantity_remaining > 0`,
-          [current.id],
+              AND quantity_remaining > 0
+              AND is_active = TRUE
+              AND (kind <> 'STARS' OR $2::integer < $3::integer)`,
+          [current.id, starsBalance, MAX_STARS],
         );
         if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) {
           return Response.json({ ok: false, code: "NO_PRIZES" }, { status: 409 });
         }
 
         const price = Number(current.paid_spin_price);
-        if (!Number.isInteger(price) || price <= 0) return Response.json({ ok: false, code: "PAID_SPIN_DISABLED" }, { status: 409 });
+        if (!Number.isSafeInteger(price) || price <= 0) return Response.json({ ok: false, code: "PAID_SPIN_DISABLED" }, { status: 409 });
 
         const nonce = crypto.randomUUID().replaceAll("-", "");
         const payload = `paidspin:v1:${user.rows[0].id}:${current.id}:${nonce}`;
@@ -91,7 +96,6 @@ export const Route = createFileRoute("/api/payment/invoice")({
             [user.rows[0].id, price, JSON.stringify({ payload, userId: user.rows[0].id, seasonId: current.id, type: "PAID_SPIN" })],
           );
         } catch (error) {
-          // Concurrent requests are expected to lose the partial unique-index race here.
           const message = error instanceof Error ? error.message : "";
           if (message.includes("ux_pending_paid_spin_user_season") || message.toLowerCase().includes("duplicate key")) {
             return Response.json({ ok: false, code: "PAYMENT_PROCESSING" }, { status: 409 });
