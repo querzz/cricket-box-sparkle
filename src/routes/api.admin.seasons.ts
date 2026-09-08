@@ -22,6 +22,13 @@ async function repairLiveSeasons() {
   `);
 }
 
+function withDisplayCodes<T extends { code: string; name: string }>(seasons: T[]) {
+  return seasons.map((season, index) => ({
+    ...season,
+    code: `CRICKET BOX #${String(seasons.length - index).padStart(3, "0")}`,
+  }));
+}
+
 export const Route = createFileRoute("/api/admin/seasons")({
   server: {
     handlers: {
@@ -29,7 +36,8 @@ export const Route = createFileRoute("/api/admin/seasons")({
         try {
           await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
           await repairLiveSeasons();
-          return Response.json({ ok: true, seasons: await listSeasons() });
+          const seasons = await listSeasons();
+          return Response.json({ ok: true, seasons: withDisplayCodes(seasons) });
         } catch {
           return Response.json({ ok: false, code: "AUTH_FAILED" }, { status: 401 });
         }
@@ -44,7 +52,7 @@ export const Route = createFileRoute("/api/admin/seasons")({
           if (!code || !name || !Number.isSafeInteger(paidSpinPrice) || paidSpinPrice <= 0) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
           const season = await createSeason({ code, name, paidSpinPrice, paidSpinEnabled: body.paidSpinEnabled !== false, dailyFreeSpin: body.dailyFreeSpin !== false, adminId: actor.id });
           if (season) await query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, after_data) VALUES ($1::uuid, 'SEASON_CREATED', 'season', $2, $3::jsonb)`, [actor.id, season.id, JSON.stringify(season)]);
-          return Response.json({ ok: true, season });
+          return Response.json({ ok: true, season: { ...season, code: season.code } });
         } catch (error) {
           console.error("Season create failed:", error instanceof Error ? error.message : error);
           return Response.json({ ok: false, code: "REQUEST_FAILED" }, { status: 400 });
