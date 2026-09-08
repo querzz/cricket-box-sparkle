@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS seasons (
   starts_at TIMESTAMPTZ,
   ends_at TIMESTAMPTZ,
   paid_spin_price INTEGER NOT NULL DEFAULT 100,
+  paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   daily_free_spin BOOLEAN NOT NULL DEFAULT TRUE,
   created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -172,7 +173,7 @@ CREATE TABLE IF NOT EXISTS stars_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_stars_ledger_user_time ON stars_ledger(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stars_ledger_season_time ON stars_ledger(season_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season
   ON star_transactions (user_id, (payload->>'seasonId'))
   WHERE status = 'PENDING' AND payload->>'type' = 'PAID_SPIN';
 
@@ -210,6 +211,7 @@ SELECT us.user_id, 'OPENING_BALANCE', us.stars_balance, 'opening:' || us.user_id
  );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
+ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE prizes DROP CONSTRAINT IF EXISTS prizes_kind_check;
