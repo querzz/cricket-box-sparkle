@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { authenticateAdmin } from "@/server/auth/access";
-import { query } from "@/server/db";
+import { query, withTransaction } from "@/server/db";
 
 type Body = {
   initData?: unknown;
   telegramId?: unknown;
   role?: unknown;
   username?: unknown;
+  action?: unknown;
 };
 
 type AdminRow = {
@@ -54,6 +55,37 @@ export const Route = createFileRoute("/api/admin/access")({
           const telegramId = String(body.telegramId ?? "").trim();
           if (!/^\d+$/.test(telegramId)) return jsonError("INVALID_TELEGRAM_ID", 400);
 
+          if (body.action === "TRANSFER_OWNER") {
+            if (telegramId === String(actor.telegramId)) return jsonError("CANNOT_TRANSFER_TO_SELF", 400);
+
+            await withTransaction(async (client) => {
+              const target = await client.query<{ id: string; role: "OWNER" | "ADMIN"; is_active: boolean }>(
+                `SELECT id::text,role,is_active FROM admins WHERE telegram_id=$1 FOR UPDATE`,
+                [telegramId],
+              );
+              const targetRow = target.rows[0];
+              if (!targetRow) throw new Error("ADMIN_NOT_FOUND");
+              if (!targetRow.is_active) throw new Error("ADMIN_INACTIVE");
+              if (targetRow.role !== "ADMIN") throw new Error("OWNER_TRANSFER_TARGET_INVALID");
+
+              const currentOwner = await client.query<{ id: string }>(
+                `SELECT id::text FROM admins WHERE telegram_id=$1 AND role='OWNER' AND is_active=TRUE FOR UPDATE`,
+                [actor.telegramId],
+              );
+              if (!currentOwner.rows[0]) throw new Error("OWNER_NOT_FOUND");
+
+              await client.query(`UPDATE admins SET role='ADMIN',updated_at=now() WHERE id=$1::uuid`, [currentOwner.rows[0].id]);
+              await client.query(`UPDATE admins SET role='OWNER',updated_at=now() WHERE id=$1::uuid`, [targetRow.id]);
+              await client.query(
+                `INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data)
+                 VALUES($1::uuid,'OWNER_TRANSFER','admin',$2,$3::jsonb)`,
+                [currentOwner.rows[0].id, targetRow.id, JSON.stringify({ previousOwnerTelegramId: actor.telegramId, newOwnerTelegramId: Number(telegramId) })],
+              );
+            });
+
+            return Response.json({ ok: true });
+          }
+
           const role = body.role === "OWNER" ? "OWNER" : "ADMIN";
           if (role === "OWNER") return jsonError("OWNER_TRANSFER_REQUIRED", 400);
 
@@ -68,7 +100,8 @@ export const Route = createFileRoute("/api/admin/access")({
           return Response.json({ ok: true });
         } catch (error) {
           const code = error instanceof Error ? error.message : "AUTH_FAILED";
-          return jsonError(code === "OWNER_ONLY" ? code : "REQUEST_FAILED", code === "OWNER_ONLY" ? 403 : 400);
+          const status = ["OWNER_ONLY"].includes(code) ? 403 : ["ADMIN_NOT_FOUND"].includes(code) ? 404 : 400;
+          return jsonError(code === "OWNER_ONLY" ? code : code || "REQUEST_FAILED", status);
         }
       },
 
