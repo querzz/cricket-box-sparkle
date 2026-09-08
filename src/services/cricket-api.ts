@@ -131,5 +131,14 @@ export const cricketApi = {
   async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
     state.dev.simulateNetworkError = value; localPersist(state); return ok(structuredClone(state));
   },
+  async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> {
+    if (inTelegram()) {
+      const result = await devState("RESET_FREE_SPIN");
+      return result.ok ? await backendSession() : result as ServiceResult<SessionSnapshot>;
+    }
+    state.spin.freeSpins = 1;
+    localPersist(state);
+    return ok(structuredClone(state));
+  },
   async reset(): Promise<ServiceResult<SessionSnapshot>> { state = createInitialSnapshot(); localPersist(state); return ok(structuredClone(state)); },
 };
