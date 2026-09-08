@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { authenticateAdmin } from "@/server/auth/access";
-import { query } from "@/server/db";
+import { query, withTransaction } from "@/server/db";
 import { buildEconomyMetrics, getEconomyMultiplier } from "@/server/season-economy";
 import { writeEconomySnapshot } from "@/server/liveops";
 
@@ -19,8 +19,8 @@ export const Route = createFileRoute("/api/admin/economy")({
         const row=counts.rows[0];
         const spins={hour:Number(row?.hour??0),day:Number(row?.day??0),week:Number(row?.week??0),season:Number(row?.season??0)};
         const metrics=buildEconomyMetrics({startsAt:season.starts_at,endsAt:season.ends_at,spins});
-        const prizes=await query<{id:string;kind:string;title:string;quantity_total:number;quantity_remaining:number;amount:string;unit_cost:string;currency:string|null;metadata:Record<string,unknown>|null}>(`SELECT id::text,kind,title,quantity_total,quantity_remaining,amount::text,unit_cost::text,currency,metadata FROM prizes WHERE season_id=$1::uuid ORDER BY created_at ASC`,[seasonId]);
-        return Response.json({ok:true,season,spins,metrics,prizes:prizes.rows.map(prize=>({id:prize.id,kind:prize.kind,title:prize.title,quantityTotal:prize.quantity_total,quantityRemaining:prize.quantity_remaining,consumed:Math.max(0,prize.quantity_total-prize.quantity_remaining),amount:Number(prize.amount),unitCost:Number(prize.unit_cost),currency:prize.currency,active:true,multiplier:getEconomyMultiplier({quantityTotal:prize.quantity_total,quantityRemaining:prize.quantity_remaining,elapsedFraction:metrics.elapsedFraction}),weight:Number(prize.metadata?.weight??1)||1}))});
+        const prizes=await query<{id:string;kind:string;title:string;quantity_total:number;quantity_remaining:number;amount:string;unit_cost:string;currency:string|null;metadata:Record<string,unknown>|null;is_active:boolean}>(`SELECT id::text,kind,title,quantity_total,quantity_remaining,amount::text,unit_cost::text,currency,metadata,is_active FROM prizes WHERE season_id=$1::uuid ORDER BY created_at ASC`,[seasonId]);
+        return Response.json({ok:true,season,spins,metrics,prizes:prizes.rows.map(prize=>({id:prize.id,kind:prize.kind,title:prize.title,quantityTotal:prize.quantity_total,quantityRemaining:prize.quantity_remaining,consumed:Math.max(0,prize.quantity_total-prize.quantity_remaining),amount:Number(prize.amount),unitCost:Number(prize.unit_cost),currency:prize.currency,active:prize.is_active,multiplier:getEconomyMultiplier({quantityTotal:prize.quantity_total,quantityRemaining:prize.quantity_remaining,elapsedFraction:metrics.elapsedFraction}),weight:Number(prize.metadata?.weight??1)||1}))});
       } catch(error) {
         const code=error instanceof Error?error.message:"REQUEST_FAILED";
         return Response.json({ok:false,code},{status:code==="SEASON_NOT_FOUND"?404:401});
