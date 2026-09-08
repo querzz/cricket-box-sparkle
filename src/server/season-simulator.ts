@@ -1,7 +1,7 @@
 import { pickAdaptivePrize, type AdaptivePrize } from "@/server/prize-selection";
 import { getEconomyMultiplier } from "@/server/season-economy";
 
-type SimPrize = AdaptivePrize & { quantity_total: number; amount: number; weight: number };
+type SimPrize = AdaptivePrize & { quantity_total: number; amount: number; weight: number; title: string };
 
 export type SimulationInput = {
   prizes: SimPrize[];
