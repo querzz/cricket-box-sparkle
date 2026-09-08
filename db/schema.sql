@@ -198,6 +198,14 @@ CREATE TRIGGER user_state_seed_stars_ledger
 AFTER INSERT ON user_state
 FOR EACH ROW EXECUTE FUNCTION seed_stars_ledger_on_state_insert();
 
+INSERT INTO stars_ledger (user_id, type, amount, idempotency_key, metadata)
+SELECT us.user_id, 'OPENING_BALANCE', us.stars_balance, 'opening:' || us.user_id::text,
+       jsonb_build_object('source','stars_ledger_backfill')
+  FROM user_state us
+ WHERE NOT EXISTS (
+   SELECT 1 FROM stars_ledger sl WHERE sl.idempotency_key = 'opening:' || us.user_id::text
+ );
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
