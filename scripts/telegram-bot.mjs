@@ -164,6 +164,71 @@ async function confirmSuccessfulPayment(message) {
   });
   const data = await response.json();
   if (!response.ok || !data.ok) throw new Error(`payment completion failed: ${data.code || response.status}`);
+  return data;
+}
+
+async function claimPaymentForRefund(payload, chargeId) {
+  const db = await paymentDbQuery(
+    `UPDATE star_transactions
+        SET status='FAILED'
+      WHERE payload->>'payload'=$1
+        AND telegram_charge_id IS NULL
+        AND status='PENDING'
+      RETURNING user_id::text AS user_id, amount`,
+    [payload],
+  );
+  if (!db.rows[0]) return null;
+  return { userId: db.rows[0].user_id, amount: Number(db.rows[0].amount), chargeId };
+}
+
+async function finishRefund(payload, chargeId, success) {
+  await paymentDbQuery(
+    `UPDATE star_transactions
+        SET status=$3,
+            processed_at=now()
+      WHERE payload->>'payload'=$1
+        AND telegram_charge_id IS NULL
+        AND status=$2`,
+    [payload, success ? "FAILED" : "FAILED", success ? "REFUNDED" : "PENDING"],
+  );
+}
+
+async function refundSuccessfulPayment(message) {
+  const payment = message.successful_payment;
+  if (!payment) return false;
+  const payload = typeof payment.invoice_payload === "string" ? payment.invoice_payload.trim() : "";
+  const chargeId = typeof payment.telegram_payment_charge_id === "string" ? payment.telegram_payment_charge_id.trim() : "";
+  const telegramId = Number(message.from?.id ?? 0);
+  if (!payload || !chargeId || !Number.isSafeInteger(telegramId) || telegramId <= 0) return false;
+
+  const claim = await claimPaymentForRefund(payload, chargeId);
+  if (!claim) return false;
+  try {
+    await api("refundStarPayment", { user_id: telegramId, telegram_payment_charge_id: chargeId });
+    await finishRefund(payload, chargeId, true);
+    return true;
+  } catch (error) {
+    console.error("Telegram Stars refund failed:", error);
+    await finishRefund(payload, chargeId, false).catch((dbError) => console.error("Failed to restore pending payment:", dbError));
+    return false;
+  }
+}
+
+async function completeOrRefundPayment(message) {
+  const maxAttempts = 3;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return { completed: true, refunded: false, data: await confirmSuccessfulPayment(message) };
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) await sleep(1500 * attempt);
+    }
+  }
+
+  console.error("Successful payment could not be completed after retries:", lastError);
+  const refunded = await refundSuccessfulPayment(message);
+  return { completed: false, refunded };
 }
 
 function adminButton() {
@@ -223,17 +288,21 @@ async function main() {
         if (!message?.chat?.id) continue;
 
         if (message.successful_payment) {
-          try {
-            await confirmSuccessfulPayment(message);
+          const result = await completeOrRefundPayment(message);
+          if (result.completed) {
             await api("sendMessage", {
               chat_id: message.chat.id,
               text: "✅ Оплата прошла! Платная прокрутка обработана, приз уже в твоих наградах.",
             });
-          } catch (error) {
-            console.error("Successful payment processing failed:", error);
+          } else if (result.refunded) {
             await api("sendMessage", {
               chat_id: message.chat.id,
-              text: "✅ Оплата получена Telegram. Результат прокрутки ещё обрабатывается — открой CRICKET BOX через несколько секунд.",
+              text: "↩️ Не удалось безопасно обработать прокрутку. Платёж в Telegram Stars автоматически возвращён.",
+            });
+          } else {
+            await api("sendMessage", {
+              chat_id: message.chat.id,
+              text: "⚠️ Оплата получена, но автоматическая обработка не завершилась. Платёж не потерян — обратись в /paysupport.",
             }).catch(() => {});
           }
           continue;
