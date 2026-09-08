@@ -52,6 +52,24 @@ CREATE TABLE IF NOT EXISTS seasons (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+/* Repair legacy data before enforcing the one-live-season invariant. */
+WITH ranked AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END, created_at DESC
+         ) AS rn
+  FROM seasons
+  WHERE state IN ('ACTIVE','ENDING')
+)
+UPDATE seasons s
+   SET state='CLOSED', updated_at=now()
+  FROM ranked r
+ WHERE s.id=r.id AND r.rn>1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_one_live_season
+  ON seasons ((state))
+  WHERE state IN ('ACTIVE','ENDING');
+
 CREATE TABLE IF NOT EXISTS prizes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
