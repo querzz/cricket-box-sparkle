@@ -14,11 +14,13 @@ Repository: `querzz/cricket-box-sparkle`
 - Stars balance changes use the append-only `stars_ledger`; opening balances, rewards, spending, withdrawals, reversals and capped overflow events are recorded with idempotency keys.
 - The legacy duplicate `src/server/db/schema.sql` has been removed; `db/schema.sql` is the single database source of truth.
 - DB integration tests cover schema presence, ledger append-only behavior, Stars cap/reconciliation, payment idempotency, leaderboard isolation and concurrent inventory claims.
+- PostgreSQL-backed API rate-limit buckets are initialized by `scripts/init-db.mjs`; critical user/payment request paths use the shared rate limiter.
 
 ### Telegram identity
 - Mini App `initData` is validated server-side with Telegram HMAC-SHA256.
 - Critical endpoints resolve the real Telegram user ID from validated data.
 - Admin access uses PostgreSQL roles `OWNER` / `ADMIN`.
+- Telegram `initData` freshness is bounded to 1 hour and future-dated auth payloads are rejected.
 
 ### Seasons
 - Season states exist: `DRAFT → SCHEDULED → ACTIVE → ENDING → CLOSED → PAYOUT → ARCHIVED`.
@@ -46,6 +48,7 @@ Repository: `querzz/cricket-box-sparkle`
 - `EMPTY` outcomes do not create payout records.
 - XP is awarded on completed spins.
 - Free-spin requests use a client-generated idempotency key and retry once with the same key after a network failure.
+- Authenticated spin traffic is protected by a PostgreSQL-backed per-user fixed-window rate limit and returns `429` with `Retry-After` when exceeded.
 
 ### Daily Gift
 - Daily Gift is persisted in PostgreSQL.
@@ -53,6 +56,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Weighted NOTHING, Stars, FREE_SPIN and XP rewards are supported.
 - Stars rewards are removed when the balance is full.
 - Bonus spins are persisted and consumed server-side.
+- Daily Gift traffic is rate-limited per authenticated Telegram user.
 
 ### Paid Telegram Stars
 - Telegram invoice creation uses `XTR`.
@@ -65,6 +69,7 @@ Repository: `querzz/cricket-box-sparkle`
 - `/api/payment/status` authenticates the Telegram user and exposes the exact transaction state and settled reward for a payment payload.
 - Stale `PENDING` payments are intentionally kept recoverable instead of being auto-failed solely because they are old.
 - A pending paid-spin reuses its stored invoice URL when available, preventing multiple invoice links for the same pending transaction.
+- Paid invoice creation is rate-limited per authenticated Telegram user.
 - The user client polls the exact payment transaction after Telegram callback/timeout so a successful payment is not lost because the Mini App callback arrives late.
 - If a successful Telegram payment cannot be settled because inventory disappears during the race, the bot has an explicit refund path; when the refund itself fails, the transaction remains recoverable instead of being silently marked paid.
 
@@ -114,14 +119,14 @@ The following real admin routes exist and use backend APIs:
 ### CI / verification
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
 - GitHub DB integration tests remain the safety net for schema/inventory/idempotency invariants.
-- Payment security CI runs the payment regression suite against a clean PostgreSQL service.
-- The latest CI line must still complete cleanly after the recent dependency and MVP selection synchronization before the repository is considered verified-green.
+- Payment security CI runs the payment regression suite against a clean PostgreSQL service, including rate-limit regression coverage.
+- `main` must still finish its newest CI runs cleanly after the latest security changes before it is considered verified-green.
 
 ## Important remaining production gaps
 
 1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
 2. Statistics are substantially expanded, but external acquisition sources/attribution and true impression/session-level funnel data are not persisted, so those cannot yet be reconstructed historically.
-3. Full replay/double-click/payment-recovery security regression against the live HTTP application endpoints still needs runtime-level execution; DB-level coverage is present and payment-security CI covers stale `PENDING` recovery semantics.
+3. Full replay/double-click/payment-recovery security regression against the live HTTP application endpoints still needs runtime-level execution; DB-level coverage plus dedicated PostgreSQL rate-limit/payment tests are present.
 4. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 5. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
 6. The scheduler endpoint now performs the full lifecycle, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
@@ -132,7 +137,7 @@ The following real admin routes exist and use backend APIs:
 
 - `docs/IMPLEMENTATION_STATUS.md` is the current verified implementation tracker.
 - `docs/MASTER_PLAN.md` remains the product roadmap and contains historical phase descriptions; those phase labels must not be read as a statement that the current repository is still at that phase.
-- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline; its opening “production backend/admin missing” sentence is historical and should be corrected in the next documentation-sync pass.
+- `docs/MASTER_SPECIFICATION.md` remains the requirements/spec baseline and now accurately describes the backend/admin/security implementation state in its opening section.
 - `docs/ADMIN_SPEC.md` broadly matches the implemented admin surface; provider-automated fulfillment remains intentionally outside the current implementation.
 - `docs/QA_CHECKLIST.md` is a Phase 1 mock-frontend checklist and is now historical; production readiness requires the remaining runtime Telegram/browser/security checks above.
 - `docs/PRODUCT_DECISIONS.md`, `docs/ECONOMICS.md`, and `docs/HOME_UX.md` remain decision/requirements references and should continue to be read before changing product behavior.
