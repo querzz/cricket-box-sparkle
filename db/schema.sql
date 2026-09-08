@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS seasons (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-/* Repair legacy data before enforcing the one-live-season invariant. */
+/* Repair legacy duplicates before enforcing the one-live-season invariant. */
 WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
@@ -67,7 +67,7 @@ UPDATE seasons s
  WHERE s.id=r.id AND r.rn>1;
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_one_live_season
-  ON seasons ((state))
+  ON seasons ((1))
   WHERE state IN ('ACTIVE','ENDING');
 
 CREATE TABLE IF NOT EXISTS prizes (
