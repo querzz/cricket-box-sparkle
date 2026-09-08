@@ -44,6 +44,17 @@ const PRIZE_KINDS = ["STARS", "PREMIUM", "MONEY", "NFT", "PHYSICAL", "CUSTOM", "
 
 type DbExecutor = Pick<PoolClient, "query">;
 
+type PrizeMetadata = Record<string, unknown>;
+
+function validatePrizeWeight(metadata: PrizeMetadata | undefined | null) {
+  const raw = metadata?.weight;
+  if (raw === undefined || raw === null || raw === "") return 1;
+
+  const weight = Number(raw);
+  if (!Number.isFinite(weight) || weight < 0) throw new Error("INVALID_PRIZE_WEIGHT");
+  return weight;
+}
+
 export async function listSeasons() {
   const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons ORDER BY created_at DESC`);
   return result.rows;
@@ -107,6 +118,7 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
   if (!Number.isFinite(input.amount) || input.amount < 0) throw new Error("INVALID_PRIZE_AMOUNT");
   if (!Number.isFinite(input.unitCost) || input.unitCost < 0) throw new Error("INVALID_PRIZE_COST");
   if (!Number.isInteger(input.quantityTotal) || input.quantityTotal < 0) throw new Error("INVALID_PRIZE_QUANTITY");
+  validatePrizeWeight(input.metadata);
 
   if (input.id) {
     const current = await query<{ id: string; season_id: string; kind: string; amount: string; unit_cost: string; currency: string | null; quantity_total: number; quantity_remaining: number; metadata: Record<string, unknown> | null; title: string }>(`SELECT id, season_id, kind, amount::text, unit_cost::text, currency, quantity_total, quantity_remaining, metadata, title FROM prizes WHERE id = $1::uuid FOR UPDATE`, [input.id]);
@@ -116,8 +128,8 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
     const spinCount = await query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id = $1::uuid`, [input.seasonId]);
     const hasStarted = Number(spinCount.rows[0]?.count ?? 0) > 0;
     const old = current.rows[0];
-    const oldWeight = Number(old.metadata?.weight ?? 1);
-    const newWeight = Number(input.metadata?.weight ?? 1);
+    const oldWeight = validatePrizeWeight(old.metadata);
+    const newWeight = validatePrizeWeight(input.metadata);
     const oldUnitCost = Number(old.unit_cost);
     const newUnitCost = input.unitCost;
     const oldCurrency = old.currency ?? null;
