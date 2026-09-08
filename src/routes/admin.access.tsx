@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Crown, Power, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, Crown, Power, ShieldCheck, Trash2, UserPlus, ArrowRightLeft } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
@@ -35,7 +35,7 @@ function AdminAccess() {
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const owner = rows.find((x) => x.role === "OWNER");
-  const adminCount = useMemo(() => rows.filter((x) => x.role === "ADMIN" && x.is_active).length, [rows]);
+  const activeAdmins = useMemo(() => rows.filter((x) => x.role === "ADMIN" && x.is_active), [rows]);
 
   async function reload() {
     setLoading(true); setError("");
@@ -55,6 +55,18 @@ function AdminAccess() {
     try { await mutate({ telegramId: telegramId.trim(), username: username.trim() || null }, "POST"); setTelegramId(""); setUsername(""); await reload(); }
     catch (e) { setError(e instanceof Error && e.message === "OWNER_ONLY" ? "Только владелец может менять доступы." : "Не удалось выдать доступ."); }
     finally { setWorking(false); }
+  }
+
+  async function transferOwner(user: AdminUser) {
+    if (user.role !== "ADMIN" || !user.is_active) return;
+    const label = user.username ? `@${user.username.replace(/^@/, "")}` : `Telegram ID ${user.telegram_id}`;
+    if (!confirm(`Передать владельца админки пользователю ${label}? Ты больше не будешь OWNER.`)) return;
+    setWorking(true); setError("");
+    try { await mutate({ action: "TRANSFER_OWNER", telegramId: user.telegram_id }, "POST"); await reload(); }
+    catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      setError(code === "ADMIN_INACTIVE" ? "Нельзя передать владельца отключённому админу." : code === "ADMIN_NOT_FOUND" ? "Администратор не найден." : "Не удалось передать владельца.");
+    } finally { setWorking(false); }
   }
 
   async function toggle(user: AdminUser) {
@@ -78,7 +90,7 @@ function AdminAccess() {
       <Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link>
       <GlassCard className="px-4 py-4" glow>
         <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Безопасность</p><h1 className="mt-1 font-display text-xl uppercase">Доступ к админке</h1></div><ShieldCheck className="size-5 text-primary-glow" /></div>
-        <div className="mt-4 grid grid-cols-2 gap-2"><Metric label="Владелец" value={owner?.username ? `@${owner.username.replace(/^@/, "")}` : owner?.telegram_id ?? "—"} /><Metric label="Активные админы" value={String(adminCount)} /></div>
+        <div className="mt-4 grid grid-cols-2 gap-2"><Metric label="Владелец" value={owner?.username ? `@${owner.username.replace(/^@/, "")}` : owner?.telegram_id ?? "—"} /><Metric label="Активные админы" value={String(activeAdmins.length)} /></div>
       </GlassCard>
       <GlassCard className="space-y-3 px-3 py-3">
         <div className="flex items-center gap-2"><UserPlus className="size-4 text-primary-glow" /><div><p className="text-sm font-semibold">Выдать доступ</p><p className="text-[10px] text-muted-foreground">Сохраняется сразу в PostgreSQL.</p></div></div>
@@ -89,9 +101,9 @@ function AdminAccess() {
       {error && <GlassCard className="border-destructive/30 bg-destructive/5 px-4 py-3 text-[11px] text-destructive">{error}</GlassCard>}
       <section>
         <div className="mb-2 flex items-center justify-between"><h2 className="section-label">Участники доступа</h2><button type="button" onClick={() => void reload()} className="text-[10px] text-primary-glow">Обновить</button></div>
-        {loading ? <GlassCard className="px-4 py-6 text-center text-xs text-muted-foreground">Загрузка доступов…</GlassCard> : <div className="space-y-2.5">{rows.map((user) => <GlassCard key={user.id} className="px-3.5 py-3.5"><div className="flex items-start gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl border border-glass-border bg-muted/20">{user.role === "OWNER" ? <Crown className="size-4 text-primary-glow" /> : <ShieldCheck className="size-4 text-primary-glow" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}</p><span className="rounded-full border border-glass-border px-2 py-0.5 text-[9px]">{user.role === "OWNER" ? "Владелец" : "Администратор"}</span><span className={`rounded-full border px-2 py-0.5 text-[9px] ${user.is_active ? "border-primary/25 bg-primary/5" : "border-destructive/25 bg-destructive/5 text-destructive"}`}>{user.is_active ? "Активен" : "Заблокирован"}</span></div><p className="mt-1 text-[10px] text-muted-foreground">Telegram ID: {user.telegram_id}</p><p className="mt-1 text-[10px] text-muted-foreground">Добавлен: {date(user.created_at)}</p></div></div>{user.role === "ADMIN" && <div className="mt-3 flex gap-2 border-t border-glass-border pt-3"><button disabled={working} type="button" onClick={() => void toggle(user)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-glass-border bg-muted/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-50"><Power className="size-3.5" /> {user.is_active ? "Заблокировать" : "Включить"}</button><button disabled={working} type="button" onClick={() => void remove(user)} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-50"><Trash2 className="size-3.5" /> Удалить</button></div>}</GlassCard>)}</div>}
+        {loading ? <GlassCard className="px-4 py-6 text-center text-xs text-muted-foreground">Загрузка доступов…</GlassCard> : <div className="space-y-2.5">{rows.map((user) => <GlassCard key={user.id} className="px-3.5 py-3.5"><div className="flex items-start gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl border border-glass-border bg-muted/20">{user.role === "OWNER" ? <Crown className="size-4 text-primary-glow" /> : <ShieldCheck className="size-4 text-primary-glow" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}</p><span className="rounded-full border border-glass-border px-2 py-0.5 text-[9px]">{user.role === "OWNER" ? "Владелец" : "Администратор"}</span><span className={`rounded-full border px-2 py-0.5 text-[9px] ${user.is_active ? "border-primary/25 bg-primary/5" : "border-destructive/25 bg-destructive/5 text-destructive"}`}>{user.is_active ? "Активен" : "Заблокирован"}</span></div><p className="mt-1 text-[10px] text-muted-foreground">Telegram ID: {user.telegram_id}</p><p className="mt-1 text-[10px] text-muted-foreground">Добавлен: {date(user.created_at)}</p></div></div>{user.role === "ADMIN" && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-glass-border pt-3"><button disabled={working} type="button" onClick={() => void toggle(user)} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-glass-border bg-muted/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-50"><Power className="size-3.5" /> {user.is_active ? "Заблокировать" : "Включить"}</button><button disabled={working || !user.is_active} type="button" onClick={() => void transferOwner(user)} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-[10px] font-semibold disabled:opacity-50"><ArrowRightLeft className="size-3.5" /> Передать OWNER</button><button disabled={working} type="button" onClick={() => void remove(user)} className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-50"><Trash2 className="size-3.5" /> Удалить</button></div>}</GlassCard>)}</div>}
       </section>
-      <GlassCard className="px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">Передачу владельца оставляем отдельным подтверждаемым действием.</GlassCard>
+      <GlassCard className="px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">Передача OWNER требует отдельного подтверждения и выполняется атомарно в PostgreSQL. Текущий владелец после передачи становится ADMIN.</GlassCard>
     </div>
   </AppShell>;
 }
