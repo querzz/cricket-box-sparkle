@@ -45,10 +45,7 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
     [input.userId],
   );
   const currentBalance = Number(state.rows[0]?.stars_balance ?? 0);
-
   const balanceDelta = input.balanceDelta ?? input.amount;
-  const nextBalance = currentBalance + balanceDelta;
-  if (nextBalance < 0 || nextBalance > STARS_MAX_BALANCE) throw new Error("STARS_BALANCE_LIMIT");
 
   const inserted = await client.query<{ id: string }>(
     `INSERT INTO stars_ledger
@@ -69,14 +66,13 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
   );
 
   if (!inserted.rows[0]) {
-    const latest = await client.query<{ stars_balance: number }>(
-      `SELECT stars_balance
-         FROM user_state
-        WHERE user_id = $1::uuid
-        FOR UPDATE`,
-      [input.userId],
-    );
-    return { inserted: false, balance: Number(latest.rows[0]?.stars_balance ?? 0) };
+    return { inserted: false, balance: currentBalance };
+  }
+
+  const nextBalance = currentBalance + balanceDelta;
+  if (nextBalance < 0 || nextBalance > STARS_MAX_BALANCE) {
+    await client.query(`DELETE FROM stars_ledger WHERE id = $1::uuid`, [inserted.rows[0].id]);
+    throw new Error("STARS_BALANCE_LIMIT");
   }
 
   if (balanceDelta !== 0) {
