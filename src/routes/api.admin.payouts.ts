@@ -51,25 +51,29 @@ function payoutTypeLabel(kind: PayoutRow["kind"]) {
   }
 }
 
-export const Route = createFileRoute("/api/admin/payouts")({ server: { handlers: {
-  GET: async ({ request }) => {
-    try {
-      const url = new URL(request.url);
-      await authenticateAdmin(url.searchParams.get("initData") ?? "");
-      const search = (url.searchParams.get("search") ?? "").trim();
-      const status = (url.searchParams.get("status") ?? "") as Status | "";
-      const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
-      const result = await query<PayoutRow>(`SELECT py.id::text, py.created_at::text, u.telegram_id::text, u.username, py.kind, py.amount::text, py.currency, py.status, py.note, p.title AS prize_title, p.subtitle AS prize_subtitle FROM payouts py JOIN users u ON u.id=py.user_id LEFT JOIN prizes p ON p.id=py.prize_id WHERE ($2='' OR py.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1) AND ($3='' OR py.status=$3) ORDER BY py.created_at DESC LIMIT 200`, [pattern, search, status]);
-      const counts = await query<{ pending:string; review:string; paid:string; failed:string; cancelled:string }>(`SELECT COUNT(*) FILTER (WHERE status='PENDING')::text AS pending, COUNT(*) FILTER (WHERE status='REVIEW')::text AS review, COUNT(*) FILTER (WHERE status='PAID')::text AS paid, COUNT(*) FILTER (WHERE status='FAILED')::text AS failed, COUNT(*) FILTER (WHERE status='CANCELLED')::text AS cancelled FROM payouts`);
-      return Response.json({ ok:true, counts:{ pending:Number(counts.rows[0]?.pending??0), review:Number(counts.rows[0]?.review??0), paid:Number(counts.rows[0]?.paid??0), failed:Number(counts.rows[0]?.failed??0), cancelled:Number(counts.rows[0]?.cancelled??0) }, payouts:result.rows.map(row=>({ id:row.id,time:row.created_at,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",telegramId:row.telegram_id,prize:row.prize_title?[row.prize_title,row.prize_subtitle].filter(Boolean).join(" · "):row.note==="WITHDRAWAL_REQUEST"?"Вывод Stars":"Без привязанного приза",type:payoutTypeLabel(row.kind),amount:row.kind==="STARS"?`${row.amount} ⭐`:`${row.amount} ${row.currency??""}`.trim(),status:row.status==="PENDING"?"Ожидает":row.status==="REVIEW"?"На проверке":row.status==="PAID"?"Выдан":row.status==="CANCELLED"?"Отменён":"Ошибка" })) });
-    } catch (error) { console.error("Payouts API failed:",error instanceof Error?error.message:error); return Response.json({ok:false,code:"PAYOUTS_FAILED"},{status:401}); }
+export const Route = createFileRoute("/api/admin/payouts")({
+  server: {
+    handlers: {
+      GET: async ({ request }) => {
+        try {
+          const url = new URL(request.url);
+          await authenticateAdmin(url.searchParams.get("initData") ?? "");
+          const search = (url.searchParams.get("search") ?? "").trim();
+          const status = (url.searchParams.get("status") ?? "") as Status | "";
+          const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+          const result = await query<PayoutRow>(`SELECT py.id::text, py.created_at::text, u.telegram_id::text, u.username, py.kind, py.amount::text, py.currency, py.status, py.note, p.title AS prize_title, p.subtitle AS prize_subtitle FROM payouts py JOIN users u ON u.id=py.user_id LEFT JOIN prizes p ON p.id=py.prize_id WHERE ($2='' OR py.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1) AND ($3='' OR py.status=$3) ORDER BY py.created_at DESC LIMIT 200`, [pattern, search, status]);
+          const counts = await query<{ pending:string; review:string; paid:string; failed:string; cancelled:string }>(`SELECT COUNT(*) FILTER (WHERE status='PENDING')::text AS pending, COUNT(*) FILTER (WHERE status='REVIEW')::text AS review, COUNT(*) FILTER (WHERE status='PAID')::text AS paid, COUNT(*) FILTER (WHERE status='FAILED')::text AS failed, COUNT(*) FILTER (WHERE status='CANCELLED')::text AS cancelled FROM payouts`);
+          return Response.json({ ok:true, counts:{ pending:Number(counts.rows[0]?.pending??0), review:Number(counts.rows[0]?.review??0), paid:Number(counts.rows[0]?.paid??0), failed:Number(counts.rows[0]?.failed??0), cancelled:Number(counts.rows[0]?.cancelled??0) }, payouts:result.rows.map(row=>({ id:row.id,time:row.created_at,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",telegramId:row.telegram_id,prize:row.prize_title?[row.prize_title,row.prize_subtitle].filter(Boolean).join(" · "):row.note==="WITHDRAWAL_REQUEST"?"Вывод Stars":"Без привязанного приза",type:payoutTypeLabel(row.kind),amount:row.kind==="STARS"?`${row.amount} ⭐`:`${row.amount} ${row.currency??""}`.trim(),status:row.status==="PENDING"?"Ожидает":row.status==="REVIEW"?"На проверке":row.status==="PAID"?"Выдан":row.status==="CANCELLED"?"Отменён":"Ошибка" })) });
+        } catch (error) { console.error("Payouts API failed:",error instanceof Error?error.message:error); return Response.json({ok:false,code:"PAYOUTS_FAILED"},{status:401}); }
+      },
+      PATCH: async ({ request }) => {
+        try { const body=await request.json() as {initData?:unknown;id?:unknown;status?:unknown}; const admin=await authenticateAdmin(typeof body.initData==="string"?body.initData:""); const id=typeof body.id==="string"?body.id:""; const nextStatus=typeof body.status==="string"?body.status as Status:"" as Status; if(!id||!["PENDING","REVIEW","PAID","FAILED","CANCELLED"].includes(nextStatus)) return Response.json({ok:false,code:"INVALID_INPUT"},{status:400}); await withTransaction(client=>changePayout(client,admin.id,id,nextStatus)); return Response.json({ok:true}); }
+        catch(error){ const code=error instanceof Error?error.message:"PAYOUT_UPDATE_FAILED"; return Response.json({ok:false,code},{status:code==="NOT_FOUND"?404:code==="INVALID_TRANSITION"?409:400}); }
+      },
+      POST: async ({ request }) => {
+        try { const body=await request.json() as {initData?:unknown;ids?:unknown;status?:unknown}; const admin=await authenticateAdmin(typeof body.initData==="string"?body.initData:""); const ids=Array.isArray(body.ids)?body.ids.filter((id):id is string=>typeof id==="string"):[]; const nextStatus=typeof body.status==="string"?body.status as Status:"" as Status; if(!ids.length||!["REVIEW","PAID","FAILED","CANCELLED"].includes(nextStatus)||ids.length>100) return Response.json({ok:false,code:"INVALID_INPUT"},{status:400}); const uniqueIds=[...new Set(ids)]; await withTransaction(async client=>{for(const id of uniqueIds) await changePayout(client,admin.id,id,nextStatus);}); return Response.json({ok:true,count:uniqueIds.length}); }
+        catch(error){ const code=error instanceof Error?error.message:"PAYOUT_BULK_FAILED"; return Response.json({ok:false,code},{status:code==="NOT_FOUND"?404:code==="INVALID_TRANSITION"?409:400}); }
+      },
+    },
   },
-  PATCH: async ({ request }) => {
-    try { const body=await request.json() as {initData?:unknown;id?:unknown;status?:unknown}; const admin=await authenticateAdmin(typeof body.initData==="string"?body.initData:""); const id=typeof body.id==="string"?body.id:""; const nextStatus=typeof body.status==="string"?body.status as Status:"" as Status; if(!id||!["PENDING","REVIEW","PAID","FAILED","CANCELLED"].includes(nextStatus)) return Response.json({ok:false,code:"INVALID_INPUT"},{status:400}); await withTransaction(client=>changePayout(client,admin.id,id,nextStatus)); return Response.json({ok:true}); }
-    catch(error){ const code=error instanceof Error?error.message:"PAYOUT_UPDATE_FAILED"; return Response.json({ok:false,code},{status:code==="NOT_FOUND"?404:code==="INVALID_TRANSITION"?409:400}); }
-  },
-  POST: async ({ request }) => {
-    try { const body=await request.json() as {initData?:unknown;ids?:unknown;status?:unknown}; const admin=await authenticateAdmin(typeof body.initData==="string"?body.initData:""); const ids=Array.isArray(body.ids)?body.ids.filter((id):id is string=>typeof id==="string"):[]; const nextStatus=typeof body.status==="string"?body.status as Status:"" as Status; if(!ids.length||!["REVIEW","PAID","FAILED","CANCELLED"].includes(nextStatus)||ids.length>100) return Response.json({ok:false,code:"INVALID_INPUT"},{status:400}); const uniqueIds=[...new Set(ids)]; await withTransaction(async client=>{for(const id of uniqueIds) await changePayout(client,admin.id,id,nextStatus);}); return Response.json({ok:true,count:uniqueIds.length}); }
-    catch(error){ const code=error instanceof Error?error.message:"PAYOUT_BULK_FAILED"; return Response.json({ok:false,code},{status:code==="NOT_FOUND"?404:code==="INVALID_TRANSITION"?409:400}); }
-  },
-} });
+});
