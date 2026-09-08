@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
+import { secureRandomUnit } from "@/server/secure-random";
 import { appendStarsLedger } from "@/server/stars-ledger";
 
 type Body = { payload?: unknown; telegramId?: unknown; chargeId?: unknown; currency?: unknown; totalAmount?: unknown };
@@ -12,7 +13,7 @@ const MAX_STARS=500;
 function pickWeighted(prizes:PrizeRow[]){
   const weighted=prizes.map(prize=>{const configured=Number(prize.metadata?.weight??1);const weight=Number.isFinite(configured)&&configured>0?configured:1;return{prize,weight};});
   const total=weighted.reduce((sum,item)=>sum+item.weight,0);if(!(total>0))return weighted[0]!.prize;
-  let cursor=Math.random()*total;for(const item of weighted){cursor-=item.weight;if(cursor<0)return item.prize;}return weighted[weighted.length-1]!.prize;
+  let cursor=secureRandomUnit()*total;for(const item of weighted){cursor-=item.weight;if(cursor<0)return item.prize;}return weighted[weighted.length-1]!.prize;
 }
 
 export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{POST:async({request})=>{
