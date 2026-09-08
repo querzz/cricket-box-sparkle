@@ -1,11 +1,7 @@
 import { pickAdaptivePrize, type AdaptivePrize } from "@/server/prize-selection";
 import { getEconomyMultiplier } from "@/server/season-economy";
 
-type SimPrize = AdaptivePrize & {
-  quantity_total: number;
-  amount: number;
-  weight: number;
-};
+type SimPrize = AdaptivePrize & { quantity_total: number; amount: number; weight: number };
 
 export type SimulationInput = {
   prizes: SimPrize[];
@@ -96,11 +92,11 @@ export function simulateSeason(input: SimulationInput): SimulationResult {
     trials,
     averageCompleted: completed / trials,
     averageEmpty: empty / trials,
-    averageInventoryConsumed: Math.max(0, (completed) / trials),
+    averageInventoryConsumed: completed / trials,
     prizeResults: source.map(p => ({
       id: p.id,
       kind: p.kind,
-      title: String(p.metadata?.title ?? p.id) === p.id ? p.id : String(p.metadata?.title),
+      title: p.title,
       initialQuantity: p.quantity_remaining,
       averageWon: (wins.get(p.id) ?? 0) / trials,
       averageRemaining: (remaining.get(p.id) ?? 0) / trials,
