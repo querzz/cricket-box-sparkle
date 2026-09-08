@@ -16,7 +16,7 @@ export const Route = createFileRoute("/api/admin/statistics")({
         }
         const seasonFilter = seasonId ? `AND s.season_id = $1::uuid` : "";
         const params = seasonId ? [seasonId] : [];
-        const spinSeasonPredicate = seasonId ? `AND sp.season_id=$1::uuid` : "";
+        const spinSeasonPredicate = seasonId ? `AND s.season_id=$1::uuid` : "";
         const payoutSeasonPredicate = seasonId ? `AND sp.season_id=$1::uuid` : "";
 
         const users = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s WHERE s.status='COMPLETED' ${seasonFilter}`, params);
