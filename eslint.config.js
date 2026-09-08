@@ -36,5 +36,5 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
-  eslintPluginPrettier,
+  [eslintPluginPrettier, { rules: { "prettier/prettier": ["error", { endOfLine: "auto", printWidth: 200 }] } }],
 );
