@@ -16,8 +16,18 @@ type SeasonRow = {
   paid_spin_enabled: boolean;
   daily_free_spin: boolean;
 };
-
 type SpinCounts = { hour: number; day: number; week: number; season: number };
+type EconomySnapshotRow = {
+  id: string;
+  completed_spins: number;
+  spins_last_hour: number;
+  spins_last_day: number;
+  spins_last_week: number;
+  pace_per_day: string;
+  projected_season_spins: string;
+  multipliers: Record<string, number>;
+  created_at: string;
+};
 
 export const Route = createFileRoute("/api/admin/economy")({
   server: { handlers: {
@@ -36,8 +46,8 @@ export const Route = createFileRoute("/api/admin/economy")({
         const spins: SpinCounts = { hour: Number(row?.hour ?? 0), day: Number(row?.day ?? 0), week: Number(row?.week ?? 0), season: Number(row?.season ?? 0) };
         const metrics = buildEconomyMetrics({ startsAt: season.starts_at, endsAt: season.ends_at, spins });
         const prizes = await query<{ id: string; kind: string; title: string; quantity_total: number; quantity_remaining: number; amount: string; unit_cost: string; currency: string | null; metadata: Record<string, unknown> | null; is_active: boolean }>(`SELECT id::text,kind,title,quantity_total,quantity_remaining,amount::text,unit_cost::text,currency,metadata,is_active FROM prizes WHERE season_id=$1::uuid ORDER BY created_at ASC`, [seasonId]);
-        const snapshots = history > 0
-          ? await query<{ id: string; completed_spins: number; spins_last_hour: number; spins_last_day: number; spins_last_week: number; pace_per_day: string; projected_season_spins: string; multipliers: Record<string, number>; created_at: string }>(`SELECT id::text,completed_spins,spins_last_hour,spins_last_day,spins_last_week,pace_per_day::text,projected_season_spins::text,multipliers,created_at::text FROM season_economy_snapshots WHERE season_id=$1::uuid ORDER BY created_at DESC LIMIT $2`, [seasonId, history])
+        const snapshotRows: EconomySnapshotRow[] = history > 0
+          ? (await query<EconomySnapshotRow>(`SELECT id::text,completed_spins,spins_last_hour,spins_last_day,spins_last_week,pace_per_day::text,projected_season_spins::text,multipliers,created_at::text FROM season_economy_snapshots WHERE season_id=$1::uuid ORDER BY created_at DESC LIMIT $2`, [seasonId, history])).rows
           : [];
         return Response.json({
           ok: true,
@@ -45,7 +55,7 @@ export const Route = createFileRoute("/api/admin/economy")({
           spins,
           metrics,
           prizes: prizes.rows.map(prize => ({ id: prize.id, kind: prize.kind, title: prize.title, quantityTotal: prize.quantity_total, quantityRemaining: prize.quantity_remaining, consumed: Math.max(0, prize.quantity_total - prize.quantity_remaining), amount: Number(prize.amount), unitCost: Number(prize.unit_cost), currency: prize.currency, active: prize.is_active, multiplier: getEconomyMultiplier({ quantityTotal: prize.quantity_total, quantityRemaining: prize.quantity_remaining, elapsedFraction: metrics.elapsedFraction }), weight: Number(prize.metadata?.weight ?? 1) || 1 })),
-          snapshots: snapshots.rows,
+          snapshots: snapshotRows,
         });
       } catch (error) {
         const code = error instanceof Error ? error.message : "REQUEST_FAILED";
