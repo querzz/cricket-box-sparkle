@@ -25,9 +25,10 @@ function pickWeighted(prizes: PrizeRow[]) {
   const weighted = prizes.map((prize) => {
     const configuredWeight = Number(prize.metadata?.weight ?? 1);
     const weight = Number.isFinite(configuredWeight) && configuredWeight > 0 ? configuredWeight : 1;
-    return { prize, weight: weight * prize.quantity_remaining };
+    return { prize, weight };
   });
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  if (!(total > 0)) return weighted[0]!.prize;
   let cursor = Math.random() * total;
   for (const item of weighted) {
     cursor -= item.weight;
