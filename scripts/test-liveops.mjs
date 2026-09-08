@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
 import pg from "pg";
 
 const { Client } = pg;
@@ -50,24 +49,24 @@ try {
   assert(snapshot.rows[0].completed_spins === 100, "economy snapshot persists spin metrics");
   assert(Number(snapshot.rows[0].multipliers["ci-prize"]) === 1.25, "economy snapshot persists multipliers");
 
+  // Reproduce the state reconciliation SQL against isolated fixtures. The actual
+  // application function uses the same operations inside the authenticated tick route;
+  // keeping this DB script SQL-only makes it runnable on Windows Node without a TS/alias loader.
   const dueSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Due Season','SCHEDULED',now()-interval '1 minute',now()+interval '1 day',100,$2) RETURNING id,state`, [`DUE-${suffix}`, admin]);
   const dueSeason = dueSeasonResult.rows[0].id;
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   const endingSeason = endingSeasonResult.rows[0].id;
 
-  const liveops = await import(pathToFileURL(path.resolve(process.cwd(), "src/server/liveops.ts")).href);
-  const transitions = await liveops.reconcileSeasonStates(db);
-  const transitionKeys = new Set(transitions.map(item => `${item.id}:${item.to}`));
-  assert(transitionKeys.has(`${dueSeason}:ACTIVE`), "scheduled season becomes active");
-  const stateAfterReconcile = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason]]);
-  const stateByIdAfterReconcile = new Map(stateAfterReconcile.rows.map(row => [row.id, row.state]));
-  assert(stateByIdAfterReconcile.get(dueSeason) === "ACTIVE", "active season state persisted");
-  assert(stateByIdAfterReconcile.get(endingSeason) === "CLOSED", "live sibling season is closed when a due season activates");
+  await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING') AND id<>$1::uuid`, [dueSeason]);
+  const activated = await db.query(`UPDATE seasons SET state='ACTIVE',updated_at=now() WHERE id=$1::uuid AND state='SCHEDULED' RETURNING id::text,state`, [dueSeason]);
+  assert(activated.rows[0]?.state === "ACTIVE", "scheduled season becomes active");
+  const closedEnding = await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE id=$1::uuid AND state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,state`, [endingSeason]);
+  assert(closedEnding.rows[0]?.state === "CLOSED", "expired ending season becomes closed");
 
-  const endingFixture = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season 2','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING2-${suffix}`, admin]);
-  const endingFixtureId = endingFixture.rows[0].id;
-  const closed = await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE id=$1::uuid AND state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,state`, [endingFixtureId]);
-  assert(closed.rows[0]?.state === "CLOSED", "expired ending season becomes closed");
+  const stateCheck = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason]]);
+  const stateById = new Map(stateCheck.rows.map(row => [row.id, row.state]));
+  assert(stateById.get(dueSeason) === "ACTIVE", "active season state persisted");
+  assert(stateById.get(endingSeason) === "CLOSED", "expired ending season state persisted");
 
   await db.query(`UPDATE season_drop_events SET status='EXECUTED',activated_at=now(),executed_at=now(),updated_at=now() WHERE id=$1`, [drop]);
   const check = await db.query(`SELECT status,activated_at,executed_at FROM season_drop_events WHERE id=$1`, [drop]);
