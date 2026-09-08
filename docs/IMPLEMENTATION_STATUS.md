@@ -29,7 +29,11 @@ Repository: `querzz/cricket-box-sparkle`
 - Only one ACTIVE/ENDING season is allowed by the service lock.
 - Paid spins can be disabled, but cannot be re-enabled mid-season when disabled from the start.
 - Paid-spin price is locked after the first paid spin.
-- The protected LiveOps tick automatically reconciles a due `SCHEDULED` season into `ACTIVE` and moves expired `ACTIVE` seasons into `ENDING` before processing due drops.
+- The protected LiveOps tick automatically reconciles a due `SCHEDULED` season into `ACTIVE` and moves expired `ACTIVE` seasons into `ENDING`, then `ENDING` into `CLOSED`.
+- Closed seasons automatically enter `PAYOUT`.
+- A season remains in `PAYOUT` while any spin-linked payout is `PENDING` or `REVIEW`.
+- Once all spin-linked payouts are terminal (`PAID`, `FAILED`, `CANCELLED`), the season can automatically transition to `ARCHIVED`.
+- Automatic season state transitions are written to `audit_logs` with source `liveops`.
 
 ### Spin engine / adaptive economy
 - `/api/spin` is server-authoritative and transactional.
@@ -69,7 +73,7 @@ Repository: `querzz/cricket-box-sparkle`
 - `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates while advancing economy progress through the simulated season.
 - `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
 - `src/server/economy-guardrails.ts` evaluates finite reward inventory coverage, Stars liability, material exposure and simulated exhaustion risk; `EMPTY` is not counted as finite reward inventory.
-- `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that reconciles season states and processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based drops even when no users are spinning.
+- `/api/internal/liveops/tick` provides a secret-protected scheduler endpoint that reconciles season states, finalizes payout/archive lifecycle and processes due drops across all live seasons inside an advisory-locked transaction, so an external cron can activate time-based operations even when no users are spinning.
 
 ### Payouts / withdrawals
 - Payout lifecycle and bulk admin processing exist.
@@ -77,6 +81,13 @@ Repository: `querzz/cricket-box-sparkle`
 - Failed/cancelled Stars withdrawals return the reserved balance through the Stars ledger.
 - Payout type labels distinguish Stars, Premium, Money, NFT, Physical, Custom and Free Spin.
 - Manual fulfillment for Premium, money, NFT and other non-Stars rewards remains the current model.
+- Season payout orchestration now has an explicit CLOSED → PAYOUT → ARCHIVED policy guarded by outstanding payout status.
+
+### Statistics
+- `/api/admin/statistics` serves PostgreSQL-backed current-season and historical views.
+- Statistics now include completed vs attempted/failed spins, paid-user conversion, repeat-user rate, winner rate, and D1/D7 retention cohorts derived from first completed spins.
+- D1/D7 denominators exclude immature cohorts so current-day users do not distort retention rates.
+- Admin statistics UI exposes funnel and retention cards alongside operational totals.
 
 ### Admin WebApp
 The following real admin routes exist and use backend APIs:
@@ -97,17 +108,18 @@ The following real admin routes exist and use backend APIs:
 ### CI / verification
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
 - GitHub DB integration tests remain the safety net for schema/inventory/idempotency invariants.
+- Payment security CI runs the payment regression suite against a clean PostgreSQL service.
 - Local verification has reached passing TypeScript, production build, DB integration and lint checks on the current development line.
 
 ## Important remaining production gaps
 
 1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
-2. Statistics still do not expose every KPI from the full specification, especially full funnel/retention reporting across all historical cohorts.
-3. Final `ENDING → CLOSED → PAYOUT` orchestration still needs a defined payout policy; the protected LiveOps tick now handles `SCHEDULED → ACTIVE` and `ACTIVE → ENDING`.
-4. Complete replay/double-click/payment-recovery security regression tests still need to run against the current application.
-5. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
-6. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
-7. The scheduler endpoint now exists, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
+2. Statistics are substantially expanded, but external acquisition sources/attribution and true impression/session-level funnel data are not persisted, so those cannot yet be reconstructed historically.
+3. Complete replay/double-click/payment-recovery security regression tests against the live application endpoints still need to run; DB-level payment idempotency coverage is present.
+4. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
+5. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
+6. The scheduler endpoint now performs the full lifecycle, but an external cron provider/runtime still needs to call it with `Authorization: Bearer $LIVEOPS_CRON_SECRET` on a cadence such as every minute.
+7. Stars cross-season policy remains intentionally explicit at product/season level; the system does not silently reset, transfer, or burn eligible user Stars during lifecycle transitions.
 
 ## Deliberately not implementing now
 
