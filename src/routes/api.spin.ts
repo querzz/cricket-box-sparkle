@@ -85,7 +85,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const activityUsedResult=await client.query<{used:string}>(`SELECT COUNT(*)::text AS used FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='ACTIVITY_BONUS' AND status='COMPLETED'`,[user.id,season.id]);
       const activityIssued=season.id===state.activity_bonus_season_id?Number(state.activity_bonus_spins_issued??0):0;
       const activityRemaining=Math.max(0,activityIssued-Number(activityUsedResult.rows[0]?.used??0));
-      const alreadyFree=await client.query<{exists:boolean}>(`SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type IN ('FREE','ACTIVITY_BONUS') AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`,[user.id,season.id]);
+      const alreadyFree=await client.query<{exists:boolean}>(`SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`,[user.id,season.id]);
       const useDaily=Boolean(season.daily_free_spin&&!alreadyFree.rows[0]?.exists);
       const useActivity=!useDaily&&activityRemaining>0;
       const useGift=!useDaily&&!useActivity&&Number(state.bonus_free_spins??0)>0;
