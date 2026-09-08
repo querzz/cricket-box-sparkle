@@ -18,7 +18,7 @@ import { seasonUi } from "@/lib/season";
 import { formatRange } from "@/lib/format";
 import { useSession } from "@/store/session";
 
-type PublicLinks = { channel?: { title: string; username: string | null; url: string | null }; support?: { username: string | null; url: string | null } };
+type PublicLinks = { channel?: { title: string; username: string | null; url: string | null }; season?: { title: string } | null; support?: { username: string | null; url: string | null } };
 
 function openTelegramLink(url: string) {
   const webApp = (window as Window & { Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } } }).Telegram?.WebApp;
@@ -60,6 +60,7 @@ function HomeScreen() {
   const activity = snapshot.activity;
   const activityProgress = Math.max(0, Math.min(100, activity.progressPercent));
   const channel = publicLinks.channel;
+  const seasonTitle = publicLinks.season?.title ?? snapshot.season.title;
 
   return (
     <AppShell bare className="pt-[env(safe-area-inset-top)]">
@@ -73,7 +74,7 @@ function HomeScreen() {
             <div className="flex justify-end"><Link to="/withdraw" className="press glass-panel gloss-top relative flex items-center gap-1.5 rounded-full px-3 py-1.5"><StarsBalance balance={snapshot.stars} size="sm" showMax={false} /></Link></div>
             <GiftButton gift={snapshot.gift} />
           </div>
-          <div className="mt-5 flex items-end justify-between gap-2"><div><h1 className="font-display text-[2.6rem] font-bold uppercase leading-[0.9] tracking-[0.03em] text-gradient-primary drop-shadow-[0_0_28px_oklch(0.72_0.22_350_/_45%)]">Cricket<br />Box</h1><p className="mt-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">{snapshot.season.title}</p><p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">{formatRange(snapshot.season.startsAt, snapshot.season.endsAt)}</p></div><CricketBox phase={ui.canSpin ? "idle" : "disabled"} size="sm" className="-mb-2 shrink-0" /></div>
+          <div className="mt-5 flex items-end justify-between gap-2"><div><h1 className="font-display text-[2.6rem] font-bold uppercase leading-[0.9] tracking-[0.03em] text-gradient-primary drop-shadow-[0_0_28px_oklch(0.72_0.22_350_/_45%)]">Cricket<br />Box</h1><p className="mt-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">{seasonTitle}</p><p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">{formatRange(snapshot.season.startsAt, snapshot.season.endsAt)}</p></div><CricketBox phase={ui.canSpin ? "idle" : "disabled"} size="sm" className="-mb-2 shrink-0" /></div>
           <GlassCard className="mt-4 px-4 py-3.5"><div className="flex items-start justify-between gap-3">{ui.countdownTarget ? <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} /> : <div><p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Статус сезона</p><p className="mt-1 font-display text-lg uppercase tracking-[0.12em] text-gradient-primary">{ui.headline}</p></div>}<StatusBadge status={{ type: "season", value: snapshot.season.state }} /></div><div className="mt-3 border-t border-glass-border pt-3 text-[11px] text-muted-foreground"><p>{ui.note}</p><p className="mt-1">{ui.isFinished ? "Прокрутки и ежедневный подарок закрыты для этого сезона." : ui.isWaiting ? "Прокрутки откроются после старта сезона." : `${snapshot.user.isParticipant ? "Ты участвуешь" : "Ты ещё не участвуешь"} · ${attempts} бесплатн${attempts === 1 ? "ая попытка" : "ых попытки"}`}</p></div></GlassCard>
           <div className="mt-4">{ui.isFinished ? <div className="space-y-2"><PrimaryButton fullWidth size="lg" onClick={() => void navigate({ to: "/prizes" })}>Мои призы</PrimaryButton>{ui.canWithdraw && <PrimaryButton variant="outline" fullWidth onClick={() => void navigate({ to: "/withdraw" })}>Вывести Stars</PrimaryButton>}</div> : <PrimaryButton fullWidth size="lg" disabled={!ui.canSpin} onClick={() => void navigate({ to: "/draw" })}>{ui.ctaLabel}</PrimaryButton>}</div>
         </div>
