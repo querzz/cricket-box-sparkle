@@ -1,10 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-
 import { authenticateAdmin } from "@/server/auth/access";
 import { query, withTransaction } from "@/server/db";
 import { createSeason, listSeasons, updateSeason } from "@/server/season-service";
 
 const VALID_STATES = new Set(["DRAFT", "SCHEDULED", "ACTIVE", "ENDING", "CLOSED", "PAYOUT", "ARCHIVED"]);
+
+async function repairLiveSeasons() {
+  await query(`
+    WITH ranked AS (
+      SELECT id,
+             ROW_NUMBER() OVER (
+               ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END, created_at DESC
+             ) AS rn
+      FROM seasons
+      WHERE state IN ('ACTIVE','ENDING')
+    )
+    UPDATE seasons s
+       SET state='CLOSED', updated_at=now()
+      FROM ranked r
+     WHERE s.id=r.id AND r.rn>1
+  `);
+}
 
 export const Route = createFileRoute("/api/admin/seasons")({
   server: {
@@ -12,6 +28,7 @@ export const Route = createFileRoute("/api/admin/seasons")({
       GET: async ({ request }) => {
         try {
           await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
+          await repairLiveSeasons();
           return Response.json({ ok: true, seasons: await listSeasons() });
         } catch {
           return Response.json({ ok: false, code: "AUTH_FAILED" }, { status: 401 });
