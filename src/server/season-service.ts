@@ -9,6 +9,7 @@ export type DbSeason = {
   starts_at: string | null;
   ends_at: string | null;
   paid_spin_price: number;
+  paid_spin_enabled: boolean;
   daily_free_spin: boolean;
 };
 
@@ -44,20 +45,20 @@ const PRIZE_KINDS = ["STARS", "PREMIUM", "MONEY", "NFT", "PHYSICAL", "CUSTOM", "
 type DbExecutor = Pick<PoolClient, "query">;
 
 export async function listSeasons() {
-  const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin FROM seasons ORDER BY created_at DESC`);
+  const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons ORDER BY created_at DESC`);
   return result.rows;
 }
 
-export async function createSeason(input: { code: string; name: string; paidSpinPrice: number; dailyFreeSpin: boolean; adminId: string }) {
+export async function createSeason(input: { code: string; name: string; paidSpinPrice: number; paidSpinEnabled?: boolean; dailyFreeSpin: boolean; adminId: string }) {
   if (!Number.isSafeInteger(input.paidSpinPrice) || input.paidSpinPrice <= 0) throw new Error("INVALID_PAID_SPIN_PRICE");
-  const result = await query<DbSeason>(`INSERT INTO seasons (code, name, paid_spin_price, daily_free_spin, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`, [input.code, input.name, input.paidSpinPrice, input.dailyFreeSpin, input.adminId]);
+  const result = await query<DbSeason>(`INSERT INTO seasons (code, name, paid_spin_price, paid_spin_enabled, daily_free_spin, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin`, [input.code, input.name, input.paidSpinPrice, input.paidSpinEnabled !== false, input.dailyFreeSpin, input.adminId]);
   return result.rows[0];
 }
 
-export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; dailyFreeSpin: boolean }>, executor?: DbExecutor) {
+export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; paidSpinEnabled: boolean; dailyFreeSpin: boolean }>, executor?: DbExecutor) {
   const db = executor ?? { query };
   const currentResult = await db.query<DbSeason>(
-    `SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin
+    `SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin
        FROM seasons WHERE id = $1 FOR UPDATE`,
     [id],
   );
@@ -66,7 +67,6 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const current = currentResult.rows[0];
   const requestedState = patch.state;
   if (requestedState && !SEASON_STATES.includes(requestedState)) throw new Error("INVALID_STATE");
-
   const nextState = requestedState ?? current.state;
   if (!ALLOWED_TRANSITIONS[current.state].includes(nextState)) throw new Error("INVALID_SEASON_TRANSITION");
 
@@ -83,28 +83,21 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   if (hasStarted && startsAt !== current.starts_at) throw new Error("SEASON_START_LOCKED");
   if (hasStarted && currentEnd && endsAt && new Date(endsAt) < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
   if (hasStarted && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
-
   if (nextState === "SCHEDULED" && (!startsAt || new Date(startsAt) <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
   if (["ACTIVE", "ENDING"].includes(nextState) && endsAt && new Date(endsAt) <= now) throw new Error("SEASON_END_ALREADY_PASSED");
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
-
   if (requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) {
     const paidSpinResult = await db.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-         FROM star_transactions
-        WHERE user_id IN (SELECT user_id FROM spins WHERE season_id=$1::uuid)
-          AND status='SUCCESS'
-          AND payload->>'seasonId'=$1`,
+      `SELECT COUNT(*)::text AS count FROM spins WHERE season_id=$1::uuid AND type='PAID' AND status IN ('COMPLETED','PENDING')`,
       [id],
     );
-    const paidSpinsFallback = await db.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-         FROM spins WHERE season_id=$1::uuid AND type='PAID' AND status IN ('COMPLETED','PENDING')`,
-      [id],
-    );
-    if (Number(paidSpinResult.rows[0]?.count ?? 0) > 0 || Number(paidSpinsFallback.rows[0]?.count ?? 0) > 0) throw new Error("PAID_SPIN_PRICE_LOCKED");
+    if (Number(paidSpinResult.rows[0]?.count ?? 0) > 0) throw new Error("PAID_SPIN_PRICE_LOCKED");
+  }
+
+  if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) {
+    throw new Error("PAID_SPIN_REENABLE_LOCKED");
   }
 
   if (nextState === "ACTIVE" || nextState === "ENDING") {
@@ -115,10 +108,10 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
     `UPDATE seasons
         SET code = COALESCE($2, code), name = COALESCE($3, name), state = $4,
             starts_at = $5, ends_at = $6, paid_spin_price = COALESCE($7, paid_spin_price),
-            daily_free_spin = COALESCE($8, daily_free_spin), updated_at = now()
+            paid_spin_enabled = COALESCE($8, paid_spin_enabled), daily_free_spin = COALESCE($9, daily_free_spin), updated_at = now()
       WHERE id = $1
-      RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, daily_free_spin`,
-    [id, patch.code ?? null, patch.name ?? null, nextState, startsAt, endsAt, requestedPrice ?? null, patch.dailyFreeSpin ?? null],
+      RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin`,
+    [id, patch.code ?? null, patch.name ?? null, nextState, startsAt, endsAt, requestedPrice ?? null, patch.paidSpinEnabled ?? null, patch.dailyFreeSpin ?? null],
   );
   return result.rows[0];
 }
@@ -183,30 +176,16 @@ export async function upsertPrize(input: {
     const newUnitCost = input.unitCost;
     const oldCurrency = old.currency ?? null;
     const newCurrency = input.currency ?? null;
-    if (
-      hasStarted &&
-      (old.kind !== input.kind ||
-        Number(old.amount) !== input.amount ||
-        oldUnitCost !== newUnitCost ||
-        oldCurrency !== newCurrency ||
-        old.quantity_total !== input.quantityTotal ||
-        oldWeight !== newWeight)
-    ) {
-      throw new Error("PRIZE_ECONOMICS_LOCKED");
-    }
+    if (hasStarted && (old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency || old.quantity_total !== input.quantityTotal || oldWeight !== newWeight)) throw new Error("PRIZE_ECONOMICS_LOCKED");
 
     const won = old.quantity_total - old.quantity_remaining;
     if (input.quantityTotal < won) throw new Error("PRIZE_QUANTITY_BELOW_WON");
-    const requestedRemaining = input.quantityRemaining == null
-      ? Math.max(old.quantity_remaining, old.quantity_remaining + (input.quantityTotal - old.quantity_total))
-      : input.quantityRemaining;
+    const requestedRemaining = input.quantityRemaining == null ? Math.max(old.quantity_remaining, old.quantity_remaining + (input.quantityTotal - old.quantity_total)) : input.quantityRemaining;
     const quantityRemaining = Math.min(input.quantityTotal, Math.max(won, Math.floor(requestedRemaining)));
 
     const result = await query<DbPrize>(
-      `UPDATE prizes
-          SET kind=$2, title=$3, subtitle=$4, amount=$5, unit_cost=$6, currency=$7,
-              quantity_total=$8, quantity_remaining=$9, is_active=$10, image_url=$11,
-              metadata=$12, updated_at=now()
+      `UPDATE prizes SET kind=$2, title=$3, subtitle=$4, amount=$5, unit_cost=$6, currency=$7,
+              quantity_total=$8, quantity_remaining=$9, is_active=$10, image_url=$11, metadata=$12, updated_at=now()
         WHERE id=$1::uuid
         RETURNING id,season_id,kind,title,subtitle,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,image_url,metadata`,
       [input.id, input.kind, input.title.trim(), input.subtitle ?? null, input.amount, input.unitCost, input.currency ?? null, input.quantityTotal, quantityRemaining, input.active !== false, input.imageUrl ?? null, input.metadata ?? {}],
