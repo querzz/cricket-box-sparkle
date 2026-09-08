@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { validateTelegramInitData } from "@/server/auth/telegram";
-import { requireBotToken } from "@/server/config";
+import { requireBotToken, requireTelegramChannelId } from "@/server/config";
 import { query } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 
@@ -31,6 +31,28 @@ type SeasonRow = {
   paid_spin_enabled: boolean;
   daily_free_spin: boolean;
 };
+
+async function fetchTelegramChannelMembership(telegramId: number): Promise<boolean> {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${requireBotToken()}/getChatMember`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: requireTelegramChannelId(), user_id: telegramId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json() as {
+      ok: boolean;
+      result?: { status: "creator" | "administrator" | "member" | "restricted" | "left" | "kicked"; is_member?: boolean };
+    };
+    if (!data.ok || !data.result) return false;
+    return data.result.status === "creator"
+      || data.result.status === "administrator"
+      || data.result.status === "member"
+      || (data.result.status === "restricted" && data.result.is_member === true);
+  } catch {
+    return false;
+  }
+}
 
 async function fetchTelegramAvatarFileId(telegramId: number) {
   try {
@@ -71,6 +93,7 @@ export const Route = createFileRoute("/api/session")({
         const tgUser = validated.user;
         if (!tgUser?.id || !tgUser.first_name) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
 
+        const isSubscribed = await fetchTelegramChannelMembership(tgUser.id);
         const userResult = await query<UserRow>(
           `INSERT INTO users (telegram_id, username, first_name, last_name, language_code, is_premium, last_seen_at)
            VALUES ($1,$2,$3,$4,$5,$6,now())
@@ -89,11 +112,11 @@ export const Route = createFileRoute("/api/session")({
         const avatarUrl = await fetchTelegramAvatarDataUrl(user.avatar_file_id);
         const levelInfo = getLevelInfo(Number(user.xp ?? 0));
 
-        await query(`INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins) VALUES ($1::uuid,125,TRUE,TRUE,0) ON CONFLICT (user_id) DO UPDATE SET updated_at=now()`, [user.id]);
+        await query(`INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins) VALUES ($1::uuid,125,$2,TRUE,0) ON CONFLICT (user_id) DO UPDATE SET is_subscribed=EXCLUDED.is_subscribed,updated_at=now()`, [user.id, isSubscribed]);
         const stateResult = await query<{ stars_balance:number; is_subscribed:boolean; is_participant:boolean; daily_gift_claimed_at:string|null; bonus_free_spins:number }>(
           `SELECT stars_balance,is_subscribed,is_participant,daily_gift_claimed_at::text,bonus_free_spins FROM user_state WHERE user_id=$1::uuid`, [user.id],
         );
-        const userState = stateResult.rows[0] ?? { stars_balance:125,is_subscribed:true,is_participant:true,daily_gift_claimed_at:null,bonus_free_spins:0 };
+        const userState = stateResult.rows[0] ?? { stars_balance:125,is_subscribed:isSubscribed,is_participant:true,daily_gift_claimed_at:null,bonus_free_spins:0 };
 
         const seasonResult = await query<SeasonRow>(
           `SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin
@@ -115,16 +138,14 @@ export const Route = createFileRoute("/api/session")({
         const freeSpins = dailyAvailable + bonusFreeSpins;
 
         const rewardResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;status:string;created_at:string}>(
-          `SELECT p.id::text,p.kind,p.title,p.subtitle,p.amount::text,py.status,py.created_at::text FROM payouts py JOIN prizes p ON p.id=py.prize_id WHERE py.user_id=$1::uuid AND py.status IN ('PENDING','REVIEW','PAID') AND p.kind<>'EMPTY' ORDER BY py.created_at DESC LIMIT 50`, [user.id],
-        );
+          `SELECT p.id::text,p.kind,p.title,p.subtitle,p.amount::text,py.status,py.created_at::text FROM payouts py JOIN prizes p ON p.id=py.prize_id WHERE py.user_id=$1::uuid AND py.status IN ('PENDING','REVIEW','PAID') AND p.kind<>'EMPTY' ORDER BY py.created_at DESC LIMIT 50`, [user.id]);
         const giftHistory = await query<{id:string;kind:string;title:string;amount:number;created_at:string}>(`SELECT id::text,kind,title,amount,created_at::text FROM daily_gift_claims WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 30`, [user.id]);
         const rewards = [
           ...rewardResult.rows.map((r)=>({ id:`${r.id}_reward`,kind:r.kind==="FREE_SPIN"?"FREE_SPIN":r.kind,title:r.title,subtitle:r.subtitle??undefined,amount:Number(r.amount)||undefined,wonAt:r.created_at,status:r.status==="PAID"?"RECEIVED":"PENDING",payoutNote:r.status==="PAID"?"Выдано.":"Ожидает выдачи администратором." })),
           ...giftHistory.rows.map((g)=>({ id:`${g.id}_gift`,kind:g.kind,title:g.title,amount:Number(g.amount)||undefined,wonAt:g.created_at,status:"RECEIVED" as const,payoutNote:g.kind==="XP"?`+${g.amount} XP`:g.kind==="FREE_SPIN"?`+${g.amount} бесплатная прокрутка`:g.kind==="NOTHING"?"Без награды.":`+${g.amount} Stars` })),
         ].sort((a,b)=>new Date(b.wonAt).getTime()-new Date(a.wonAt).getTime()).slice(0,60);
         const leaderboardResult = await query<{rank:number;user_id:string;username:string|null;spins_count:number;wins_count:number;stars_won:string;level:number}>(
-          `SELECT sl.rank,sl.user_id::text,u.username,sl.spins_count,sl.wins_count,sl.stars_won::text,u.level FROM season_leaderboard sl JOIN users u ON u.id=sl.user_id WHERE sl.season_id=$1::uuid AND (sl.rank<=10 OR sl.user_id=$2::uuid) ORDER BY sl.rank ASC`, [season.id,user.id],
-        );
+          `SELECT sl.rank,sl.user_id::text,u.username,sl.spins_count,sl.wins_count,sl.stars_won::text,u.level FROM season_leaderboard sl JOIN users u ON u.id=sl.user_id WHERE sl.season_id=$1::uuid AND (sl.rank<=10 OR sl.user_id=$2::uuid) ORDER BY sl.rank ASC`, [season.id,user.id]);
         const withdrawalResult = await query<{id:string;amount:string;status:string;created_at:string}>(`SELECT id::text,amount::text,status,created_at::text FROM payouts WHERE user_id=$1::uuid AND prize_id IS NULL AND note='WITHDRAWAL_REQUEST' ORDER BY created_at DESC LIMIT 20`, [user.id]);
         const claimedAt = userState.daily_gift_claimed_at ? new Date(userState.daily_gift_claimed_at) : null;
         const giftedRecently = Boolean(claimedAt && Number.isFinite(claimedAt.getTime()) && Date.now()-claimedAt.getTime()<GIFT_COOLDOWN_MS);
