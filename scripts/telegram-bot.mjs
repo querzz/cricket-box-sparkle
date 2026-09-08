@@ -25,8 +25,8 @@ loadEnv();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CricketBoxBot";
 const supportUsername = (process.env.TELEGRAM_SUPPORT_USERNAME || "").replace(/^@/, "");
-const channelId = (process.env.TELEGRAM_CHANNEL_ID || "").trim();
 const appUrl = process.env.APP_URL || "http://localhost:8081";
+const channelId = process.env.TELEGRAM_CHANNEL_ID || "";
 const databaseUrl = process.env.DATABASE_URL;
 const { Client } = pg;
 
@@ -93,6 +93,39 @@ async function paymentDbQuery(text, values = []) {
   }
 }
 
+async function recordChannelActivity({ telegramUserId, eventType, eventKey, points, metadata = {} }) {
+  if (!databaseUrl || !channelId || !Number.isSafeInteger(Number(telegramUserId))) return;
+  try {
+    await paymentDbQuery(
+      `INSERT INTO channel_activity (user_id,telegram_user_id,channel_id,event_type,event_key,activity_points,occurred_at,metadata)
+       SELECT u.id,$1::bigint,$2::bigint,$3,$4,$5,now(),$6::jsonb
+         FROM (SELECT 1) seed
+         LEFT JOIN users u ON u.telegram_id=$1::bigint
+        WHERE NOT EXISTS (
+          SELECT 1 FROM channel_activity ca
+           WHERE ca.telegram_user_id=$1::bigint
+             AND ca.channel_id=$2::bigint
+             AND ca.event_type=$3
+             AND ca.event_key=$4
+        )`,
+      [Number(telegramUserId), Number(channelId), eventType, eventKey, points, JSON.stringify(metadata)],
+    );
+  } catch (error) {
+    console.warn(`Channel activity record failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function getLinkedDiscussionChatId() {
+  if (!channelId) return null;
+  try {
+    const chat = await api("getChat", { chat_id: channelId });
+    return Number.isSafeInteger(Number(chat.linked_chat_id)) ? Number(chat.linked_chat_id) : null;
+  } catch (error) {
+    console.warn(`Channel lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
 async function validatePreCheckout(query) {
   const payload = typeof query.invoice_payload === "string" ? query.invoice_payload : "";
   const amount = Number(query.total_amount);
@@ -106,20 +139,9 @@ async function validatePreCheckout(query) {
   if (!userId || !seasonId) return { ok: false, error: "Недействительный заказ." };
 
   const db = await paymentDbQuery(
-    `SELECT st.amount,
-            st.status,
-            st.user_id::text AS user_id,
-            u.telegram_id::text AS telegram_id,
-            s.id::text AS season_id,
-            s.state,
-            s.paid_spin_price,
-            s.paid_spin_enabled
-       FROM star_transactions st
-       JOIN users u ON u.id = st.user_id
-       JOIN seasons s ON s.id::text = $2
-      WHERE st.payload->>'payload' = $1
-      ORDER BY st.created_at DESC
-      LIMIT 1`,
+    `SELECT st.amount,st.status,st.user_id::text AS user_id,u.telegram_id::text AS telegram_id,s.id::text AS season_id,s.state,s.paid_spin_price,s.paid_spin_enabled
+       FROM star_transactions st JOIN users u ON u.id=st.user_id JOIN seasons s ON s.id::text=$2
+      WHERE st.payload->>'payload'=$1 ORDER BY st.created_at DESC LIMIT 1`,
     [payload, seasonId],
   );
   const row = db.rows[0];
@@ -128,23 +150,12 @@ async function validatePreCheckout(query) {
   }
 
   const availability = await paymentDbQuery(
-    `SELECT EXISTS (
-       SELECT 1
-         FROM prizes
-        WHERE season_id=$1::uuid
-          AND quantity_remaining>0
-          AND is_active=TRUE
-          AND (kind<>'STARS' OR (SELECT stars_balance FROM user_state WHERE user_id=$2::uuid) < 500)
-     ) AS available`,
+    `SELECT EXISTS (SELECT 1 FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR (SELECT stars_balance FROM user_state WHERE user_id=$2::uuid)<500)) AS available`,
     [seasonId, userId],
   );
   if (!availability.rows[0]?.available) return { ok: false, error: "Призы этого сезона уже закончились." };
-
   const state = await paymentDbQuery(`SELECT is_subscribed,is_participant FROM user_state WHERE user_id=$1::uuid LIMIT 1`, [userId]);
-  if (!state.rows[0]?.is_subscribed || !state.rows[0]?.is_participant) {
-    return { ok: false, error: "Условия участия больше не выполнены." };
-  }
-
+  if (!state.rows[0]?.is_subscribed || !state.rows[0]?.is_participant) return { ok: false, error: "Условия участия больше не выполнены." };
   return { ok: true };
 }
 
@@ -154,13 +165,7 @@ async function confirmSuccessfulPayment(message) {
   const response = await fetch(`${appUrl.replace(/\/$/, "")}/api/payment/complete`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-cricket-bot-token": token },
-    body: JSON.stringify({
-      payload: payment.invoice_payload,
-      telegramId: message.from?.id,
-      chargeId: payment.telegram_payment_charge_id,
-      currency: payment.currency,
-      totalAmount: payment.total_amount,
-    }),
+    body: JSON.stringify({ payload: payment.invoice_payload,telegramId: message.from?.id,chargeId: payment.telegram_payment_charge_id,currency: payment.currency,totalAmount: payment.total_amount }),
     signal: AbortSignal.timeout(30000),
   });
   const data = await response.json();
@@ -169,29 +174,13 @@ async function confirmSuccessfulPayment(message) {
 }
 
 async function claimPaymentForRefund(payload, chargeId) {
-  const db = await paymentDbQuery(
-    `UPDATE star_transactions
-        SET status='FAILED'
-      WHERE payload->>'payload'=$1
-        AND telegram_charge_id IS NULL
-        AND status='PENDING'
-      RETURNING user_id::text AS user_id, amount`,
-    [payload],
-  );
+  const db = await paymentDbQuery(`UPDATE star_transactions SET status='FAILED' WHERE payload->>'payload'=$1 AND telegram_charge_id IS NULL AND status='PENDING' RETURNING user_id::text AS user_id,amount`, [payload]);
   if (!db.rows[0]) return null;
   return { userId: db.rows[0].user_id, amount: Number(db.rows[0].amount), chargeId };
 }
 
 async function finishRefund(payload, chargeId, success) {
-  await paymentDbQuery(
-    `UPDATE star_transactions
-        SET status=$3,
-            processed_at=now()
-      WHERE payload->>'payload'=$1
-        AND telegram_charge_id IS NULL
-        AND status=$2`,
-    [payload, success ? "FAILED" : "FAILED", success ? "REFUNDED" : "PENDING"],
-  );
+  await paymentDbQuery(`UPDATE star_transactions SET status=$3,processed_at=now() WHERE payload->>'payload'=$1 AND telegram_charge_id IS NULL AND status=$2`, [payload, "FAILED", success ? "REFUNDED" : "PENDING"]);
 }
 
 async function refundSuccessfulPayment(message) {
@@ -201,7 +190,6 @@ async function refundSuccessfulPayment(message) {
   const chargeId = typeof payment.telegram_payment_charge_id === "string" ? payment.telegram_payment_charge_id.trim() : "";
   const telegramId = Number(message.from?.id ?? 0);
   if (!payload || !chargeId || !Number.isSafeInteger(telegramId) || telegramId <= 0) return false;
-
   const claim = await claimPaymentForRefund(payload, chargeId);
   if (!claim) return false;
   try {
@@ -226,20 +214,9 @@ async function completeOrRefundPayment(message) {
       if (attempt < maxAttempts) await sleep(1500 * attempt);
     }
   }
-
   console.error("Successful payment could not be completed after retries:", lastError);
   const refunded = await refundSuccessfulPayment(message);
   return { completed: false, refunded };
-}
-
-async function checkChannelAccess() {
-  if (!channelId) return { ok: false, code: "CHANNEL_ID_MISSING" };
-  try {
-    const member = await api("getChatMember", { chat_id: channelId, user_id: me.id }, 2);
-    return { ok: true, status: member.status, isMember: member.is_member };
-  } catch (error) {
-    return { ok: false, code: error instanceof Error ? error.message : String(error) };
-  }
 }
 
 function adminButton() {
@@ -255,15 +232,87 @@ function supportText() {
     : "💳 Поддержка по оплате\n\nОпиши проблему с оплатой и сохрани чек/квитанцию Telegram. Поддержка проекта обработает запрос вручную.";
 }
 
-let me;
+async function checkChannelAccess(chatId) {
+  if (!channelId) throw new Error("TELEGRAM_CHANNEL_ID is missing in .env");
+  const bot = await api("getMe");
+  const member = await api("getChatMember", { chat_id: chatId, user_id: bot.id });
+  return { bot, member };
+}
+
+async function sendChannelStatus(chatId) {
+  try {
+    const { bot, member } = await checkChannelAccess(chatId);
+    const status = member.status || "unknown";
+    const admin = ["administrator", "creator"].includes(status);
+    await api("sendMessage", {
+      chat_id: chatId,
+      text: `📢 Канал: ${chatId}\n🤖 Бот: @${bot.username || botUsername}\n\nСтатус: ${status}\n\n${admin ? "✅ Бот имеет права администратора." : "❌ Бот НЕ является администратором."}`,
+    });
+  } catch (error) {
+    await api("sendMessage", { chat_id: chatId, text: `❌ Не удалось проверить канал.\n\n${error instanceof Error ? error.message : String(error)}` });
+  }
+}
+
+async function handleChannelMemberUpdate(update) {
+  const chatId = Number(update.chat?.id ?? 0);
+  if (!chatId || !channelId || String(chatId) !== String(channelId)) return;
+  const userId = Number(update.new_chat_member?.user?.id ?? 0);
+  if (!userId) return;
+  const status = update.new_chat_member.status;
+  const eventType = ["member", "administrator", "creator", "restricted"].includes(status) ? "JOIN" : ["left", "kicked"].includes(status) ? "LEAVE" : "MEMBERSHIP_UPDATE";
+  await recordChannelActivity({ telegramUserId: userId, eventType, eventKey: `${chatId}:${userId}:${status}:${update.date ?? ""}`, points: eventType === "JOIN" ? 5 : 0, metadata: { status } });
+}
+
+async function handleReactionUpdate(update) {
+  const chatId = Number(update.chat?.id ?? 0);
+  if (!chatId || !channelId || (String(chatId) !== String(channelId) && String(chatId) !== String(discussionChatId))) return;
+  const userId = Number(update.user?.id ?? 0);
+  if (!userId) return;
+  const hasNewReaction = Array.isArray(update.new_reaction) && update.new_reaction.length > 0;
+  if (!hasNewReaction) return;
+  await recordChannelActivity({
+    telegramUserId: userId,
+    eventType: "REACTION",
+    eventKey: `${chatId}:${update.message_id}:${userId}`,
+    points: 1,
+    metadata: { messageId: update.message_id, chatId },
+  });
+}
+
+async function handleDiscussionMessage(message) {
+  const chatId = Number(message.chat?.id ?? 0);
+  const userId = Number(message.from?.id ?? 0);
+  if (!userId || !discussionChatId || chatId !== discussionChatId) return;
+  if (message.from?.is_bot) return;
+  await recordChannelActivity({
+    telegramUserId: userId,
+    eventType: "COMMENT",
+    eventKey: `${chatId}:${message.message_id}:${userId}`,
+    points: 2,
+    metadata: { messageId: message.message_id, replyToMessageId: message.reply_to_message?.message_id ?? null, textLength: typeof message.text === "string" ? message.text.length : 0 },
+  });
+}
+
+let discussionChatId = null;
 
 async function main() {
-  me = await api("getMe");
+  const me = await api("getMe");
   console.log(`@${me.username || botUsername} is running`);
   console.log(`App URL: ${appUrl}`);
 
-  if (!/^https:\/\//i.test(appUrl)) {
-    console.warn("APP_URL is not HTTPS. Telegram Web Apps and invoices require HTTPS in production.");
+  if (!/^https:\/\//i.test(appUrl)) console.warn("APP_URL is not HTTPS. Telegram Web Apps and invoices require HTTPS in production.");
+  if (channelId) {
+    discussionChatId = await getLinkedDiscussionChatId();
+    console.log(`Channel ID: ${channelId}`);
+    console.log(`Linked discussion chat: ${discussionChatId ?? "none"}`);
+    try {
+      const member = await api("getChatMember", { chat_id: channelId, user_id: me.id });
+      console.log(`Bot channel status: ${member.status}`);
+    } catch (error) {
+      console.warn(`Bot channel status check failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else {
+    console.warn("TELEGRAM_CHANNEL_ID is empty; channel activity collection is disabled.");
   }
 
   let offset = 0;
@@ -272,51 +321,50 @@ async function main() {
       const updates = await api("getUpdates", {
         timeout: 25,
         offset,
-        allowed_updates: ["message", "pre_checkout_query"],
+        allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "chat_member", "message_reaction", "message_reaction_count", "pre_checkout_query"],
       });
 
       for (const update of updates) {
         offset = update.update_id + 1;
 
+        if (update.chat_member) {
+          await handleChannelMemberUpdate(update.chat_member);
+          continue;
+        }
+        if (update.message_reaction) {
+          await handleReactionUpdate(update.message_reaction);
+          continue;
+        }
+        if (update.channel_post) {
+          const chatId = Number(update.channel_post.chat?.id ?? 0);
+          if (channelId && String(chatId) === String(channelId)) {
+            await recordChannelActivity({ telegramUserId: 0, eventType: "CHANNEL_POST", eventKey: `${chatId}:${update.channel_post.message_id}`, points: 0, metadata: { messageId: update.channel_post.message_id } });
+          }
+          continue;
+        }
         if (update.pre_checkout_query) {
           try {
             const validation = await validatePreCheckout(update.pre_checkout_query);
-            await api("answerPreCheckoutQuery", {
-              pre_checkout_query_id: update.pre_checkout_query.id,
-              ok: validation.ok,
-              ...(validation.ok ? {} : { error_message: validation.error }),
-            });
+            await api("answerPreCheckoutQuery", { pre_checkout_query_id: update.pre_checkout_query.id, ok: validation.ok, ...(validation.ok ? {} : { error_message: validation.error }) });
           } catch (error) {
             console.error("Pre-checkout validation failed:", error);
-            await api("answerPreCheckoutQuery", {
-              pre_checkout_query_id: update.pre_checkout_query.id,
-              ok: false,
-              error_message: "Не удалось проверить заказ. Попробуй ещё раз.",
-            });
+            await api("answerPreCheckoutQuery", { pre_checkout_query_id: update.pre_checkout_query.id, ok: false, error_message: "Не удалось проверить заказ. Попробуй ещё раз." });
           }
           continue;
         }
 
         const message = update.message;
         if (!message?.chat?.id) continue;
+        await handleDiscussionMessage(message);
 
         if (message.successful_payment) {
           const result = await completeOrRefundPayment(message);
           if (result.completed) {
-            await api("sendMessage", {
-              chat_id: message.chat.id,
-              text: "✅ Оплата прошла! Платная прокрутка обработана, приз уже в твоих наградах.",
-            });
+            await api("sendMessage", { chat_id: message.chat.id, text: "✅ Оплата прошла! Платная прокрутка обработана, приз уже в твоих наградах." });
           } else if (result.refunded) {
-            await api("sendMessage", {
-              chat_id: message.chat.id,
-              text: "↩️ Не удалось безопасно обработать прокрутку. Платёж в Telegram Stars автоматически возвращён.",
-            });
+            await api("sendMessage", { chat_id: message.chat.id, text: "↩️ Не удалось безопасно обработать прокрутку. Платёж в Telegram Stars автоматически возвращён." });
           } else {
-            await api("sendMessage", {
-              chat_id: message.chat.id,
-              text: "⚠️ Оплата получена, но автоматическая обработка не завершилась. Платёж не потерян — обратись в /paysupport.",
-            }).catch(() => {});
+            await api("sendMessage", { chat_id: message.chat.id, text: "⚠️ Оплата получена, но автоматическая обработка не завершилась. Платёж не потерян — обратись в /paysupport." }).catch(() => {});
           }
           continue;
         }
@@ -324,31 +372,17 @@ async function main() {
         const text = message.text || "";
         const telegramId = Number(message.from?.id ?? message.chat.id);
 
-        if (text === "/paysupport") {
-          await api("sendMessage", { chat_id: message.chat.id, text: supportText() });
+        if (text === "/checkchannel") {
+          if (!(await isAdmin(telegramId))) {
+            await api("sendMessage", { chat_id: message.chat.id, text: "⛔ Только для администраторов проекта." });
+            continue;
+          }
+          await sendChannelStatus(message.chat.id);
           continue;
         }
 
-        if (text === "/checkchannel") {
-          const allowed = await isAdmin(telegramId);
-          if (!allowed) {
-            await api("sendMessage", { chat_id: message.chat.id, text: "⛔ Команда доступна только администратору." });
-            continue;
-          }
-          const check = await checkChannelAccess();
-          if (!check.ok) {
-            await api("sendMessage", {
-              chat_id: message.chat.id,
-              text: check.code === "CHANNEL_ID_MISSING"
-                ? "❌ TELEGRAM_CHANNEL_ID не задан в .env."
-                : `❌ Не удалось проверить канал.\n\n${check.code}`,
-            });
-            continue;
-          }
-          await api("sendMessage", {
-            chat_id: message.chat.id,
-            text: `📢 Канал: ${channelId}\n🤖 Бот: @${me.username || botUsername}\n\nСтатус: ${check.status}${check.isMember === undefined ? "" : `\nis_member: ${check.isMember ? "да" : "нет"}`}\n\n${check.status === "administrator" || check.status === "creator" ? "✅ Бот имеет права администратора." : "⚠️ Бот не является администратором канала."}`,
-          });
+        if (text === "/paysupport") {
+          await api("sendMessage", { chat_id: message.chat.id, text: supportText() });
           continue;
         }
 
