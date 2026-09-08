@@ -37,18 +37,19 @@ export const Route = createFileRoute("/api/admin/seasons")({
         try {
           const body = await request.json() as { initData?: string; id?: string; code?: string; name?: string; state?: string; startsAt?: string | null; endsAt?: string | null; paidSpinPrice?: unknown; paidSpinEnabled?: boolean; dailyFreeSpin?: boolean };
           const actor = await authenticateAdmin(body.initData ?? "");
-          if (!body.id) return Response.json({ ok: false, code: "INVALID_ID" }, { status: 400 });
+          const seasonId = body.id;
+          if (!seasonId) return Response.json({ ok: false, code: "INVALID_ID" }, { status: 400 });
           if (body.state && !VALID_STATES.has(body.state)) return Response.json({ ok: false, code: "INVALID_STATE" }, { status: 400 });
           const paidSpinPrice = body.paidSpinPrice === undefined ? undefined : Number(body.paidSpinPrice);
           if (paidSpinPrice !== undefined && (!Number.isSafeInteger(paidSpinPrice) || paidSpinPrice <= 0)) return Response.json({ ok: false, code: "INVALID_PAID_SPIN_PRICE" }, { status: 400 });
 
           const result = await withTransaction(async (client) => {
             await client.query(`SELECT pg_advisory_xact_lock(hashtext('cricket_box:season_state'))`);
-            const before = await client.query(`SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin FROM seasons WHERE id=$1::uuid FOR UPDATE`, [body.id]);
+            const before = await client.query(`SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin FROM seasons WHERE id=$1::uuid FOR UPDATE`, [seasonId]);
             if (!before.rows[0]) return { season: undefined, before: undefined };
-            const season = await updateSeason(body.id, { code: body.code, name: body.name, state: body.state as never, startsAt: body.startsAt, endsAt: body.endsAt, paidSpinPrice, paidSpinEnabled: body.paidSpinEnabled, dailyFreeSpin: body.dailyFreeSpin }, client);
+            const season = await updateSeason(seasonId, { code: body.code, name: body.name, state: body.state as never, startsAt: body.startsAt, endsAt: body.endsAt, paidSpinPrice, paidSpinEnabled: body.paidSpinEnabled, dailyFreeSpin: body.dailyFreeSpin }, client);
             if (!season) return { season: undefined, before: before.rows[0] };
-            await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid, 'SEASON_UPDATED', 'season', $2, $3::jsonb, $4::jsonb)`, [actor.id, body.id, JSON.stringify(before.rows[0]), JSON.stringify(season)]);
+            await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid, 'SEASON_UPDATED', 'season', $2, $3::jsonb, $4::jsonb)`, [actor.id, seasonId, JSON.stringify(before.rows[0]), JSON.stringify(season)]);
             return { season, before: before.rows[0] };
           });
 
