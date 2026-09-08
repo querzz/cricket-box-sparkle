@@ -15,9 +15,15 @@ jobs:
           LIVEOPS_CRON_SECRET: ${{ secrets.LIVEOPS_CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$APP_URL"
-          test -n "$LIVEOPS_CRON_SECRET"
-          response="$(curl -fsS \
+          if [ -z "$APP_URL" ] || [ -z "$LIVEOPS_CRON_SECRET" ]; then
+            echo "LiveOps scheduler is not configured: set CRICKET_BOX_APP_URL and LIVEOPS_CRON_SECRET repository secrets."
+            echo "Skipping tick instead of failing the scheduled workflow."
+            exit 0
+          fi
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
             -X POST \
             -H "Authorization: Bearer $LIVEOPS_CRON_SECRET" \
             -H "Accept: application/json" \
