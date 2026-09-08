@@ -7,7 +7,7 @@ type BackendSessionResponse = { ok: boolean; snapshot?: SessionSnapshot; code?: 
 type BackendSpinResponse = { ok: boolean; reward?: Reward; spin?: { id: string }; code?: string };
 type BackendGiftResponse = { ok: boolean; reward?: Reward; code?: string };
 type BackendWithdrawalResponse = { ok: boolean; withdrawal?: Withdrawal; code?: string; minimum?: number };
-type BackendInvoiceResponse = { ok: boolean; invoiceUrl?: string; code?: string; price?: number };
+type BackendInvoiceResponse = { ok: boolean; invoiceUrl?: string; code?: string; price?: number; payload?: string; recovery?: boolean };
 type BackendDevResponse = { ok: boolean; code?: string };
 
 function initData() {
@@ -46,6 +46,7 @@ const mapBackendError = (code: string): ServiceError => {
     case "PAYMENT_REQUIRED": return { code: "PAYMENT_REQUIRED", message: "Оплата платной прокрутки не завершена." };
     case "NO_PRIZES": return { code: "NO_PRIZES", message: "В этом сезоне сейчас нет доступных призов." };
     case "NOT_PARTICIPANT": return { code: "NOT_PARTICIPANT", message: "Ты пока не участвуешь в этом сезоне." };
+    case "PAYMENT_AMOUNT_MISMATCH": return { code: "PAYMENT_REQUIRED", message: "Цена платной прокрутки изменилась. Обнови экран и попробуй снова." };
     default: return { code: "NETWORK", message: "Не удалось выполнить операцию. Попробуй ещё раз." };
   }
 };
@@ -54,16 +55,22 @@ async function backendSession(): Promise<ServiceResult<SessionSnapshot>> {
   try { const response = await fetch(`/api/session?initData=${encodeURIComponent(initData())}`); const data = (await response.json()) as BackendSessionResponse; if (!response.ok || !data.ok || !data.snapshot) return { ok: false, error: mapBackendError(data.code ?? "SESSION_FAILED") }; return ok(data.snapshot); }
   catch { return fail("NETWORK", "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз."); }
 }
-async function backendFreeSpin(): Promise<ServiceResult<Reward>> {
-  try { const response = await fetch("/api/spin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), paid: false }) }); const data = (await response.json()) as BackendSpinResponse; if (!response.ok || !data.ok || !data.reward) return { ok: false, error: mapBackendError(data.code ?? "SPIN_FAILED") }; return ok(data.reward); }
-  catch { return fail("NETWORK", "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз."); }
+async function backendFreeSpin(idempotencyKey: string): Promise<ServiceResult<Reward>> {
+  try {
+    const response = await fetch("/api/spin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), paid: false, idempotencyKey }) });
+    const data = (await response.json()) as BackendSpinResponse;
+    if (!response.ok || !data.ok || !data.reward) return { ok: false, error: mapBackendError(data.code ?? "SPIN_FAILED") };
+    return ok(data.reward);
+  } catch {
+    return fail("NETWORK", "Не удалось связаться с сервером. Повторяем попытку…");
+  }
 }
 async function devState(action: "SET_STARS" | "SET_SUBSCRIBED" | "RESET_FREE_SPIN", value?: number | boolean): Promise<ServiceResult<true>> {
   if (!inTelegram()) return fail("NETWORK", "Инструмент доступен только внутри Telegram.");
   try { const response = await fetch("/api/dev/user-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), action, value }) }); const data = (await response.json()) as BackendDevResponse; if (!response.ok || !data.ok) return fail("NETWORK", data.code === "ADMIN_ACCESS_DENIED" ? "Доступ только для администратора." : "Не удалось изменить тестовое состояние."); return ok(true); }
   catch { return fail("NETWORK", "Не удалось изменить тестовое состояние."); }
 }
-async function openStarsInvoice(price: number): Promise<ServiceResult<Reward>> {
+async function openStarsInvoice(price: number, beforeSpinCount: number): Promise<ServiceResult<Reward>> {
   if (typeof window === "undefined") return fail("NETWORK", "Оплата доступна только внутри Telegram.");
   const tg = (window as Window & { Telegram?: { WebApp?: { openInvoice?: (url: string, callback?: (status: string) => void) => void } } }).Telegram?.WebApp;
   if (!tg?.openInvoice) return fail("NETWORK", "Эта версия Telegram не поддерживает оплату внутри Mini App.");
@@ -76,8 +83,7 @@ async function openStarsInvoice(price: number): Promise<ServiceResult<Reward>> {
     if (status === "cancelled") return fail("PAYMENT_REQUIRED", "Оплата отменена.");
     if (status === "failed") return fail("NETWORK", "Telegram не смог завершить оплату.");
     if (status === "timeout") return fail("NETWORK", "Оплата слишком долго обрабатывается. Обнови экран через несколько секунд.");
-    const before = await backendSession(); const beforeCount = before.ok ? before.data.spin.totalSpins : -1;
-    for (let attempt = 0; attempt < 12; attempt += 1) { await new Promise((resolve) => window.setTimeout(resolve, 1000)); const session = await backendSession(); if (!session.ok) continue; const latest = session.data.rewards[0]; if (session.data.spin.totalSpins > beforeCount && latest) return ok(latest); }
+    for (let attempt = 0; attempt < 12; attempt += 1) { await new Promise((resolve) => window.setTimeout(resolve, 1000)); const session = await backendSession(); if (!session.ok) continue; const latest = session.data.rewards[0]; if (session.data.spin.totalSpins > beforeSpinCount && latest) return ok(latest); }
     return fail("NETWORK", "Платёж получен, но результат ещё обрабатывается. Открой экран снова через несколько секунд.");
   } catch { return fail("NETWORK", "Не удалось открыть оплату Telegram Stars."); }
 }
@@ -87,15 +93,22 @@ export const cricketApi = {
   async getSession(): Promise<ServiceResult<SessionSnapshot>> { return inTelegram() ? backendSession() : ok(structuredClone(state)); },
   async spin(options: SpinOptions = {}): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
     if (inTelegram()) {
-      if (options.paid) { const session = await backendSession(); if (!session.ok) return session; const price = session.data.spin.paidSpinPrice; if (price === null) return fail("SEASON_CLOSED", "Платные прокрутки сейчас недоступны."); const result = await openStarsInvoice(price); if (!result.ok) return result; const refreshed = await backendSession(); if (!refreshed.ok) return refreshed; return ok({ reward: result.data, snapshot: refreshed.data }); }
-      const result = await backendFreeSpin(); if (!result.ok) return result; const session = await backendSession(); if (!session.ok) return session; return ok({ reward: result.data, snapshot: session.data });
+      if (options.paid) { const session = await backendSession(); if (!session.ok) return session; const price = session.data.spin.paidSpinPrice; if (price === null) return fail("SEASON_CLOSED", "Платные прокрутки сейчас недоступны."); const beforeSpinCount = session.data.spin.totalSpins; const result = await openStarsInvoice(price, beforeSpinCount); if (!result.ok) return result; const refreshed = await backendSession(); if (!refreshed.ok) return refreshed; return ok({ reward: result.data, snapshot: refreshed.data }); }
+      const idempotencyKey = crypto.randomUUID().replaceAll("-", "");
+      const result = await backendFreeSpin(idempotencyKey);
+      if (result.ok) { const session = await backendSession(); if (!session.ok) return session; return ok({ reward: result.data, snapshot: session.data }); }
+      if (result.error.code !== "NETWORK") return result;
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+      const retry = await backendFreeSpin(idempotencyKey);
+      if (!retry.ok) return { ok: false, error: { ...retry.error, message: "Не удалось выполнить прокрутку. Проверь соединение и открой экран снова — повторный запрос будет безопасным." } };
+      const session = await backendSession(); if (!session.ok) return session; return ok({ reward: retry.data, snapshot: session.data });
     }
     const seasonState = state.season.state;
     if (seasonState === "DRAFT" || seasonState === "SCHEDULED") return fail("SEASON_NOT_STARTED", "Сезон ещё не начался.");
     if (seasonState !== "ACTIVE" && seasonState !== "ENDING") return fail("SEASON_CLOSED", "Сезон завершён.");
     if (!state.user.isSubscribed) return fail("NOT_SUBSCRIBED", "Подпишись на канал, чтобы участвовать.");
     if (!options.paid && state.spin.freeSpins <= 0) return fail("NO_ATTEMPTS", "Сегодняшняя бесплатная попытка уже использована.");
-    if (options.paid) { const localPrice = state.spin.paidSpinPrice; if (localPrice === null || state.stars.amount < localPrice) return fail("INSUFFICIENT_STARS", "Недостаточно Stars для платной прокрутки."); state.stars.amount -= localPrice; } else state.spin.freeSpins -= 1;
+    if (options.paid) { const localPrice = state.spin.paidSpinPrice; if (localPrice === null || state.stars.amount < localPrice) return fail("INSUFFICIENT_STARS", "Недостаточно Stars."); state.stars.amount -= localPrice; } else state.spin.freeSpins -= 1;
     const eligible = state.prizes.filter((p) => p.remaining > 0); if (!eligible.length) return fail("NO_PRIZES", "В этом сезоне сейчас нет доступных призов.");
     const total = eligible.reduce((sum, p) => sum + p.remaining, 0); let cursor = Math.floor(Math.random() * total); let picked = eligible[eligible.length - 1]!;
     for (const p of eligible) { cursor -= p.remaining; if (cursor < 0) { picked = p; break; } }
