@@ -52,3 +52,6 @@ jobs:
 
       - name: Run LiveOps lifecycle regression tests
         run: npm run test:liveops
+
+      - name: Run spin idempotency regression tests
+        run: npm run test:spin-idempotency
