@@ -12,7 +12,7 @@ type BackendPaymentStatusResponse = {
   ok: boolean;
   status?: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
   code?: string;
-  spin?: { reward?: { kind: string; title: string; subtitle?: string; amount?: number; status?: string; payoutStatus?: string | null } } | null;
+  spin?: { id?: string; reward?: { kind: string; title: string; subtitle?: string; amount?: number; status?: string; payoutStatus?: string | null } } | null;
 };
 type BackendDevResponse = { ok: boolean; code?: string };
 
@@ -79,7 +79,7 @@ async function backendPaymentStatus(payload: string): Promise<ServiceResult<Rewa
     if (data.status !== "SUCCESS") return ok(null);
     const rewardData = data.spin?.reward;
     if (!rewardData) return ok(null);
-    return ok({ kind: rewardData.kind as RewardKind, title: rewardData.title, subtitle: rewardData.subtitle, amount: rewardData.amount, wonAt: new Date().toISOString(), status: rewardData.status === "RECEIVED" ? "RECEIVED" : "PENDING", payoutNote: rewardData.payoutStatus === "PAID" ? "Выдано." : "Награда записана и ожидает выдачи." });
+    return ok({ id: data.spin?.id ?? `payment_${payload}`, kind: rewardData.kind as RewardKind, title: rewardData.title, subtitle: rewardData.subtitle, amount: rewardData.amount, wonAt: new Date().toISOString(), status: rewardData.status === "RECEIVED" ? "RECEIVED" : "PENDING", payoutNote: rewardData.payoutStatus === "PAID" ? "Выдано." : "Награда записана и ожидает выдачи." });
   } catch {
     return fail("NETWORK", "Не удалось проверить статус оплаты.");
   }
@@ -89,7 +89,7 @@ async function devState(action: "SET_STARS" | "SET_SUBSCRIBED" | "RESET_FREE_SPI
   try { const response = await fetch("/api/dev/user-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData(), action, value }) }); const data = (await response.json()) as BackendDevResponse; if (!response.ok || !data.ok) return fail("NETWORK", data.code === "ADMIN_ACCESS_DENIED" ? "Доступ только для администратора." : "Не удалось изменить тестовое состояние."); return ok(true); }
   catch { return fail("NETWORK", "Не удалось изменить тестовое состояние."); }
 }
-async function openStarsInvoice(price: number, beforeSpinCount: number): Promise<ServiceResult<Reward>> {
+async function openStarsInvoice(price: number): Promise<ServiceResult<Reward>> {
   if (typeof window === "undefined") return fail("NETWORK", "Оплата доступна только внутри Telegram.");
   const tg = (window as Window & { Telegram?: { WebApp?: { openInvoice?: (url: string, callback?: (status: string) => void) => void } } }).Telegram?.WebApp;
   if (!tg?.openInvoice) return fail("NETWORK", "Эта версия Telegram не поддерживает оплату внутри Mini App.");
@@ -108,8 +108,7 @@ async function openStarsInvoice(price: number, beforeSpinCount: number): Promise
       if (attempt > 0) await new Promise((resolve) => window.setTimeout(resolve, 1000));
       const payment = await backendPaymentStatus(payload);
       if (payment.ok && payment.data) return payment;
-      const session = await backendSession();
-      if (session.ok && session.data.spin.totalSpins > beforeSpinCount && session.data.rewards[0]) return ok(session.data.rewards[0]);
+      if (!payment.ok && payment.error.code !== "NETWORK") return payment;
     }
     return fail("NETWORK", "Платёж получен, но результат ещё обрабатывается. Открой экран снова через несколько секунд.");
   } catch { return fail("NETWORK", "Не удалось открыть оплату Telegram Stars."); }
@@ -120,7 +119,7 @@ export const cricketApi = {
   async getSession(): Promise<ServiceResult<SessionSnapshot>> { return inTelegram() ? backendSession() : ok(structuredClone(state)); },
   async spin(options: SpinOptions = {}): Promise<ServiceResult<{ reward: Reward; snapshot: SessionSnapshot }>> {
     if (inTelegram()) {
-      if (options.paid) { const session = await backendSession(); if (!session.ok) return session; const price = session.data.spin.paidSpinPrice; if (price === null) return fail("SEASON_CLOSED", "Платные прокрутки сейчас недоступны."); const beforeSpinCount = session.data.spin.totalSpins; const result = await openStarsInvoice(price, beforeSpinCount); if (!result.ok) return result; const refreshed = await backendSession(); if (!refreshed.ok) return refreshed; return ok({ reward: result.data, snapshot: refreshed.data }); }
+      if (options.paid) { const session = await backendSession(); if (!session.ok) return session; const price = session.data.spin.paidSpinPrice; if (price === null) return fail("SEASON_CLOSED", "Платные прокрутки сейчас недоступны."); const result = await openStarsInvoice(price); if (!result.ok) return result; const refreshed = await backendSession(); if (!refreshed.ok) return refreshed; return ok({ reward: result.data, snapshot: refreshed.data }); }
       const idempotencyKey = crypto.randomUUID().replaceAll("-", "");
       const result = await backendFreeSpin(idempotencyKey);
       if (result.ok) { const session = await backendSession(); if (!session.ok) return session; return ok({ reward: result.data, snapshot: session.data }); }
