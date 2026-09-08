@@ -7,8 +7,8 @@ Repository: `querzz/cricket-box-sparkle`
 
 ### Core / database
 - PostgreSQL is connected through `pg` and `src/server/db.ts`.
-- `scripts/init-db.mjs` initializes the active `db/schema.sql`, including migrations and the payment idempotency guard.
-- Users, user state, seasons, prizes, spins, payouts, gifts, owner gifts, channel activity, audit logs and payment transactions are persisted.
+- `scripts/init-db.mjs` initializes the active `db/schema.sql`, including migrations and payment idempotency guards.
+- Users, user state, seasons, prizes, spins, payouts, gifts, owner gifts, channel activity, audit logs, payment transactions, LiveOps drops and economy snapshots are persisted.
 - Prize records support active state, image URL, arbitrary amount, quantity and weighted selection metadata.
 - `season_leaderboard` provides season-scoped ranking data.
 - Stars balance changes use the append-only `stars_ledger`; opening balances, rewards, spending, withdrawals, reversals and capped overflow events are recorded with idempotency keys.
@@ -30,12 +30,14 @@ Repository: `querzz/cricket-box-sparkle`
 - Paid spins can be disabled, but cannot be re-enabled mid-season when disabled from the start.
 - Paid-spin price is locked after the first paid spin.
 
-### Spin engine
+### Spin engine / adaptive economy
 - `/api/spin` is server-authoritative and transactional.
 - Finite prize inventory is decremented atomically.
 - Exhausted and inactive prizes are excluded.
 - Stars prizes are excluded when the user's Stars balance is at the cap.
-- Weighted sampling uses configured weight only; remaining quantity does not silently alter probability.
+- Selection uses configured weight × remaining inventory × server-side economy multiplier, with personal empty-streak and anti-streak adjustments.
+- Economy multiplier reacts to actual inventory consumption versus season progress and is bounded to prevent extreme swings.
+- LiveOps drops can be activated automatically when their time, spin-count or season-progress trigger becomes due.
 - `EMPTY` outcomes do not create payout records.
 - XP is awarded on completed spins.
 
@@ -54,6 +56,14 @@ Repository: `querzz/cricket-box-sparkle`
 - Invoice and completion flows both respect the season paid-spin ON/OFF setting.
 - Completion validates payload, user, season and amount before settlement.
 - DEV paid-spin flow exists for QA without spending real Telegram Stars.
+
+### LiveOps / economy administration
+- `/api/admin/economy` exposes live season metrics, inventory consumption and current per-prize multipliers.
+- Admin can persist an auditable economy snapshot.
+- `/api/admin/drops` supports scheduled and manual drops, cancellation and manual activation.
+- Drop payloads validate prize type, quantity, amount and unit cost before insertion.
+- Automatic due-drop activation is executed inside the same transaction as the spin/payment settlement.
+- `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
 
 ### Payouts / withdrawals
 - Payout lifecycle and bulk admin processing exist.
@@ -81,16 +91,17 @@ The following real admin routes exist and use backend APIs:
 ### CI / verification
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
 - Local DB integration test cleanup no longer fails because of the append-only ledger; immutable ledger fixtures are intentionally retained.
+- Recent local verification reached passing TypeScript, production build and DB integration checks after the spin-route syntax fix.
 
 ## Important remaining production gaps
 
-1. Real Telegram channel subscription verification is not fully integrated; stored subscription/participation flags can still be used.
-2. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
-3. Statistics and Economic Planner do not yet expose every KPI from the specification, especially full funnel/retention/break-even reporting.
-4. Full automatic season transition jobs are not implemented; state changes are currently guarded by the service when requests occur.
-5. Complete replay/double-click/payment-recovery security regression tests still need to run against the current application.
-6. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
-7. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
+1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
+2. Statistics and Economy Planner still do not expose every KPI from the full specification, especially full funnel/retention/break-even reporting across all historical cohorts.
+3. Full automatic season transition jobs are not implemented; state changes are currently guarded by the service when requests occur.
+4. Complete replay/double-click/payment-recovery security regression tests still need to run against the current application.
+5. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
+6. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
+7. Current LiveOps execution is request-driven by user spins; a background scheduler would be needed for trigger execution during periods with no traffic.
 
 ## Deliberately not implementing now
 
