@@ -13,23 +13,22 @@ import { ErrorState, LoadingState, NoticeBar } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
 import { StatusBadge } from "@/components/kit/StatusBadge";
 import { seasonUi } from "@/lib/season";
+import { completePaidSpin } from "@/services/paid-spin";
 import type { Reward } from "@/lib/types";
 import { isServiceError, useSession } from "@/store/session";
 
-type PublicLinks = { channel?: { title: string; username: string | null; url: string | null }; season?: { title: string } | null };
+type PublicLinks = { ok?: boolean; channel?: { title: string; username: string | null; url: string | null }; season?: { title: string } | null };
 type ChannelInfo = { ok?: boolean; channel?: { title: string | null; username: string | null; url: string | null } | null };
 
 export const Route = createFileRoute("/draw")({
-  head: () => ({
-    meta: [
-      { title: "Розыгрыш — CRICKET BOX" },
-      { name: "description", content: "Крути Cricket Box, используй бесплатную попытку или плати Stars за дополнительную прокрутку." },
-      { property: "og:title", content: "Розыгрыш — CRICKET BOX" },
-      { property: "og:description", content: "Крути Cricket Box и узнай, какой приз тебе достался." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => ({ meta: [
+    { title: "Розыгрыш — CRICKET BOX" },
+    { name: "description", content: "Крути Cricket Box, используй бесплатную попытку или плати Stars за дополнительную прокрутку." },
+    { property: "og:title", content: "Розыгрыш — CRICKET BOX" },
+    { property: "og:description", content: "Крути Cricket Box и узнай, какой приз тебе достался." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary_large_image" },
+  ] }),
   component: DrawScreen,
 });
 
@@ -71,13 +70,31 @@ function DrawScreen() {
         paidSpinPrice: snapshot.spin.paidSpinPrice,
         stars: snapshot.stars.amount,
       });
-      const result = await spin({ paid });
+
+      if (paid) {
+        const paidResult = await completePaidSpin(snapshot.spin.paidSpinPrice ?? 0);
+        if (!paidResult.ok) {
+          console.error("[CRICKET BOX] paid-spin:error", paidResult.error);
+          setPhase("idle");
+          toast.error(paidResult.error.message);
+          return;
+        }
+        console.log("[CRICKET BOX] paid-spin:success", { rewardId: paidResult.reward.id });
+        await refresh();
+        setPhase("opening");
+        window.setTimeout(() => {
+          setReward(paidResult.reward);
+          setPhase("idle");
+          setBusy(false);
+        }, 350);
+        return;
+      }
+
+      const result = await spin({ paid: false });
       if (isServiceError(result)) {
         console.error("[CRICKET BOX] spin:error", { paid, code: result.code, message: result.message });
         setPhase("idle");
-        if (["SEASON_CLOSED", "SEASON_NOT_ACTIVE", "SEASON_NOT_STARTED", "NO_PRIZES"].includes(result.code)) {
-          await refresh();
-        }
+        if (["SEASON_CLOSED", "SEASON_NOT_ACTIVE", "SEASON_NOT_STARTED", "NO_PRIZES"].includes(result.code)) await refresh();
         toast.error(result.message || "Не удалось выполнить прокрутку.");
         return;
       }
@@ -121,13 +138,7 @@ function DrawScreen() {
       </GlassCard>
 
       <div className="mt-4 space-y-2.5">
-        {!ui.canSpin && !snapshot.user.isSubscribed && (
-          <GlassCard className="space-y-2.5 px-4 py-3.5">
-            <p className="text-sm font-semibold">Чтобы участвовать, подпишись на канал</p>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">После подписки вернись сюда — приложение автоматически перепроверит доступ.</p>
-            {channel?.url && <a href={channel.url} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary-glow"><span>{channel.username ? `Открыть ${channel.username}` : "Открыть канал"}</span><ExternalLink className="size-4" /></a>}
-          </GlassCard>
-        )}
+        {!ui.canSpin && !snapshot.user.isSubscribed && <GlassCard className="space-y-2.5 px-4 py-3.5"><p className="text-sm font-semibold">Чтобы участвовать, подпишись на канал</p><p className="text-[11px] leading-relaxed text-muted-foreground">После подписки вернись сюда — приложение автоматически перепроверит доступ.</p>{channel?.url && <a href={channel.url} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary-glow"><span>{channel.username ? `Открыть ${channel.username}` : "Открыть канал"}</span><ExternalLink className="size-4" /></a>}</GlassCard>}
         {!ui.canSpin && snapshot.user.isSubscribed && <NoticeBar tone="warning">{ui.headline}</NoticeBar>}
         {ui.isWaiting && <NoticeBar>{ui.headline}. Прокрутки откроются после старта сезона.</NoticeBar>}
         {ui.canSpin && freeSpins <= 0 && !canPay && price !== null && <NoticeBar tone="danger">Бесплатная попытка сегодня уже использована. Нужно ещё {price - snapshot.stars.amount} Stars для платной прокрутки.</NoticeBar>}
