@@ -148,9 +148,18 @@ export async function upsertPrize(input: {
 
   if (input.id) {
     const current = await query<{
-      id: string; season_id: string; kind: string; amount: string; quantity_total: number; quantity_remaining: number; metadata: Record<string, unknown> | null; title: string;
+      id: string;
+      season_id: string;
+      kind: string;
+      amount: string;
+      unit_cost: string;
+      currency: string | null;
+      quantity_total: number;
+      quantity_remaining: number;
+      metadata: Record<string, unknown> | null;
+      title: string;
     }>(
-      `SELECT id, season_id, kind, amount::text, quantity_total, quantity_remaining, metadata, title
+      `SELECT id, season_id, kind, amount::text, unit_cost::text, currency, quantity_total, quantity_remaining, metadata, title
          FROM prizes WHERE id = $1::uuid FOR UPDATE`,
       [input.id],
     );
@@ -162,7 +171,19 @@ export async function upsertPrize(input: {
     const old = current.rows[0];
     const oldWeight = Number(old.metadata?.weight ?? 1);
     const newWeight = Number(input.metadata?.weight ?? 1);
-    if (hasStarted && (old.kind !== input.kind || Number(old.amount) !== input.amount || old.quantity_total !== input.quantityTotal || oldWeight !== newWeight)) {
+    const oldUnitCost = Number(old.unit_cost);
+    const newUnitCost = input.unitCost;
+    const oldCurrency = old.currency ?? null;
+    const newCurrency = input.currency ?? null;
+    if (
+      hasStarted &&
+      (old.kind !== input.kind ||
+        Number(old.amount) !== input.amount ||
+        oldUnitCost !== newUnitCost ||
+        oldCurrency !== newCurrency ||
+        old.quantity_total !== input.quantityTotal ||
+        oldWeight !== newWeight)
+    ) {
       throw new Error("PRIZE_ECONOMICS_LOCKED");
     }
 
