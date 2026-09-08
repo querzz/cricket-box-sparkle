@@ -23,3 +23,7 @@ export function requireTelegramChannelId(): string {
 export function requireDatabaseUrl(): string {
   return required("DATABASE_URL", serverConfig.databaseUrl);
 }
+
+export function isProductionApp(): boolean {
+  return /^https:\/\//i.test(serverConfig.appUrl);
+}
