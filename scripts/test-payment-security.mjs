@@ -22,12 +22,20 @@ function assert(condition, message) {
   if (!condition) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
-async function expectReject(fn, message) {
+let savepointCounter = 0;
+async function expectReject(db, fn, message) {
+  const savepoint = `payment_security_assert_${++savepointCounter}`;
+  await db.query(`SAVEPOINT ${savepoint}`);
   try {
     await fn();
   } catch {
+    await db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+    await db.query(`RELEASE SAVEPOINT ${savepoint}`);
     return;
   }
+
+  await db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+  await db.query(`RELEASE SAVEPOINT ${savepoint}`);
   throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
@@ -81,10 +89,11 @@ try {
   );
 
   await expectReject(
+    db,
     () => db.query(
       `INSERT INTO star_transactions(user_id,amount,status,payload,telegram_charge_id)
        VALUES($1,100,'PENDING',$2,$3)`,
-      [user,  JSON.stringify({ payload: `${payload}:replay`, type: "PAID_SPIN", seasonId: season, userId: user }), chargeId],
+      [user, JSON.stringify({ payload: `${payload}:replay`, type: "PAID_SPIN", seasonId: season, userId: user }), chargeId],
     ),
     "replayed Telegram charge id cannot create a second transaction",
   );
@@ -101,6 +110,7 @@ try {
   );
 
   await expectReject(
+    db,
     () => db.query(
       `INSERT INTO star_transactions(user_id,amount,status,payload)
        VALUES($1,100,'PENDING',$2)`,
@@ -116,6 +126,7 @@ try {
     [user, season, ledgerKey],
   );
   await expectReject(
+    db,
     () => db.query(
       `INSERT INTO stars_ledger(user_id,season_id,type,amount,idempotency_key,metadata)
        VALUES($1,$2,'ADJUSTMENT',0,$3,'{}'::jsonb)`,
