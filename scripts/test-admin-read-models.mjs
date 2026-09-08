@@ -76,7 +76,7 @@ try {
 
   const participantRows = await db.query(
     `WITH current_season AS (
-       SELECT COALESCE($3::uuid, (SELECT id FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1)) AS id
+       SELECT COALESCE($2::uuid, (SELECT id FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1)) AS id
      ),
      spin_stats AS (
        SELECT user_id,
@@ -101,10 +101,10 @@ try {
        FROM users u
        LEFT JOIN spin_stats ss ON ss.user_id=u.id
        LEFT JOIN reward_stats rs ON rs.user_id=u.id
-      WHERE u.username IN ($1,$2)
+      WHERE u.id = ANY($1::uuid[])
       ORDER BY COALESCE(ss.last_activity,u.last_seen_at) DESC
       LIMIT 50`,
-    [`ci_read_${suffix}`, `ci_read_2_${suffix}`, seasonId],
+    [[userA, userB], seasonId],
   );
   assert(participantRows.rowCount === 2, "participants query executes and returns both scoped CI users");
   assert(participantRows.rows.some((row) => row.spins === 2 && row.rewards === 1), "participants query aggregates spins and rewards");
