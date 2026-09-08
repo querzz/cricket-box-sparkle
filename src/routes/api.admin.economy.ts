@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { authenticateAdmin } from "@/server/auth/access";
 import { query } from "@/server/db";
-import { buildEconomyMetrics, getEconomyMultiplier } from "@/server/season-economy";
+import { buildEconomyMetrics } from "@/server/season-economy";
+import { buildDynamicWeights } from "@/server/dynamic-prize-selection";
 import { writeEconomySnapshot } from "@/server/liveops";
 
 type SeasonRow = {
@@ -28,13 +29,14 @@ type EconomySnapshotRow = {
   multipliers: Record<string, number>;
   created_at: string;
 };
+type PrizeRow = { id: string; kind: string; title: string; quantity_total: number; quantity_remaining: number; amount: string; unit_cost: string; currency: string | null; metadata: Record<string, unknown> | null; is_active: boolean };
 
 export const Route = createFileRoute("/api/admin/economy")({
   server: { handlers: {
     GET: async ({ request }) => {
       try {
-        await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
         const url = new URL(request.url);
+        await authenticateAdmin(url.searchParams.get("initData") ?? "");
         const seasonId = url.searchParams.get("seasonId") ?? "";
         const history = Math.min(50, Math.max(0, Number(url.searchParams.get("history") ?? 0) || 0));
         if (!seasonId) return Response.json({ ok: false, code: "INVALID_SEASON" }, { status: 400 });
@@ -45,7 +47,9 @@ export const Route = createFileRoute("/api/admin/economy")({
         const row = counts.rows[0];
         const spins: SpinCounts = { hour: Number(row?.hour ?? 0), day: Number(row?.day ?? 0), week: Number(row?.week ?? 0), season: Number(row?.season ?? 0) };
         const metrics = buildEconomyMetrics({ startsAt: season.starts_at, endsAt: season.ends_at, spins });
-        const prizes = await query<{ id: string; kind: string; title: string; quantity_total: number; quantity_remaining: number; amount: string; unit_cost: string; currency: string | null; metadata: Record<string, unknown> | null; is_active: boolean }>(`SELECT id::text,kind,title,quantity_total,quantity_remaining,amount::text,unit_cost::text,currency,metadata,is_active FROM prizes WHERE season_id=$1::uuid ORDER BY created_at ASC`, [seasonId]);
+        const prizes = await query<PrizeRow>(`SELECT id::text,kind,title,quantity_total,quantity_remaining,amount::text,unit_cost::text,currency,metadata,is_active FROM prizes WHERE season_id=$1::uuid ORDER BY created_at ASC`, [seasonId]);
+        const dynamic = buildDynamicWeights(prizes.rows.filter(prize => prize.is_active && prize.quantity_remaining > 0), { elapsedFraction: metrics.elapsedFraction });
+        const totalEffectiveWeight = dynamic.reduce((sum, item) => sum + item.diagnostics.finalWeight, 0);
         const snapshotRows: EconomySnapshotRow[] = history > 0
           ? (await query<EconomySnapshotRow>(`SELECT id::text,completed_spins,spins_last_hour,spins_last_day,spins_last_week,pace_per_day::text,projected_season_spins::text,multipliers,created_at::text FROM season_economy_snapshots WHERE season_id=$1::uuid ORDER BY created_at DESC LIMIT $2`, [seasonId, history])).rows
           : [];
@@ -54,12 +58,33 @@ export const Route = createFileRoute("/api/admin/economy")({
           season,
           spins,
           metrics,
-          prizes: prizes.rows.map(prize => ({ id: prize.id, kind: prize.kind, title: prize.title, quantityTotal: prize.quantity_total, quantityRemaining: prize.quantity_remaining, consumed: Math.max(0, prize.quantity_total - prize.quantity_remaining), amount: Number(prize.amount), unitCost: Number(prize.unit_cost), currency: prize.currency, active: prize.is_active, multiplier: getEconomyMultiplier({ quantityTotal: prize.quantity_total, quantityRemaining: prize.quantity_remaining, elapsedFraction: metrics.elapsedFraction }), weight: Number(prize.metadata?.weight ?? 1) || 1 })),
+          prizes: prizes.rows.map(prize => {
+            const item = dynamic.find(entry => entry.prize.id === prize.id);
+            const multiplier = item?.diagnostics.globalMultiplier ?? 1;
+            const effectiveWeight = item?.diagnostics.finalWeight ?? 0;
+            return {
+              id: prize.id,
+              kind: prize.kind,
+              title: prize.title,
+              quantityTotal: prize.quantity_total,
+              quantityRemaining: prize.quantity_remaining,
+              consumed: Math.max(0, prize.quantity_total - prize.quantity_remaining),
+              amount: Number(prize.amount),
+              unitCost: Number(prize.unit_cost),
+              currency: prize.currency,
+              active: prize.is_active,
+              multiplier,
+              weight: Number(prize.metadata?.weight ?? 1) || 1,
+              effectiveWeight,
+              currentChance: totalEffectiveWeight > 0 ? effectiveWeight / totalEffectiveWeight : 0,
+            };
+          }),
           snapshots: snapshotRows,
         });
       } catch (error) {
         const code = error instanceof Error ? error.message : "REQUEST_FAILED";
-        return Response.json({ ok: false, code }, { status: code === "SEASON_NOT_FOUND" ? 404 : 401 });
+        console.error("Admin economy API failed:", error instanceof Error ? error.message : error);
+        return Response.json({ ok: false, code }, { status: code === "SEASON_NOT_FOUND" ? 404 : 500 });
       }
     },
     POST: async ({ request }) => {
