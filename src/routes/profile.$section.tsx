@@ -1,5 +1,6 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { ChevronRight, Trophy, Medal, ScrollText, HelpCircle, History, LifeBuoy, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -38,10 +39,10 @@ const faq = [
 function SectionScreen() {
   const { section } = useParams({ from: "/profile/$section" });
   const { snapshot, loading } = useSession();
-  const [support, setSupport] = React.useState<NonNullable<SupportInfo["support"]> | null>(null);
+  const [support, setSupport] = useState<NonNullable<SupportInfo["support"]> | null>(null);
   const title = titles[section] ?? "Раздел";
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (section !== "support") return;
     let mounted = true;
     fetch("/api/support")
