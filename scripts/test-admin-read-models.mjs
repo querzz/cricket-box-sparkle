@@ -104,9 +104,9 @@ try {
       WHERE ($2='' OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR u.first_name ILIKE $1 OR COALESCE(u.last_name,'') ILIKE $1)
       ORDER BY COALESCE(ss.last_activity,u.last_seen_at) DESC
       LIMIT $4`,
-    [`%ci_read_%`, ``, seasonId, 50],
+    [`%ci_read_${suffix}%`, `%ci_read_${suffix}%`, seasonId, 50],
   );
-  assert(participantRows.rowCount === 1 || participantRows.rowCount === 2, "participants query executes and returns CI users");
+  assert(participantRows.rowCount === 2, "participants query executes and returns both scoped CI users");
   assert(participantRows.rows.some((row) => row.spins === 2 && row.rewards === 1), "participants query aggregates spins and rewards");
 
   const statsRows = await db.query(
