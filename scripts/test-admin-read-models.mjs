@@ -37,6 +37,11 @@ try {
   await db.query(await fs.readFile(path.resolve(process.cwd(), "db/schema.sql"), "utf8"));
   await db.query("BEGIN");
 
+  // The integration database may already contain the canonical live season.
+  // The fixture is transactional, so temporarily closing existing live rows
+  // keeps the one-live-season invariant intact and is fully rolled back on exit.
+  await db.query("UPDATE seasons SET state='CLOSED', updated_at=now() WHERE state IN ('ACTIVE','ENDING')");
+
   const season = await db.query(
     `INSERT INTO seasons (code,name,state,paid_spin_price,daily_free_spin)
      VALUES ($1,'Admin Read Model CI','ACTIVE',100,TRUE) RETURNING id`,
