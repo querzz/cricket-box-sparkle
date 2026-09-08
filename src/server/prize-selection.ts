@@ -2,6 +2,7 @@ export type AdaptivePrize = {
   id: string;
   kind: string;
   quantity_remaining: number;
+  quantity_total?: number;
   metadata: Record<string, unknown> | null;
 };
 
@@ -17,11 +18,11 @@ function configuredWeight(prize: AdaptivePrize) {
   return Number.isFinite(configured) && configured > 0 ? configured : 1;
 }
 
-/**
- * Inventory-aware selection with soft personal pity and anti-streak tuning.
- * Quantity is part of the probability, so a single rare unit cannot have the
- * same chance as a large common stock just because both are separate rows.
- */
+function economyMultiplier(prize: AdaptivePrize) {
+  const configured = Number(prize.metadata?.economyMultiplier ?? 1);
+  return Number.isFinite(configured) && configured > 0 ? configured : 1;
+}
+
 export function pickAdaptivePrize<T extends AdaptivePrize>(
   prizes: T[],
   randomUnit: () => number,
@@ -42,18 +43,14 @@ export function pickAdaptivePrize<T extends AdaptivePrize>(
 
   const weighted = prizes.map((prize) => {
     const inventory = Math.max(0, Number(prize.quantity_remaining) || 0);
-    const base = configuredWeight(prize) * inventory;
+    const base = configuredWeight(prize) * economyMultiplier(prize) * inventory;
 
     let multiplier = 1;
     if (prize.kind !== "EMPTY" && emptyStreak > 0) {
       multiplier *= 1 + clamp(emptyStreak, 0, 20) * 0.03;
     }
-    if (lastKind && prize.kind === lastKind && consecutiveSameKind >= 3) {
-      multiplier *= 0.55;
-    }
-    if (lastKind && prize.kind !== lastKind && consecutiveSameKind >= 3) {
-      multiplier *= 1.05;
-    }
+    if (lastKind && prize.kind === lastKind && consecutiveSameKind >= 3) multiplier *= 0.55;
+    if (lastKind && prize.kind !== lastKind && consecutiveSameKind >= 3) multiplier *= 1.05;
 
     return { prize, weight: base * multiplier };
   });
