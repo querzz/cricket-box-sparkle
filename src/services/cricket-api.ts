@@ -25,7 +25,15 @@ function localStateLoad(): SessionSnapshot {
     return { ...initial, ...saved, user: { ...initial.user, ...saved.user }, season: { ...initial.season, ...saved.season }, stars: { ...initial.stars, ...saved.stars }, spin: { ...initial.spin, ...saved.spin }, gift: { ...initial.gift, ...saved.gift }, rewards: Array.isArray(saved.rewards) ? saved.rewards : initial.rewards, withdrawals: Array.isArray(saved.withdrawals) ? saved.withdrawals : initial.withdrawals, dev: { ...initial.dev, ...saved.dev } };
   } catch { return initial; }
 }
-function localPersist(value: SessionSnapshot) { if (typeof localStorage !== "undefined") { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch {} } }
+function localPersist(value: SessionSnapshot) {
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    } catch {
+      // Ignore localStorage failures.
+    }
+  }
+}
 let state = localStateLoad();
 const ok = <T>(data: T): ServiceResult<T> => ({ ok: true, data });
 const fail = (code: ServiceError["code"], message: string): ServiceResult<never> => ({ ok: false, error: { code, message } });
@@ -169,12 +177,28 @@ export const cricketApi = {
     }
     if (amount < state.withdrawalMinimum) return fail("BELOW_MINIMUM", `Минимальная сумма вывода — ${state.withdrawalMinimum} Stars.`);
     if (amount > state.stars.amount) return fail("INSUFFICIENT_STARS", "Недостаточно Stars.");
-    state.stars.amount -= amount; const withdrawal: Withdrawal = { id: `w_${Math.random().toString(36).slice(2, 9)}`, rewardTitle: "Telegram Stars", amount, requestedAt: new Date().toISOString(), status: "PENDING" }; state.withdrawals = [withdrawal, ...state.withdrawals]; localPersist(state); return ok({ withdrawal, snapshot: structuredClone(state) });
+    const withdrawal: Withdrawal = { id: `w_${Math.random().toString(36).slice(2, 9)}`, rewardTitle: "Telegram Stars", amount, requestedAt: new Date().toISOString(), status: "PENDING" };
+    state.stars.amount -= amount; state.withdrawals = [withdrawal, ...state.withdrawals]; localPersist(state); return ok({ withdrawal, snapshot: structuredClone(state) });
   },
-  async setSeasonState(next: SessionSnapshot["season"]["state"]): Promise<ServiceResult<SessionSnapshot>> { if (!inTelegram()) { state.season.state = next; localPersist(state); return ok(structuredClone(state)); } return fail("NETWORK", "Состояние сезона изменяется только из админ-панели."); },
-  async setSubscribed(value: boolean): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("SET_SUBSCRIBED", value); if (!result.ok) return result; const session = await backendSession(); return session; } state.user.isSubscribed = value; localPersist(state); return ok(structuredClone(state)); },
-  async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("SET_STARS", amount); if (!result.ok) return result; const session = await backendSession(); return session; } state.stars.amount = Math.max(0, Math.min(state.stars.max, Math.round(amount))); localPersist(state); return ok(structuredClone(state)); },
-  async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("SET_SUBSCRIBED", value); if (!result.ok) return result; return backendSession(); } state.dev.simulateNetworkError = value; localPersist(state); return ok(structuredClone(state)); },
-  async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> { if (inTelegram()) { const result = await devState("RESET_FREE_SPIN"); if (!result.ok) return result; return backendSession(); } state.spin.freeSpins = 1; localPersist(state); return ok(structuredClone(state)); },
+  async setSeasonState(stateValue: SeasonState): Promise<ServiceResult<SessionSnapshot>> {
+    if (inTelegram()) return fail("NETWORK", "Доступно только локально для DEV.");
+    state.season.state = stateValue; localPersist(state); return ok(structuredClone(state));
+  },
+  async setSubscribed(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
+    if (inTelegram()) return devState("SET_SUBSCRIBED", value).then(async (result) => result.ok ? await backendSession() : result as ServiceResult<SessionSnapshot>);
+    state.user.isSubscribed = value; localPersist(state); return ok(structuredClone(state));
+  },
+  async setStarsAmount(amount: number): Promise<ServiceResult<SessionSnapshot>> {
+    if (inTelegram()) return devState("SET_STARS", amount).then(async (result) => result.ok ? await backendSession() : result as ServiceResult<SessionSnapshot>);
+    state.stars.amount = Math.max(0, Math.min(state.stars.max, Math.round(amount))); localPersist(state); return ok(structuredClone(state));
+  },
+  async setSimulateNetworkError(value: boolean): Promise<ServiceResult<SessionSnapshot>> {
+    if (inTelegram()) return ok(structuredClone(state));
+    state.dev.simulateNetworkError = value; localPersist(state); return ok(structuredClone(state));
+  },
+  async resetDailyFreeSpin(): Promise<ServiceResult<SessionSnapshot>> {
+    if (inTelegram()) return devState("RESET_FREE_SPIN").then(async (result) => result.ok ? await backendSession() : result as ServiceResult<SessionSnapshot>);
+    state.spin.freeSpins = 1; localPersist(state); return ok(structuredClone(state));
+  },
   async reset(): Promise<ServiceResult<SessionSnapshot>> { state = createInitialSnapshot(); localPersist(state); return ok(structuredClone(state)); },
 };
