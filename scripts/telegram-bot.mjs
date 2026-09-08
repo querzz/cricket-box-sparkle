@@ -298,10 +298,23 @@ async function handleDiscussionMessage(message) {
 
 let discussionChatId = null;
 
+async function configureBotCommands() {
+  await api("setMyCommands", {
+    commands: [
+      { command: "start", description: "Открыть CRICKET BOX" },
+      { command: "paysupport", description: "Поддержка по оплате" },
+      { command: "id", description: "Показать Telegram ID" },
+      { command: "admin", description: "Открыть админ-панель" },
+      { command: "checkchannel", description: "Проверить настройки канала" },
+    ],
+  });
+}
+
 async function main() {
   const me = await api("getMe");
   console.log(`@${me.username || botUsername} is running`);
   console.log(`App URL: ${appUrl}`);
+  await configureBotCommands();
 
   if (!/^https:\/\//i.test(appUrl)) console.warn("APP_URL is not HTTPS. Telegram Web Apps and invoices require HTTPS in production.");
   if (channelId) {
@@ -311,6 +324,9 @@ async function main() {
     try {
       const member = await api("getChatMember", { chat_id: channelId, user_id: me.id });
       console.log(`Bot channel status: ${member.status}`);
+      if (!["administrator", "creator"].includes(member.status)) {
+        console.warn("Bot is not an administrator of TELEGRAM_CHANNEL_ID; channel activity and membership updates may be incomplete.");
+      }
     } catch (error) {
       console.warn(`Bot channel status check failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -324,12 +340,16 @@ async function main() {
       const updates = await api("getUpdates", {
         timeout: 25,
         offset,
-        allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "chat_member", "message_reaction", "message_reaction_count", "pre_checkout_query"],
+        allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "chat_member", "my_chat_member", "message_reaction", "message_reaction_count", "pre_checkout_query"],
       });
 
       for (const update of updates) {
         offset = update.update_id + 1;
 
+        if (update.my_chat_member) {
+          console.log(`Bot membership update: chat=${update.my_chat_member.chat?.id ?? "unknown"}, status=${update.my_chat_member.new_chat_member?.status ?? "unknown"}`);
+          continue;
+        }
         if (update.chat_member) {
           await handleChannelMemberUpdate(update.chat_member);
           continue;
