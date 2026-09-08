@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS user_state (
   is_participant BOOLEAN NOT NULL DEFAULT TRUE,
   daily_gift_claimed_at TIMESTAMPTZ,
   bonus_free_spins INTEGER NOT NULL DEFAULT 0 CHECK (bonus_free_spins >= 0 AND bonus_free_spins <= 1000),
+  activity_bonus_season_id UUID,
+  activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0 CHECK (activity_bonus_spins_issued >= 0 AND activity_bonus_spins_issued <= 1000),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -211,6 +213,8 @@ SELECT us.user_id, 'OPENING_BALANCE', us.stars_balance, 'opening:' || us.user_id
  );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_season_id UUID;
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
@@ -223,6 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spins_user_season ON spins(user_id, season_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(telegram_user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_activity_channel_event_time ON channel_activity(channel_id, event_type, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
 CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id, created_at DESC);
