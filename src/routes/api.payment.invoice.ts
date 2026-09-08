@@ -31,6 +31,10 @@ export const Route = createFileRoute("/api/payment/invoice")({
         if (!current) return Response.json({ ok: false, code: "SEASON_NOT_ACTIVE" }, { status: 409 });
         if (!current.paid_spin_enabled) return Response.json({ ok: false, code: "PAID_SPIN_DISABLED" }, { status: 409 });
 
+        const starsBalance = Number(state.rows[0]?.stars_balance ?? 0);
+        const prizeAvailability = await query<{ total_remaining: string }>(`SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer)`, [current.id,starsBalance,MAX_STARS]);
+        if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) return Response.json({ ok:false, code:"NO_PRIZES" }, { status:409 });
+
         const pending = await query<PendingPayment>(
           `SELECT payload->>'payload' AS payload,amount::text,created_at::text
              FROM star_transactions
@@ -43,14 +47,8 @@ export const Route = createFileRoute("/api/payment/invoice")({
           [user.rows[0].id, current.id],
         );
         let existing = pending.rows[0];
-        const starsBalance = Number(state.rows[0]?.stars_balance ?? 0);
         const price = Number(current.paid_spin_price);
         if (!Number.isSafeInteger(price) || price <= 0) return Response.json({ ok:false, code:"PAID_SPIN_DISABLED" }, { status:409 });
-
-        if (!existing?.payload) {
-          const prizeAvailability = await query<{ total_remaining: string }>(`SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer)`, [current.id,starsBalance,MAX_STARS]);
-          if (Number(prizeAvailability.rows[0]?.total_remaining ?? 0) <= 0) return Response.json({ ok:false, code:"NO_PRIZES" }, { status:409 });
-        }
 
         let payload = existing?.payload ?? `paidspin:v1:${user.rows[0].id}:${current.id}:${crypto.randomUUID().replaceAll("-","")}`;
         let transactionAmount = existing ? Number(existing.amount) : price;
