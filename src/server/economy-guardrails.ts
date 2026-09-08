@@ -41,22 +41,23 @@ export function evaluateEconomyGuardrails(input: EconomyGuardrailInput): Economy
   const projectedSeasonSpins = Math.max(0, input.projectedSeasonSpins);
   const paidSpinPrice = Math.max(0, input.paidSpinPrice);
   const prizes = input.prizes.filter(p => p.quantityTotal > 0);
-  const totalFiniteInventory = prizes.reduce((sum, p) => sum + p.quantityRemaining, 0);
+  const finiteRewards = prizes.filter(p => p.kind !== "EMPTY");
+  const totalFiniteInventory = finiteRewards.reduce((sum, p) => sum + Math.max(0, p.quantityRemaining), 0);
   const projectedInventoryDemand = Math.min(projectedSeasonSpins, totalFiniteInventory);
   const inventoryCoverage = projectedSeasonSpins > 0 ? totalFiniteInventory / projectedSeasonSpins : Number.POSITIVE_INFINITY;
-  const starsLiability = prizes.filter(p => p.kind === "STARS").reduce((sum, p) => sum + Math.max(0, p.amount) * p.quantityTotal, 0);
-  const materialCost = prizes.reduce((sum, p) => sum + Math.max(0, p.unitCost) * p.quantityTotal, 0);
+  const starsLiability = prizes.filter(p => p.kind === "STARS").reduce((sum, p) => sum + Math.max(0, p.amount) * Math.max(0, p.quantityTotal), 0);
+  const materialCost = prizes.reduce((sum, p) => sum + Math.max(0, p.unitCost) * Math.max(0, p.quantityTotal), 0);
   const projectedPaidSpins = input.simulation?.averageCompleted ?? projectedSeasonSpins;
   const theoreticalGrossAtProjectedPaidSpins = projectedPaidSpins * paidSpinPrice;
 
   const warnings: string[] = [];
   if (projectedSeasonSpins > 0 && totalFiniteInventory < projectedSeasonSpins) {
-    warnings.push("Потенциальных finite-наград меньше прогнозируемого числа спинов: часть сезона может уйти в EMPTY.");
+    warnings.push("Потенциальных finite-наград меньше прогнозируемого числа спинов: при полном расходе фонда часть спинов может уйти в EMPTY.");
   }
   if (inventoryCoverage < 0.25) {
-    warnings.push("Фонд покрывает менее 25% прогнозируемых спинов.");
+    warnings.push("Фонд наград покрывает менее 25% прогнозируемых спинов.");
   } else if (inventoryCoverage < 0.5) {
-    warnings.push("Фонд покрывает менее 50% прогнозируемых спинов.");
+    warnings.push("Фонд наград покрывает менее 50% прогнозируемых спинов.");
   }
   if (input.simulation) {
     const exhausted = input.simulation.prizeResults.filter(p => p.exhaustRate >= 0.5);
