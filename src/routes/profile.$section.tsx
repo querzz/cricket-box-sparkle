@@ -11,6 +11,8 @@ import { useSession } from "@/store/session";
 
 type SupportInfo = { support?: { username: string | null; url: string | null } | null };
 
+type SupportContact = NonNullable<SupportInfo["support"]>;
+
 export const Route = createFileRoute("/profile/$section")({
   head: () => ({ meta: [{ title: "Информация — CRICKET BOX" }, { name: "description", content: "Таблица лидеров, правила, FAQ, история и поддержка." }] }),
   component: SectionScreen,
@@ -39,7 +41,7 @@ const faq = [
 function SectionScreen() {
   const { section } = useParams({ from: "/profile/$section" });
   const { snapshot, loading } = useSession();
-  const [support, setSupport] = useState<NonNullable<SupportInfo["support"]> | null>(null);
+  const [support, setSupport] = useState<SupportContact | undefined>(undefined);
   const title = titles[section] ?? "Раздел";
 
   useEffect(() => {
@@ -47,8 +49,8 @@ function SectionScreen() {
     let mounted = true;
     fetch("/api/support")
       .then((response) => response.ok ? response.json() as Promise<SupportInfo> : null)
-      .then((data) => { if (mounted) setSupport(data?.support ?? null); })
-      .catch(() => { if (mounted) setSupport(null); });
+      .then((data) => { if (mounted) setSupport(data?.support ?? undefined); })
+      .catch(() => { if (mounted) setSupport(undefined); });
     return () => { mounted = false; };
   }, [section]);
 
