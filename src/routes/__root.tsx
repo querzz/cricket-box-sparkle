@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Outlet, Link, createRootRouteWithContext, useRouter, HeadContent, Scripts } from "@tanstack/react-router";
+import { Outlet, Link, createRootRouteWithContext, useRouter, HeadContent, Scripts, type ErrorComponentProps } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
@@ -18,10 +18,11 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => { reportLovableError(error, { boundary: "tanstack_root_error_component" }); }, [error]);
+  const errorForReporting = error instanceof Error ? error : new Error(String(error));
+  useEffect(() => { reportLovableError(errorForReporting, { boundary: "tanstack_root_error_component" }); }, [errorForReporting]);
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4"><div className="max-w-md text-center">
       <h1 className="font-display text-lg uppercase tracking-[0.18em]">Не удалось загрузить страницу</h1>
