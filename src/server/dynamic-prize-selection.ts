@@ -29,14 +29,18 @@ export type DynamicSelectionResult<T extends DynamicPrize> = {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 function configuredWeight(prize: DynamicPrize) {
-  const configured = Number(prize.metadata?.weight ?? 1);
-  // weight=0 is an explicit valid choice: the outcome stays visible in the
-  // prize catalogue but cannot be selected until the weight is raised.
-  return Number.isFinite(configured) && configured >= 0 ? configured : 1;
+  const raw = prize.metadata?.weight;
+  if (raw === undefined || raw === null || raw === "") return 1;
+
+  const configured = Number(raw);
+  if (!Number.isFinite(configured) || configured < 0) {
+    throw new Error("INVALID_PRIZE_WEIGHT");
+  }
+  return configured;
 }
 
 /**
- * Canonical Season selection model.
+ * Canonical Season MVP selection model.
  * Every remaining inventory unit contributes its configured weight.
  * No hidden pacing, pity, anti-streak or time-based probability changes.
  */
@@ -48,6 +52,7 @@ export function buildDynamicWeights<T extends DynamicPrize>(
     const baseWeight = configuredWeight(prize);
     const inventoryPressure = Math.max(0, Number(prize.quantity_remaining) || 0);
     const finalWeight = baseWeight * inventoryPressure;
+
     return {
       prize,
       diagnostics: {
