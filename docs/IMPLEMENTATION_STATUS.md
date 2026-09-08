@@ -59,11 +59,14 @@ Repository: `querzz/cricket-box-sparkle`
 
 ### LiveOps / economy administration
 - `/api/admin/economy` exposes live season metrics, inventory consumption and current per-prize multipliers.
-- Admin can persist an auditable economy snapshot.
+- Economy snapshots can be persisted with an audit record and historical snapshots can be requested from the same endpoint.
 - `/api/admin/drops` supports scheduled and manual drops, cancellation and manual activation.
 - Drop payloads validate prize type, quantity, amount and unit cost before insertion.
+- Drop trigger values are validated for trigger semantics and bounded payload size.
 - Automatic due-drop activation is executed inside the same transaction as the spin/payment settlement.
 - `/admin/economics` is connected to PostgreSQL and exposes live metrics, scenario planning, prize multipliers, economy snapshots and LiveOps controls.
+- `src/server/season-simulator.ts` can simulate the current adaptive prize economy with deterministic seeded trials, reporting average wins, remaining inventory, win rates and exhaustion rates.
+- `/api/admin/economy/simulate` exposes the simulator for controlled admin scenario testing without mutating production inventory.
 
 ### Payouts / withdrawals
 - Payout lifecycle and bulk admin processing exist.
@@ -90,18 +93,18 @@ The following real admin routes exist and use backend APIs:
 
 ### CI / verification
 - GitHub Actions CI runs build, TypeScript check and lint on pushes/PRs.
-- Local DB integration test cleanup no longer fails because of the append-only ledger; immutable ledger fixtures are intentionally retained.
-- Recent local verification reached passing TypeScript, production build and DB integration checks after the spin-route syntax fix.
+- GitHub DB integration tests remain the safety net for schema/inventory/idempotency invariants.
+- Local verification has reached passing TypeScript, production build, DB integration and lint checks on the current development line.
 
 ## Important remaining production gaps
 
 1. Real Premium/money/NFT fulfillment providers and reconciliation are not implemented.
-2. Statistics and Economy Planner still do not expose every KPI from the full specification, especially full funnel/retention/break-even reporting across all historical cohorts.
+2. Statistics still do not expose every KPI from the full specification, especially full funnel/retention reporting across all historical cohorts.
 3. Full automatic season transition jobs are not implemented; state changes are currently guarded by the service when requests occur.
 4. Complete replay/double-click/payment-recovery security regression tests still need to run against the current application.
 5. Browser/Telegram Mini App QA and production payout/refund verification still need to be performed.
 6. The frontend still contains a local mock fallback path for non-Telegram development; real Telegram flow remains server-authoritative.
-7. Current LiveOps execution is request-driven by user spins; a background scheduler would be needed for trigger execution during periods with no traffic.
+7. LiveOps has no independent background scheduler yet, so a time-based drop cannot execute while the application receives zero spin/payment traffic.
 
 ## Deliberately not implementing now
 
