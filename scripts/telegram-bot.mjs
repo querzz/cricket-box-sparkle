@@ -232,21 +232,24 @@ function supportText() {
     : "💳 Поддержка по оплате\n\nОпиши проблему с оплатой и сохрани чек/квитанцию Telegram. Поддержка проекта обработает запрос вручную.";
 }
 
-async function checkChannelAccess(chatId) {
+async function checkChannelAccess() {
   if (!channelId) throw new Error("TELEGRAM_CHANNEL_ID is missing in .env");
   const bot = await api("getMe");
-  const member = await api("getChatMember", { chat_id: chatId, user_id: bot.id });
-  return { bot, member };
+  const chat = await api("getChat", { chat_id: channelId });
+  const member = await api("getChatMember", { chat_id: channelId, user_id: bot.id });
+  return { bot, chat, member };
 }
 
 async function sendChannelStatus(chatId) {
   try {
-    const { bot, member } = await checkChannelAccess(chatId);
+    const { bot, chat, member } = await checkChannelAccess();
     const status = member.status || "unknown";
     const admin = ["administrator", "creator"].includes(status);
+    const title = chat.title || "без названия";
+    const username = chat.username ? `@${chat.username}` : "без username";
     await api("sendMessage", {
       chat_id: chatId,
-      text: `📢 Канал: ${chatId}\n🤖 Бот: @${bot.username || botUsername}\n\nСтатус: ${status}\n\n${admin ? "✅ Бот имеет права администратора." : "❌ Бот НЕ является администратором."}`,
+      text: `📢 Канал: ${chat.id}\n📝 ${title}\n🔗 ${username}\n🤖 Бот: @${bot.username || botUsername}\n\nСтатус: ${status}\n\n${admin ? "✅ Бот имеет права администратора." : "❌ Бот НЕ является администратором."}`,
     });
   } catch (error) {
     await api("sendMessage", { chat_id: chatId, text: `❌ Не удалось проверить канал.\n\n${error instanceof Error ? error.message : String(error)}` });
