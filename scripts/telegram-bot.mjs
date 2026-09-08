@@ -24,6 +24,7 @@ loadEnv();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CricketBoxBot";
+const supportUsername = (process.env.TELEGRAM_SUPPORT_USERNAME || "").replace(/^@/, "");
 const appUrl = process.env.APP_URL || "http://localhost:8081";
 const databaseUrl = process.env.DATABASE_URL;
 const { Client } = pg;
@@ -110,7 +111,8 @@ async function validatePreCheckout(query) {
             u.telegram_id::text AS telegram_id,
             s.id::text AS season_id,
             s.state,
-            s.paid_spin_price
+            s.paid_spin_price,
+            s.paid_spin_enabled
        FROM star_transactions st
        JOIN users u ON u.id = st.user_id
        JOIN seasons s ON s.id::text = $2
@@ -120,9 +122,28 @@ async function validatePreCheckout(query) {
     [payload, seasonId],
   );
   const row = db.rows[0];
-  if (!row || row.status !== "PENDING" || row.user_id !== userId || row.season_id !== seasonId || row.telegram_id !== String(query.from?.id ?? "") || Number(row.amount) !== amount || Number(row.paid_spin_price) !== amount || !["ACTIVE", "ENDING"].includes(row.state)) {
+  if (!row || row.status !== "PENDING" || row.user_id !== userId || row.season_id !== seasonId || row.telegram_id !== String(query.from?.id ?? "") || Number(row.amount) !== amount || Number(row.paid_spin_price) !== amount || row.paid_spin_enabled !== true || !["ACTIVE", "ENDING"].includes(row.state)) {
     return { ok: false, error: "Заказ недействителен или сезон уже недоступен." };
   }
+
+  const availability = await paymentDbQuery(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM prizes
+        WHERE season_id=$1::uuid
+          AND quantity_remaining>0
+          AND is_active=TRUE
+          AND (kind<>'STARS' OR (SELECT stars_balance FROM user_state WHERE user_id=$2::uuid) < 500)
+     ) AS available`,
+    [seasonId, userId],
+  );
+  if (!availability.rows[0]?.available) return { ok: false, error: "Призы этого сезона уже закончились." };
+
+  const state = await paymentDbQuery(`SELECT is_subscribed,is_participant FROM user_state WHERE user_id=$1::uuid LIMIT 1`, [userId]);
+  if (!state.rows[0]?.is_subscribed || !state.rows[0]?.is_participant) {
+    return { ok: false, error: "Условия участия больше не выполнены." };
+  }
+
   return { ok: true };
 }
 
@@ -150,6 +171,12 @@ function adminButton() {
   const url = `${base}/admin`;
   if (/^https:\/\//i.test(url)) return { text: "🛡 Админ-панель", web_app: { url } };
   return { text: "🛡 Открыть админку", url };
+}
+
+function supportText() {
+  return supportUsername
+    ? `💳 Поддержка по оплате\n\nОпиши проблему и напиши нам: @${supportUsername}\n\nСохрани чек/квитанцию Telegram, если проблема связана с оплатой.`
+    : "💳 Поддержка по оплате\n\nОпиши проблему с оплатой и сохрани чек/квитанцию Telegram. Поддержка проекта обработает запрос вручную.";
 }
 
 async function main() {
@@ -214,6 +241,11 @@ async function main() {
 
         const text = message.text || "";
         const telegramId = Number(message.from?.id ?? message.chat.id);
+
+        if (text === "/paysupport") {
+          await api("sendMessage", { chat_id: message.chat.id, text: supportText() });
+          continue;
+        }
 
         if (text === "/id") {
           await api("sendMessage", { chat_id: message.chat.id, text: `🆔 Твой Telegram ID: ${telegramId}` });
