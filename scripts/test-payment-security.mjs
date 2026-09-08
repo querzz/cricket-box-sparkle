@@ -61,9 +61,13 @@ try {
   user = userResult.rows[0].id;
   await db.query(`INSERT INTO user_state(user_id,stars_balance) VALUES($1,125)`, [user]);
 
+  // The payment-security assertions below exercise transaction/idempotency invariants,
+  // not season activation. Keep the fixture non-live so the test can run safely against
+  // a development database that already has an ACTIVE/ENDING season protected by
+  // ux_one_live_season.
   const seasonResult = await db.query(
     `INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by)
-     VALUES($1,'Payment Security','ACTIVE',now()-interval '1 hour',now()+interval '1 day',100,$2) RETURNING id`,
+     VALUES($1,'Payment Security','DRAFT',NULL,NULL,100,$2) RETURNING id`,
     [`PAYSEC-${suffix}`, admin],
   );
   season = seasonResult.rows[0].id;
