@@ -18,10 +18,6 @@ const db = new Client({ connectionString: process.env.DATABASE_URL });
 const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 const assert = (value, message) => { if (!value) throw new Error(`ASSERTION FAILED: ${message}`); };
 let tx = false;
-let userId;
-let adminId;
-let seasonId;
-let prizeId;
 
 try {
   await db.connect();
@@ -30,19 +26,19 @@ try {
   tx = true;
 
   const admin = await db.query(`INSERT INTO admins(telegram_id,username,role,is_active) VALUES($1,$2,'OWNER',TRUE) RETURNING id`, [860000000 + Number(String(Date.now()).slice(-7)), `spin_idem_admin_${suffix}`]);
-  adminId = admin.rows[0].id;
+  const adminId = admin.rows[0].id;
   const user = await db.query(`INSERT INTO users(telegram_id,username,first_name) VALUES($1,$2,'Idempotency') RETURNING id`, [850000000 + Number(String(Date.now()).slice(-7)), `spin_idem_user_${suffix}`]);
-  userId = user.rows[0].id;
+  const userId = user.rows[0].id;
   await db.query(`INSERT INTO user_state(user_id,stars_balance) VALUES($1,125)`, [userId]);
 
-  // The full schema may contain a seeded ACTIVE season. Close it inside this
+  // The full schema may contain a seeded ACTIVE/ENDING season. Close it inside this
   // transaction so this isolated fixture can own the single-live-season slot.
-  await db.query(`UPDATE seasons SET state='ENDED', ends_at=LEAST(COALESCE(ends_at, now()), now()) WHERE state='ACTIVE'`);
+  await db.query(`UPDATE seasons SET state='CLOSED', ends_at=LEAST(COALESCE(ends_at, now()), now()) WHERE state IN ('ACTIVE','ENDING')`);
 
   const season = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Idempotency Season','ACTIVE',now()-interval '1 hour',now()+interval '1 day',100,$2) RETURNING id`, [`IDEM-${suffix}`, adminId]);
-  seasonId = season.rows[0].id;
+  const seasonId = season.rows[0].id;
   const prize = await db.query(`INSERT INTO prizes(season_id,kind,title,amount,quantity_total,quantity_remaining) VALUES($1,'CUSTOM','Idempotent Prize',42,10,10) RETURNING id`, [seasonId]);
-  prizeId = prize.rows[0].id;
+  const prizeId = prize.rows[0].id;
 
   const key = `spin-request-${suffix}`;
   const first = await db.query(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status,idempotency_key,completed_at) VALUES($1,$2,'FREE',0,$3,'COMPLETED',$4,now()) RETURNING id`, [userId, seasonId, prizeId, key]);
