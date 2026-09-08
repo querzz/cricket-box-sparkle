@@ -53,15 +53,19 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       if(!userResult.rows[0])throw new Error("USER_NOT_FOUND");
       const user=userResult.rows[0];
 
-      const existing=await client.query<{id:string;created_at:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;payout_id:string|null}>(
-        `SELECT s.id::text,s.created_at::text,p.kind,p.title,p.subtitle,p.amount::text,p.currency,py.id::text AS payout_id
+      const existing=await client.query<{id:string;created_at:string;type:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;payout_id:string|null;reward_stars:string;credited_stars:string}>(
+        `SELECT s.id::text,s.created_at::text,s.type,p.kind,p.title,p.subtitle,p.amount::text,p.currency,py.id::text AS payout_id,
+                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'requestedAmount')::integer,sl.amount) ELSE 0 END)
+                            FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS reward_stars,
+                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'creditedAmount')::integer,sl.amount) ELSE 0 END)
+                            FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS credited_stars
            FROM spins s JOIN prizes p ON p.id=s.prize_id LEFT JOIN payouts py ON py.spin_id=s.id
           WHERE s.user_id=$1::uuid AND s.idempotency_key=$2 AND s.status='COMPLETED'
           ORDER BY s.created_at DESC LIMIT 1`,[user.id,idempotencyKey]);
       if(existing.rows[0]){
         const row=existing.rows[0];
         const prize={id:row.id,kind:row.kind,title:row.title,subtitle:row.subtitle,amount:row.amount,currency:row.currency,metadata:{},quantity_total:1,quantity_remaining:0};
-        return {spinId:row.id,payoutId:row.payout_id,createdAt:row.created_at,prize,credited:row.kind==="STARS"?Number(row.amount):0,rewardStars:row.kind==="STARS"?Number(row.amount):0,spinType:"FREE",duplicate:true};
+        return {spinId:row.id,payoutId:row.payout_id,createdAt:row.created_at,prize,credited:Number(row.credited_stars)||0,rewardStars:Number(row.reward_stars)||0,spinType:row.type,duplicate:true};
       }
 
       await client.query(`INSERT INTO user_state(user_id,stars_balance,is_subscribed,is_participant,bonus_free_spins) VALUES($1::uuid,125,TRUE,TRUE,0) ON CONFLICT(user_id) DO NOTHING`,[user.id]);
