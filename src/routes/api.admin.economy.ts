@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { authenticateAdmin } from "@/server/auth/access";
 import { query } from "@/server/db";
 import { buildEconomyMetrics, getEconomyMultiplier } from "@/server/season-economy";
+import { writeEconomySnapshot } from "@/server/liveops";
 
 export const Route = createFileRoute("/api/admin/economy")({
   server: { handlers: {
@@ -23,6 +24,23 @@ export const Route = createFileRoute("/api/admin/economy")({
       } catch(error) {
         const code=error instanceof Error?error.message:"REQUEST_FAILED";
         return Response.json({ok:false,code},{status:code==="SEASON_NOT_FOUND"?404:401});
+      }
+    },
+    POST: async ({ request }) => {
+      try {
+        const body = await request.json() as { initData?: string; seasonId?: string };
+        const actor = await authenticateAdmin(body.initData ?? "");
+        const seasonId = (body.seasonId ?? "").trim();
+        if (!seasonId) return Response.json({ ok:false, code:"INVALID_SEASON" }, { status:400 });
+        const season = await query<{id:string;code:string;starts_at:string|null;ends_at:string|null}>(`SELECT id::text,code,starts_at::text,ends_at::text FROM seasons WHERE id=$1::uuid`,[seasonId]);
+        if (!season.rows[0]) return Response.json({ ok:false, code:"SEASON_NOT_FOUND" }, { status:404 });
+        const snapshot = await writeEconomySnapshot({ query } as never, { id:seasonId, startsAt:season.rows[0].starts_at, endsAt:season.rows[0].ends_at });
+        const snapshotResult = await query<{id:string;created_at:string}>(`SELECT id::text,created_at::text FROM season_economy_snapshots WHERE season_id=$1::uuid ORDER BY created_at DESC LIMIT 1`,[seasonId]);
+        if (snapshotResult.rows[0]) await query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'ECONOMY_SNAPSHOT_CREATED','season_economy_snapshot',$2,$3::jsonb)`,[actor.id,snapshotResult.rows[0].id,JSON.stringify({seasonId,metrics:snapshot.metrics})]);
+        return Response.json({ok:true,snapshot:{id:snapshotResult.rows[0]?.id??null,...snapshot}});
+      } catch(error) {
+        const code=error instanceof Error?error.message:"REQUEST_FAILED";
+        return Response.json({ok:false,code},{status:401});
       }
     },
   }},
