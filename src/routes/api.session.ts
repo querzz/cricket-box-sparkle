@@ -37,10 +37,13 @@ type SeasonRow = {
 };
 
 function displaySeasonTitle(code: string, name: string) {
-  const match = code.trim().match(/^C(?:B)?(\d+)(?:[-_]|$)/i);
+  const cleanCode = code.trim();
+  const match = cleanCode.match(/^(?:CB|C)(\d+)(?:[-_].*)?$/i);
   if (match) return `CRICKET BOX #${match[1]!.padStart(3, "0")}`;
   const cleanName = name.trim();
-  return /^C(?:B)?\d+[-_]/i.test(cleanName) ? "CRICKET BOX #001" : cleanName || "CRICKET BOX";
+  const namedMatch = cleanName.match(/^CRICKET\s+BOX\s*#?(\d+)(?:[-_].*)?$/i);
+  if (namedMatch) return `CRICKET BOX #${namedMatch[1]!.padStart(3, "0")}`;
+  return cleanName || "CRICKET BOX";
 }
 
 async function fetchTelegramAvatarFileId(telegramId: number) {
@@ -107,9 +110,7 @@ export const Route = createFileRoute("/api/session")({
         );
         const storedState = stateResult.rows[0] ?? { stars_balance:125,is_subscribed:!isProductionApp(),is_participant:true,daily_gift_claimed_at:null,bonus_free_spins:0,activity_bonus_season_id:null,activity_bonus_spins_issued:0 };
         const isSubscribed = membership ?? storedState.is_subscribed;
-        if (membership !== null && membership !== storedState.is_subscribed) {
-          await query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
-        }
+        if (membership !== null && membership !== storedState.is_subscribed) await query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
 
         const seasonResult = await query<SeasonRow>(
           `SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin
@@ -119,16 +120,15 @@ export const Route = createFileRoute("/api/session")({
         if (!season) return Response.json({ ok:false, code:"NO_SEASON" }, { status:409 });
 
         const activityResult = await query<{ points:string; reactions:string; comments:string; joins:string; active_days:string }>(
-          `SELECT
-             COALESCE(SUM(activity_points),0)::text AS points,
-             COUNT(*) FILTER (WHERE event_type='REACTION')::text AS reactions,
-             COUNT(*) FILTER (WHERE event_type='COMMENT')::text AS comments,
-             COUNT(*) FILTER (WHERE event_type='JOIN')::text AS joins,
-             COUNT(DISTINCT occurred_at::date)::text AS active_days
-           FROM channel_activity
-           WHERE telegram_user_id=$1
-             AND ($2::timestamptz IS NULL OR occurred_at >= $2::timestamptz)
-             AND ($3::timestamptz IS NULL OR occurred_at <= $3::timestamptz)`,
+          `SELECT COALESCE(SUM(activity_points),0)::text AS points,
+                  COUNT(*) FILTER (WHERE event_type='REACTION')::text AS reactions,
+                  COUNT(*) FILTER (WHERE event_type='COMMENT')::text AS comments,
+                  COUNT(*) FILTER (WHERE event_type='JOIN')::text AS joins,
+                  COUNT(DISTINCT occurred_at::date)::text AS active_days
+             FROM channel_activity
+            WHERE telegram_user_id=$1
+              AND ($2::timestamptz IS NULL OR occurred_at >= $2::timestamptz)
+              AND ($3::timestamptz IS NULL OR occurred_at <= $3::timestamptz)`,
           [tgUser.id, season.starts_at, season.ends_at],
         );
         const activityPoints = Math.max(0, Number(activityResult.rows[0]?.points ?? 0));
@@ -141,6 +141,13 @@ export const Route = createFileRoute("/api/session")({
           await query(`UPDATE user_state SET activity_bonus_season_id=$2::uuid,activity_bonus_spins_issued=0,updated_at=now() WHERE user_id=$1::uuid`, [user.id, season.id]);
         }
 
+        const activitySpinUsage = await query<{ used:string }>(
+          `SELECT COUNT(*)::text AS used FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='ACTIVITY_BONUS' AND status='COMPLETED'`,
+          [user.id, season.id],
+        );
+        const activityUsed = Number(activitySpinUsage.rows[0]?.used ?? 0);
+        const activityBonusRemaining = Math.max(0, activityIssued - activityUsed);
+
         if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && storedState.is_participant) {
           const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
           const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
@@ -150,12 +157,13 @@ export const Route = createFileRoute("/api/session")({
             activityIssued += grant;
           }
         }
+        const effectiveActivityBonusRemaining = activityBonusRemaining + Math.max(0, activityIssued - Number(activitySpinUsage.rows[0]?.used ?? 0) - activityBonusRemaining);
 
         const prizeResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;quantity_remaining:number;quantity_total:number;metadata:Record<string,unknown>|null;image_url:string|null}>(
           `SELECT id::text,kind,title,subtitle,amount::text,quantity_remaining,quantity_total,metadata,image_url FROM prizes WHERE season_id=$1::uuid AND is_active=TRUE ORDER BY created_at ASC`, [season.id]);
         const spinStats = await query<{total:string}>(`SELECT COUNT(*)::text AS total FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND status='COMPLETED'`, [user.id,season.id]);
         const freeToday = await query<{exists:boolean}>(
-          `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id],
+          `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type IN ('FREE','ACTIVITY_BONUS') AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id],
         );
         const live = season.state === "ACTIVE" || season.state === "ENDING";
         const dailyAvailable = season.daily_free_spin && live && isSubscribed && storedState.is_participant && !freeToday.rows[0]?.exists ? 1 : 0;
@@ -167,7 +175,7 @@ export const Route = createFileRoute("/api/session")({
         const giftHistory = await query<{id:string;kind:string;title:string;amount:number;created_at:string}>(`SELECT id::text,kind,title,amount,created_at::text FROM daily_gift_claims WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 30`, [user.id]);
         const rewards = [
           ...rewardResult.rows.map((r)=>({ id:`${r.id}_reward`,kind:r.kind==="FREE_SPIN"?"FREE_SPIN":r.kind,title:r.title,subtitle:r.subtitle??undefined,amount:Number(r.amount)||undefined,wonAt:r.created_at,status:r.status==="PAID"?"RECEIVED":"PENDING",payoutNote:r.status==="PAID"?"Выдано.":"Ожидает выдачи администратором." })),
-          ...giftHistory.rows.map((g)=>({ id:`${g.id}_gift`,kind:g.kind,title:g.title,amount:Number(g.amount)||undefined,wonAt:g.created_at,status:"RECEIVED" as const,payoutNote:g.kind==="XP"?`+${g.amount} XP`:g.kind==="FREE_SPIN"?`+${g.amount} бесплатная прокрутка`:g.kind==="NOTHING`?"Без награды.":`+${g.amount} Stars` })),
+          ...giftHistory.rows.map((g)=>({ id:`${g.id}_gift`,kind:g.kind,title:g.title,amount:Number(g.amount)||undefined,wonAt:g.created_at,status:"RECEIVED" as const,payoutNote:g.kind==="XP"?`+${g.amount} XP`:g.kind==="FREE_SPIN"?`+${g.amount} бесплатная прокрутка`:g.kind==="NOTHING"?"Без награды.":`+${g.amount} Stars` })),
         ].sort((a,b)=>new Date(b.wonAt).getTime()-new Date(a.wonAt).getTime()).slice(0,60);
         const leaderboardResult = await query<{rank:number;user_id:string;username:string|null;spins_count:number;wins_count:number;stars_won:string;level:number}>(
           `SELECT sl.rank,sl.user_id::text,u.username,sl.spins_count,sl.wins_count,sl.stars_won::text,u.level FROM season_leaderboard sl JOIN users u ON u.id=sl.user_id WHERE sl.season_id=$1::uuid AND (sl.rank<=10 OR sl.user_id=$2::uuid) ORDER BY sl.rank ASC`, [season.id,user.id]);
@@ -175,8 +183,9 @@ export const Route = createFileRoute("/api/session")({
         const claimedAt = storedState.daily_gift_claimed_at ? new Date(storedState.daily_gift_claimed_at) : null;
         const giftedRecently = Boolean(claimedAt && Number.isFinite(claimedAt.getTime()) && Date.now()-claimedAt.getTime()<GIFT_COOLDOWN_MS);
         const nextGift = giftedRecently && claimedAt ? new Date(claimedAt.getTime()+GIFT_COOLDOWN_MS) : new Date();
-        const activityPercent = Math.round(((activityPoints % ACTIVITY_POINTS_PER_SPIN) / ACTIVITY_POINTS_PER_SPIN) * 100);
+        const activityPercent = activityPoints >= MAX_ACTIVITY_BONUS_SPINS * ACTIVITY_POINTS_PER_SPIN ? 100 : Math.round(((activityPoints % ACTIVITY_POINTS_PER_SPIN) / ACTIVITY_POINTS_PER_SPIN) * 100);
         const activityPointsToNext = activityPoints >= MAX_ACTIVITY_BONUS_SPINS * ACTIVITY_POINTS_PER_SPIN ? 0 : ACTIVITY_POINTS_PER_SPIN - (activityPoints % ACTIVITY_POINTS_PER_SPIN);
+        const currentActivityRemaining = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.max(0, activityIssued - activityUsed + (targetActivityBonusSpins > activityIssued ? targetActivityBonusSpins - activityIssued : 0)));
 
         return Response.json({ ok:true, snapshot:{
           user:{id:user.id,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant:storedState.is_participant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
@@ -184,7 +193,7 @@ export const Route = createFileRoute("/api/session")({
           stars:{amount:Math.max(0,Math.min(MAX_STARS,Number(storedState.stars_balance??0))),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
           gift:{state:giftedRecently?"COOLDOWN":live&&isSubscribed&&storedState.is_participant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
-          activity:{points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:activityIssued,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
+          activity:{points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
           rewards,
           leaderboard:leaderboardResult.rows.map((r)=>({rank:r.rank,userId:r.user_id,username:r.username?`@${r.username.replace(/^@/,"")}`:"@username",spins:r.spins_count,wins:r.wins_count,starsWon:Number(r.stars_won??0),level:Number(r.level??1),isCurrentUser:r.user_id===user.id})),
