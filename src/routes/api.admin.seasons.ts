@@ -22,8 +22,9 @@ export const Route = createFileRoute("/api/admin/seasons")({
         const actor = await authenticateAdmin(body.initData ?? "");
         const code = (body.code ?? "").trim();
         const name = (body.name ?? code).trim();
-        if (!code || !name) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
-        const season = await createSeason({ code, name, paidSpinPrice: Math.max(1, Number(body.paidSpinPrice ?? 100)), dailyFreeSpin: body.dailyFreeSpin !== false, adminId: actor.id });
+        const paidSpinPrice = Number(body.paidSpinPrice ?? 100);
+        if (!code || !name || !Number.isSafeInteger(paidSpinPrice) || paidSpinPrice <= 0) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+        const season = await createSeason({ code, name, paidSpinPrice, dailyFreeSpin: body.dailyFreeSpin !== false, adminId: actor.id });
         if (season) {
           await query(
             `INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, after_data)
@@ -45,6 +46,7 @@ export const Route = createFileRoute("/api/admin/seasons")({
         if (body.state && !VALID_STATES.has(body.state)) return Response.json({ ok: false, code: "INVALID_STATE" }, { status: 400 });
 
         const result = await withTransaction(async (client) => {
+          await client.query(`SELECT pg_advisory_xact_lock(hashtext('cricket_box:season_state'))`);
           const before = await client.query<{ id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; paid_spin_price:number; daily_free_spin:boolean }>(
             `SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,daily_free_spin FROM seasons WHERE id=$1::uuid FOR UPDATE`, [body.id],
           );
