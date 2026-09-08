@@ -10,6 +10,7 @@ export const serverConfig = {
   channelId: process.env["TELEGRAM_CHANNEL_ID"],
   appUrl: process.env["APP_URL"] ?? "http://localhost:8081",
   databaseUrl: process.env["DATABASE_URL"],
+  supportUsername: (process.env["TELEGRAM_SUPPORT_USERNAME"] ?? "").replace(/^@/, "").trim(),
 };
 
 export function requireBotToken(): string {
