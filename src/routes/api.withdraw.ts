@@ -6,6 +6,7 @@ import { withTransaction } from "@/server/db";
 import { appendStarsLedger } from "@/server/stars-ledger";
 
 const MINIMUM = 50;
+const MAX_STARS = 500;
 const LIVE_STATES = ["ACTIVE", "ENDING"] as const;
 const WITHDRAWAL_OPEN_STATES = ["CLOSED", "PAYOUT", "ARCHIVED"] as const;
 
@@ -15,15 +16,18 @@ export const Route = createFileRoute("/api/withdraw")({
       try {
         const body = await request.json() as { initData?: unknown; amount?: unknown };
         const initData = typeof body.initData === "string" ? body.initData.trim() : "";
-        const amount = Math.floor(Number(body.amount));
+        const rawAmount = Number(body.amount);
+        const amount = Math.floor(rawAmount);
         if (!initData) return Response.json({ ok: false, code: "INIT_DATA_MISSING" }, { status: 400 });
-        if (!Number.isFinite(amount) || amount < MINIMUM) return Response.json({ ok: false, code: "BELOW_MINIMUM", minimum: MINIMUM }, { status: 400 });
+        if (!Number.isSafeInteger(rawAmount) || rawAmount !== amount || amount < MINIMUM || amount > MAX_STARS) {
+          return Response.json({ ok: false, code: amount > MAX_STARS ? "ABOVE_BALANCE_CAP" : "BELOW_MINIMUM", minimum: MINIMUM, maximum: MAX_STARS }, { status: 400 });
+        }
 
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
 
-        const withdrawal = await withTransaction(async (client) => {
+        const result = await withTransaction(async (client) => {
           const user = await client.query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
           const userRow = user.rows[0];
           if (!userRow) throw new Error("USER_NOT_FOUND");
@@ -54,7 +58,7 @@ export const Route = createFileRoute("/api/withdraw")({
           );
           const pendingRow = pending.rows[0];
           if (pendingRow) {
-            if (Number(pendingRow.amount) === amount) return pendingRow;
+            if (Number(pendingRow.amount) === amount) return { ...pendingRow, reused: true };
             throw new Error("WITHDRAWAL_PENDING");
           }
 
@@ -82,10 +86,10 @@ export const Route = createFileRoute("/api/withdraw")({
             `INSERT INTO audit_logs (action, entity_type, entity_id, after_data) VALUES ('WITHDRAWAL_REQUESTED','payout',$1,$2::jsonb)`,
             [payoutRow.id, JSON.stringify({ userId: userRow.id, amount, seasonState })],
           );
-          return payoutRow;
+          return { ...payoutRow, reused: false };
         });
 
-        return Response.json({ ok: true, withdrawal: { id: withdrawal.id, amount: Number(withdrawal.amount), requestedAt: withdrawal.created_at, status: "PENDING" }, reused: true });
+        return Response.json({ ok: true, withdrawal: { id: result.id, amount: Number(result.amount), requestedAt: result.created_at, status: "PENDING" }, reused: result.reused });
       } catch (error) {
         const code = error instanceof Error ? error.message : "WITHDRAW_FAILED";
         const status = code === "INSUFFICIENT_STARS" || code === "WITHDRAWAL_PENDING" || code === "WITHDRAW_NOT_OPEN" ? 409 : code === "USER_NOT_FOUND" ? 404 : 400;
