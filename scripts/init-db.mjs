@@ -47,7 +47,7 @@ try {
     CREATE TABLE IF NOT EXISTS api_rate_limit_buckets (
       bucket_key TEXT NOT NULL,
       bucket_start TIMESTAMPTZ NOT NULL,
-      hits INTEGER NOT NULL DEFAULT 0,
+      hits INTEGER NOT NULL DEFAULT 0 CHECK (hits >= 0),
       PRIMARY KEY (bucket_key, bucket_start)
     );
     CREATE INDEX IF NOT EXISTS idx_api_rate_limit_buckets_time
