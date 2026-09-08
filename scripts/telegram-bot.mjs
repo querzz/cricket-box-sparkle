@@ -25,6 +25,7 @@ loadEnv();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CricketBoxBot";
 const supportUsername = (process.env.TELEGRAM_SUPPORT_USERNAME || "").replace(/^@/, "");
+const channelId = (process.env.TELEGRAM_CHANNEL_ID || "").trim();
 const appUrl = process.env.APP_URL || "http://localhost:8081";
 const databaseUrl = process.env.DATABASE_URL;
 const { Client } = pg;
@@ -231,6 +232,16 @@ async function completeOrRefundPayment(message) {
   return { completed: false, refunded };
 }
 
+async function checkChannelAccess() {
+  if (!channelId) return { ok: false, code: "CHANNEL_ID_MISSING" };
+  try {
+    const member = await api("getChatMember", { chat_id: channelId, user_id: me.id }, 2);
+    return { ok: true, status: member.status, isMember: member.is_member };
+  } catch (error) {
+    return { ok: false, code: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function adminButton() {
   const base = appUrl.replace(/\/$/, "");
   const url = `${base}/admin`;
@@ -244,8 +255,10 @@ function supportText() {
     : "💳 Поддержка по оплате\n\nОпиши проблему с оплатой и сохрани чек/квитанцию Telegram. Поддержка проекта обработает запрос вручную.";
 }
 
+let me;
+
 async function main() {
-  const me = await api("getMe");
+  me = await api("getMe");
   console.log(`@${me.username || botUsername} is running`);
   console.log(`App URL: ${appUrl}`);
 
@@ -313,6 +326,29 @@ async function main() {
 
         if (text === "/paysupport") {
           await api("sendMessage", { chat_id: message.chat.id, text: supportText() });
+          continue;
+        }
+
+        if (text === "/checkchannel") {
+          const allowed = await isAdmin(telegramId);
+          if (!allowed) {
+            await api("sendMessage", { chat_id: message.chat.id, text: "⛔ Команда доступна только администратору." });
+            continue;
+          }
+          const check = await checkChannelAccess();
+          if (!check.ok) {
+            await api("sendMessage", {
+              chat_id: message.chat.id,
+              text: check.code === "CHANNEL_ID_MISSING"
+                ? "❌ TELEGRAM_CHANNEL_ID не задан в .env."
+                : `❌ Не удалось проверить канал.\n\n${check.code}`,
+            });
+            continue;
+          }
+          await api("sendMessage", {
+            chat_id: message.chat.id,
+            text: `📢 Канал: ${channelId}\n🤖 Бот: @${me.username || botUsername}\n\nСтатус: ${check.status}${check.isMember === undefined ? "" : `\nis_member: ${check.isMember ? "да" : "нет"}`}\n\n${check.status === "administrator" || check.status === "creator" ? "✅ Бот имеет права администратора." : "⚠️ Бот не является администратором канала."}`,
+          });
           continue;
         }
 
