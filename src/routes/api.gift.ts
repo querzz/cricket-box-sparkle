@@ -6,6 +6,7 @@ import { withTransaction } from "@/server/db";
 import { secureRandomUnit } from "@/server/secure-random";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { appendStarsLedger } from "@/server/stars-ledger";
+import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 type GiftReward = {
   kind: "NOTHING" | "STARS" | "FREE_SPIN" | "XP";
@@ -51,6 +52,7 @@ export const Route = createFileRoute("/api/gift")({
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
+        await enforceRateLimit(`gift:${telegramId}`, 6);
         const membership = await getTelegramChannelMembership(telegramId);
 
         const result = await withTransaction(async (client) => {
@@ -106,6 +108,7 @@ export const Route = createFileRoute("/api/gift")({
 
         return Response.json({ ok:true, reward:{ id:result.claimId, kind:result.reward.kind, title:result.title, amount:result.starsCredited || result.bonusSpinGranted || result.xpGranted || undefined, wonAt:result.claimedAt, status:"RECEIVED", subtitle:result.subtitle, payoutNote:result.reward.kind === "STARS" && result.starsCredited > 0 ? `${result.starsCredited} Stars зачислены на баланс CRICKET BOX.` : result.reward.kind === "FREE_SPIN" && result.bonusSpinGranted > 0 ? `Бонусных прокруток добавлено: ${result.bonusSpinGranted}.` : result.reward.kind === "XP" && result.xpGranted > 0 ? `Опыт увеличен на ${result.xpGranted} XP.` : "Сегодня без полезного дропа. Попробуй завтра.", creditedAmount:result.starsCredited || undefined, uncreditedAmount:result.overflow }});
       } catch (error) {
+        if (error instanceof RateLimitError) return Response.json({ ok:false, code:"RATE_LIMITED" }, { status:429, headers:{ "Retry-After":String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "GIFT_FAILED";
         const status = code === "GIFT_UNAVAILABLE" || code === "GIFT_COOLDOWN" ? 409 : code === "USER_NOT_FOUND" ? 404 : 400;
         console.error("[CRICKET BOX] gift failed", { code });
