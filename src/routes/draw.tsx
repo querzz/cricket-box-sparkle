@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { History } from "lucide-react";
-import { useCallback, useState } from "react";
+import { ExternalLink, History } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/kit/AppShell";
@@ -12,9 +12,11 @@ import { RewardModal } from "@/components/kit/RewardModal";
 import { ErrorState, LoadingState, NoticeBar } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
 import { StatusBadge } from "@/components/kit/StatusBadge";
-import { errorCopy, seasonUi } from "@/lib/season";
+import { displaySeasonTitle, errorCopy, seasonUi } from "@/lib/season";
 import type { Reward } from "@/lib/types";
 import { isServiceError, useSession } from "@/store/session";
+
+type ChannelInfo = { ok?: boolean; channel?: { title: string | null; username: string | null; url: string | null } | null };
 
 export const Route = createFileRoute("/draw")({
   head: () => ({
@@ -35,6 +37,17 @@ function DrawScreen() {
   const [phase, setPhase] = useState<BoxPhase>("idle");
   const [reward, setReward] = useState<Reward | null>(null);
   const [busy, setBusy] = useState(false);
+  const [channel, setChannel] = useState<ChannelInfo["channel"]>(null);
+
+  useEffect(() => {
+    if (snapshot?.user.isSubscribed) return;
+    let mounted = true;
+    fetch("/api/channel")
+      .then((response) => response.ok ? response.json() as Promise<ChannelInfo> : null)
+      .then((data) => { if (mounted) setChannel(data?.channel ?? null); })
+      .catch(() => { if (mounted) setChannel(null); });
+    return () => { mounted = false; };
+  }, [snapshot?.user.isSubscribed]);
 
   const runSpin = useCallback(async (paid: boolean) => {
     if (busy) return;
@@ -90,7 +103,7 @@ function DrawScreen() {
     <AppShell title="Розыгрыш" action={<Link to="/prizes" aria-label="История призов" className="press grid size-9 place-items-center rounded-full bg-muted/50"><History className="size-4" /></Link>}>
       <div className="flex items-center justify-between"><StatusBadge status={{ type: "season", value: snapshot.season.state }} /><StarsBalance balance={snapshot.stars} size="sm" /></div>
       <GlassCard className="mt-4 px-4 pb-6 pt-4" glow>
-        <div className="text-center"><p className="font-display text-xs uppercase tracking-[0.24em] text-primary-glow">{snapshot.season.code}</p></div>
+        <div className="text-center"><p className="font-display text-xs uppercase tracking-[0.16em] text-primary-glow">{displaySeasonTitle(snapshot.season.code, snapshot.season.title)}</p></div>
         <CricketBox phase={ui.canSpin ? phase : "disabled"} size="md" className="mt-1" />
         <div className="mt-5 space-y-2.5">
           <PrimaryButton fullWidth size="lg" loading={busy && !reward} disabled={!ui.canSpin || freeSpins <= 0} onClick={() => void runSpin(false)}>
@@ -100,17 +113,20 @@ function DrawScreen() {
             {canPay ? `Дополнительная прокрутка · ${price} Stars` : `Нужно ещё ${Math.max(0, price - snapshot.stars.amount)} Stars`}
           </PrimaryButton>}
           <p className="text-center text-[11px] text-muted-foreground">
-            {ui.isFinished
-              ? "Сезон завершён — попыток больше нет"
-              : freeSpins > 0
-                ? "Бесплатная попытка сегодня доступна"
-                : "Бесплатная попытка сегодня уже использована"}
+            {ui.isFinished ? "Сезон завершён — попыток больше нет" : freeSpins > 0 ? "Бесплатная попытка сегодня доступна" : "Бесплатная попытка сегодня уже использована"}
           </p>
         </div>
       </GlassCard>
 
       <div className="mt-4 space-y-2.5">
-        {!ui.canSpin && <NoticeBar tone="warning">{snapshot.user.isSubscribed ? ui.headline : "Подпишись на канал, чтобы участвовать."}</NoticeBar>}
+        {!ui.canSpin && !snapshot.user.isSubscribed && (
+          <GlassCard className="space-y-2.5 px-4 py-3.5">
+            <p className="text-sm font-semibold">Чтобы участвовать, подпишись на канал</p>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">После подписки вернись сюда — приложение автоматически перепроверит доступ.</p>
+            {channel?.url && <a href={channel.url} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary-glow"><span>{channel.username ? `Открыть ${channel.username}` : "Открыть канал"}</span><ExternalLink className="size-4" /></a>}
+          </GlassCard>
+        )}
+        {!ui.canSpin && snapshot.user.isSubscribed && <NoticeBar tone="warning">{ui.headline}</NoticeBar>}
         {ui.isWaiting && <NoticeBar>{ui.headline}. Прокрутки откроются после старта сезона.</NoticeBar>}
         {ui.canSpin && freeSpins <= 0 && !canPay && price !== null && <NoticeBar tone="danger">Бесплатная попытка сегодня уже использована. Нужно ещё {price - snapshot.stars.amount} Stars для платной прокрутки.</NoticeBar>}
         {ui.canSpin && freeSpins <= 0 && canPay && !ui.isFinished && <NoticeBar>Следующая бесплатная попытка будет доступна завтра. Ты можешь использовать платную прокрутку.</NoticeBar>}
@@ -122,13 +138,8 @@ function DrawScreen() {
               <p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p>
               <div className="mt-3 space-y-2"><Link to="/prizes" className="block"><PrimaryButton fullWidth>Мои призы</PrimaryButton></Link>{ui.canWithdraw && <Link to="/withdraw" className="block"><PrimaryButton variant="outline" fullWidth>Вывести Stars</PrimaryButton></Link>}</div>
             </div>
-          ) : ui.countdownTarget ? (
-            <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} />
-          ) : (
-            <div className="text-center">
-              <p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">{ui.headline}</p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p>
-            </div>
+          ) : ui.countdownTarget ? <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} /> : (
+            <div className="text-center"><p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">{ui.headline}</p><p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p></div>
           )}
         </GlassCard>
       </div>
