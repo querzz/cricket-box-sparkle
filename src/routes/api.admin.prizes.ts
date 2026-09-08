@@ -80,6 +80,7 @@ export const Route = createFileRoute("/api/admin/prizes")({
             "INVALID_PRIZE_AMOUNT",
             "INVALID_PRIZE_COST",
             "INVALID_PRIZE_QUANTITY",
+            "INVALID_PRIZE_WEIGHT",
             "INVALID_INPUT",
           ].includes(code)
             ? 400
