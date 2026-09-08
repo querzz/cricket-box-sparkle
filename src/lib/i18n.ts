@@ -1,31 +1,6 @@
-export const locale = "ru" as const;
+import ru from "@/locales/ru.json";
 
-const ru = {
-  navigation: {
-    home: "Главная",
-    draw: "Розыгрыш",
-    prizes: "Мои призы",
-    profile: "Профиль",
-  },
-  common: {
-    back: "Назад",
-    close: "Закрыть",
-    claim: "Забрать",
-    open: "Открыть",
-    unavailable: "Недоступно",
-    claimed: "Получено",
-    continue: "Продолжить",
-    confirm: "Подтвердить",
-    cancel: "Отмена",
-    retry: "Повторить",
-    loading: "Загрузка",
-    processing: "Обработка",
-    settings: "Настройки",
-  },
-  errors: {
-    network: "Не удалось связаться с сервером Cricket Box. Проверь соединение и попробуй ещё раз.",
-  },
-} as const;
+export const locale = "ru" as const;
 
 export type TranslationTree = typeof ru;
 
