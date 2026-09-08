@@ -7,6 +7,7 @@ import { secureRandomUnit } from "@/server/secure-random";
 import { appendStarsLedger } from "@/server/stars-ledger";
 import { pickWeightedPrize } from "@/server/prize-selection";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
+import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 const MAX_STARS = 500;
 type PrizeKind = "STARS" | "PREMIUM" | "MONEY" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN" | "EMPTY";
@@ -15,20 +16,11 @@ type Prize = { id:string; kind:PrizeKind; title:string; subtitle:string|null; am
 
 const rewardResponse = (result:{spinId:string;payoutId:string|null;createdAt:string;prize:Prize;credited:number;rewardStars:number;spinType:string;duplicate:boolean}) => {
   const prize=result.prize;
-  return {
-    ok:true, duplicate:result.duplicate,
+  return { ok:true, duplicate:result.duplicate,
     spin:{id:result.spinId,type:result.spinType,priceStars:0,status:"COMPLETED",createdAt:result.createdAt},
-    reward:{
-      id:result.payoutId??result.spinId, kind:prize.kind, title:prize.title, subtitle:prize.subtitle,
-      amount:Number(prize.amount)||undefined, wonAt:result.createdAt,
-      status:prize.kind==="EMPTY"||prize.kind==="STARS"?"RECEIVED":"PENDING",
-      payoutNote:prize.kind==="EMPTY"?"В этот раз без награды.":prize.kind==="STARS"
-        ?(result.credited<result.rewardStars?`Лимит 500 Stars: зачислено ${result.credited} из ${result.rewardStars}.`:"Stars зачислены на баланс.")
-        :"Награда записана и ожидает выдачи.",
-      creditedAmount:prize.kind==="STARS"?result.credited:undefined,
-      uncreditedAmount:prize.kind==="STARS"?Math.max(0,result.rewardStars-result.credited):0,
-    },
-  };
+    reward:{id:result.payoutId??result.spinId,kind:prize.kind,title:prize.title,subtitle:prize.subtitle,amount:Number(prize.amount)||undefined,wonAt:result.createdAt,status:prize.kind==="EMPTY"||prize.kind==="STARS"?"RECEIVED":"PENDING",
+      payoutNote:prize.kind==="EMPTY"?"В этот раз без награды.":prize.kind==="STARS"?(result.credited<result.rewardStars?`Лимит 500 Stars: зачислено ${result.credited} из ${result.rewardStars}.`:"Stars зачислены на баланс."):"Награда записана и ожидает выдачи.",
+      creditedAmount:prize.kind==="STARS"?result.credited:undefined,uncreditedAmount:prize.kind==="STARS"?Math.max(0,result.rewardStars-result.credited):0}};
 };
 
 export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({request})=>{
@@ -45,43 +37,35 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
     const validated=await validateTelegramInitData(initData,requireBotToken());
     const telegramId=validated.user?.id;
     if(!telegramId)return Response.json({ok:false,code:"TELEGRAM_USER_MISSING"},{status:400});
+    await enforceRateLimit(`spin:${telegramId}`,10);
     const membership=await getTelegramChannelMembership(telegramId);
 
     const result=await withTransaction(async client=>{
       const userResult=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE telegram_id=$1 LIMIT 1 FOR UPDATE`,[telegramId]);
       if(!userResult.rows[0])throw new Error("USER_NOT_FOUND");
       const user=userResult.rows[0];
-
       const existing=await client.query<{id:string;created_at:string;type:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;payout_id:string|null;reward_stars:string;credited_stars:string}>(
         `SELECT s.id::text,s.created_at::text,s.type,p.kind,p.title,p.subtitle,p.amount::text,p.currency,py.id::text AS payout_id,
-                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'requestedAmount')::integer,sl.amount) ELSE 0 END)
-                            FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS reward_stars,
-                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'creditedAmount')::integer,sl.amount) ELSE 0 END)
-                            FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS credited_stars
+                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'requestedAmount')::integer,sl.amount) ELSE 0 END) FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS reward_stars,
+                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'creditedAmount')::integer,sl.amount) ELSE 0 END) FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS credited_stars
            FROM spins s JOIN prizes p ON p.id=s.prize_id LEFT JOIN payouts py ON py.spin_id=s.id
-          WHERE s.user_id=$1::uuid AND s.idempotency_key=$2 AND s.status='COMPLETED'
-          ORDER BY s.created_at DESC LIMIT 1`,[user.id,idempotencyKey]);
+          WHERE s.user_id=$1::uuid AND s.idempotency_key=$2 AND s.status='COMPLETED' ORDER BY s.created_at DESC LIMIT 1`,[user.id,idempotencyKey]);
       if(existing.rows[0]){
         const row=existing.rows[0];
         const prize={id:row.id,kind:row.kind,title:row.title,subtitle:row.subtitle,amount:row.amount,currency:row.currency,metadata:{},quantity_total:1,quantity_remaining:0};
         return {spinId:row.id,payoutId:row.payout_id,createdAt:row.created_at,prize,credited:Number(row.credited_stars)||0,rewardStars:Number(row.reward_stars)||0,spinType:row.type,duplicate:true};
       }
-
       await client.query(`INSERT INTO user_state(user_id,stars_balance,is_subscribed,is_participant,bonus_free_spins) VALUES($1::uuid,125,TRUE,TRUE,0) ON CONFLICT(user_id) DO NOTHING`,[user.id]);
-      const stateResult=await client.query<{is_subscribed:boolean;is_participant:boolean;stars_balance:number;bonus_free_spins:number;activity_bonus_season_id:string|null;activity_bonus_spins_issued:number}>(
-        `SELECT is_subscribed,is_participant,stars_balance,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,[user.id]);
+      const stateResult=await client.query<{is_subscribed:boolean;is_participant:boolean;stars_balance:number;bonus_free_spins:number;activity_bonus_season_id:string|null;activity_bonus_spins_issued:number}>(`SELECT is_subscribed,is_participant,stars_balance,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,[user.id]);
       const state=stateResult.rows[0];
       const subscribed=membership??state?.is_subscribed??false;
       if(membership!==null&&membership!==state?.is_subscribed)await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`,[user.id,membership]);
       if(!state||!subscribed)throw new Error("NOT_SUBSCRIBED");
       if(!state.is_participant)throw new Error("NOT_PARTICIPANT");
-
-      const seasonResult=await client.query<{id:string;code:string;state:string;daily_free_spin:boolean;paid_spin_price:number}>(
-        `SELECT id::text,code,state,daily_free_spin,paid_spin_price FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
+      const seasonResult=await client.query<{id:string;code:string;state:string;daily_free_spin:boolean;paid_spin_price:number}>(`SELECT id::text,code,state,daily_free_spin,paid_spin_price FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
       const season=seasonResult.rows[0];
       if(!season)throw new Error("SEASON_NOT_ACTIVE");
       await activateDueDrops(client,season.id);
-
       const activityUsedResult=await client.query<{used:string}>(`SELECT COUNT(*)::text AS used FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='ACTIVITY_BONUS' AND status='COMPLETED'`,[user.id,season.id]);
       const activityIssued=season.id===state.activity_bonus_season_id?Number(state.activity_bonus_spins_issued??0):0;
       const activityRemaining=Math.max(0,activityIssued-Number(activityUsedResult.rows[0]?.used??0));
@@ -90,7 +74,6 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const useActivity=!useDaily&&activityRemaining>0;
       const useGift=!useDaily&&!useActivity&&Number(state.bonus_free_spins??0)>0;
       if(!useDaily&&!useActivity&&!useGift)throw new Error("NO_ATTEMPTS");
-
       const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`,[season.id,Number(state.stars_balance??0),MAX_STARS]);
       if(!prizes.rows.length)throw new Error("NO_PRIZES");
       const picked=pickWeightedPrize(prizes.rows,secureRandomUnit);
@@ -119,6 +102,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
     });
     return Response.json(rewardResponse(result));
   }catch(error){
+    if(error instanceof RateLimitError)return Response.json({ok:false,code:"RATE_LIMITED"},{status:429,headers:{"Retry-After":String(error.retryAfterSeconds)}});
     const code=error instanceof Error?error.message:"SPIN_FAILED";
     const status=["NO_ATTEMPTS","NO_PRIZES","SEASON_NOT_ACTIVE"].includes(code)?409:["USER_NOT_FOUND","NOT_SUBSCRIBED","NOT_PARTICIPANT"].includes(code)?403:code==="PAYMENT_REQUIRED"?402:400;
     console.error("[CRICKET BOX] spin failed",{code});
