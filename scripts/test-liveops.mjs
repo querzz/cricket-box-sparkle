@@ -29,9 +29,6 @@ try {
 
   await db.query("BEGIN");
   transactionStarted = true;
-
-  // Isolate fixtures from the user's existing local data while preserving the
-  // global one-live-season invariant inside this test transaction.
   await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING')`);
 
   const adminResult = await db.query(`INSERT INTO admins(telegram_id,username,role,is_active) VALUES($1,$2,'OWNER',TRUE) RETURNING id`, [880000000 + Number(String(Date.now()).slice(-7)), `liveops_${suffix}`]);
@@ -47,18 +44,13 @@ try {
   assert(snapshot.rows[0].completed_spins === 100, "economy snapshot persists spin metrics");
   assert(Number(snapshot.rows[0].multipliers["ci-prize"]) === 1.25, "economy snapshot persists multipliers");
 
-  // Create both due-state fixtures before reconciliation. The service now closes
-  // expired ENDING seasons first, then activates the due SCHEDULED season.
+  // Test the same state-reconciliation ordering used by liveops.ts:
+  // expired ENDING seasons are closed before a due SCHEDULED season is activated.
   const dueSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Due Season','SCHEDULED',now()-interval '1 minute',now()+interval '1 day',100,$2) RETURNING id,state`, [`DUE-${suffix}`, admin]);
   const dueSeason = dueSeasonResult.rows[0].id;
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   const endingSeason = endingSeasonResult.rows[0].id;
 
-  const liveops = await import("./_nonexistent_liveops_test_target.js").catch(async () => null);
-  void liveops;
-
-  // Exercise the reconciliation SQL behavior directly so the DB test remains
-  // runnable with plain Node on Windows without a TS/alias loader.
   const closedEnding = await db.query<{id:string;code:string}>(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,code`);
   assert(closedEnding.rows.some(row => row.id === endingSeason), "expired ending season becomes closed");
 
