@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { validateTelegramInitData } from "@/server/auth/telegram";
-import { requireBotToken, requireTelegramChannelId } from "@/server/config";
+import { isProductionApp, requireBotToken, requireTelegramChannelId } from "@/server/config";
 import { query } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 
@@ -33,11 +33,17 @@ type SeasonRow = {
 };
 
 async function fetchTelegramChannelMembership(telegramId: number): Promise<boolean> {
+  const channelId = serverChannelId();
+  if (!channelId) {
+    // Local development can run before the production Telegram channel exists.
+    // Production stays fail-closed: missing channel configuration means no subscription access.
+    return !isProductionApp();
+  }
   try {
     const response = await fetch(`https://api.telegram.org/bot${requireBotToken()}/getChatMember`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: requireTelegramChannelId(), user_id: telegramId }),
+      body: JSON.stringify({ chat_id: channelId, user_id: telegramId }),
       signal: AbortSignal.timeout(5000),
     });
     const data = await response.json() as {
@@ -51,6 +57,14 @@ async function fetchTelegramChannelMembership(telegramId: number): Promise<boole
       || (data.result.status === "restricted" && data.result.is_member === true);
   } catch {
     return false;
+  }
+}
+
+function serverChannelId(): string | undefined {
+  try {
+    return requireTelegramChannelId();
+  } catch {
+    return undefined;
   }
 }
 
@@ -126,8 +140,7 @@ export const Route = createFileRoute("/api/session")({
         if (!season) return Response.json({ ok:false, code:"NO_SEASON" }, { status:409 });
 
         const prizeResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;quantity_remaining:number;quantity_total:number;metadata:Record<string,unknown>|null;image_url:string|null}>(
-          `SELECT id::text,kind,title,subtitle,amount::text,quantity_remaining,quantity_total,metadata,image_url FROM prizes WHERE season_id=$1::uuid AND is_active=TRUE ORDER BY created_at ASC`, [season.id],
-        );
+          `SELECT id::text,kind,title,subtitle,amount::text,quantity_remaining,quantity_total,metadata,image_url FROM prizes WHERE season_id=$1::uuid AND is_active=TRUE ORDER BY created_at ASC`, [season.id]);
         const spinStats = await query<{total:string}>(`SELECT COUNT(*)::text AS total FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND status='COMPLETED'`, [user.id,season.id]);
         const freeToday = await query<{exists:boolean}>(
           `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id],
