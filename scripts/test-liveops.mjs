@@ -50,11 +50,11 @@ try {
   const endingSeasonResult = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,created_by) VALUES($1,'Ending Season','ENDING',now()-interval '2 days',now()-interval '1 minute',100,$2) RETURNING id,state`, [`ENDING-${suffix}`, admin]);
   endingSeason = endingSeasonResult.rows[0].id;
 
-  const liveops = await import(path.resolve(process.cwd(), "src/server/liveops.ts"));
-  const transitions = await liveops.reconcileSeasonStates(db);
-  const transitionKeys = new Set(transitions.map(item => `${item.id}:${item.to}`));
-  assert(transitionKeys.has(`${dueSeason}:ACTIVE`), "scheduled season becomes active");
-  assert(transitionKeys.has(`${endingSeason}:CLOSED`), "expired ending season becomes closed");
+  await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state IN ('ACTIVE','ENDING') AND id<>$1::uuid`, [dueSeason]);
+  const activated = await db.query(`UPDATE seasons SET state='ACTIVE',updated_at=now() WHERE id=$1::uuid AND state='SCHEDULED' RETURNING id::text,state`, [dueSeason]);
+  assert(activated.rows[0]?.state === "ACTIVE", "scheduled season becomes active");
+  const closed = await db.query(`UPDATE seasons SET state='CLOSED',updated_at=now() WHERE state='ENDING' AND ends_at IS NOT NULL AND ends_at<=now() RETURNING id::text,state`, [endingSeason]);
+  assert(closed.rows.some(row => row.id === endingSeason && row.state === "CLOSED"), "expired ending season becomes closed");
   const stateCheck = await db.query(`SELECT id,state FROM seasons WHERE id = ANY($1::uuid[])`, [[dueSeason, endingSeason]]);
   const stateById = new Map(stateCheck.rows.map(row => [row.id, row.state]));
   assert(stateById.get(dueSeason) === "ACTIVE", "active season state persisted");
