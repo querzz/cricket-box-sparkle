@@ -1,31 +1,32 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Gift, HandCoins, Shuffle, Sparkles, UsersRound } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Gift, HandCoins, Power, Shuffle, Sparkles, UsersRound } from "lucide-react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
 
-export const Route = createFileRoute("/admin/mechanics")({
-  head: () => ({ meta: [{ title: "Развлекательные механики — CRICKET BOX" }] }),
-  component: Mechanics,
-});
-
-type Mechanic = { id: string; title: string; description: string; enabled: boolean };
-const INITIAL: Mechanic[] = [
-  { id: "gift-or-pass", title: "Оставить подарок или передать 2 дальше", description: "Пользователь выбирает между своим подарком и передачей двух подарков следующим игрокам.", enabled: true },
-  { id: "good-or-bad", title: "Хороший или неудачный подарок", description: "Развлекательный выбор с неожиданным результатом, отдельно от основного фонда.", enabled: false },
-  { id: "owner-special", title: "Особый подарок владельца", description: "Персональный сценарий для выбранного пользователя.", enabled: true },
+export const Route = createFileRoute("/admin/mechanics")({ head:()=>({meta:[{title:"Развлекательные механики — CRICKET BOX"}]}), component:Mechanics });
+type Settings={enabled:Record<string,boolean>;passCount:number;failureText:string;confirm:boolean};
+type Api={ok:boolean;settings?:Settings;code?:string};
+const MECHANICS=[
+ {id:"gift-or-pass",title:"Оставить подарок или передать дальше",description:"Пользователь выбирает между своим подарком и передачей нескольких подарков следующим игрокам.",icon:Gift},
+ {id:"good-or-bad",title:"Хороший или неудачный подарок",description:"Отдельный развлекательный исход, который не меняет основной призовой фонд.",icon:Shuffle},
+ {id:"owner-special",title:"Особый подарок владельца",description:"Персональный сценарий для выбранного пользователя.",icon:UsersRound},
 ];
-
-function Mechanics() {
-  const [rows, setRows] = useState(INITIAL);
-  const [passCount, setPassCount] = useState(2);
-  const [failureText, setFailureText] = useState("Не повезло… но это было красиво 😈");
-  const [confirm, setConfirm] = useState(true);
-  const toggle = (id: string) => setRows((all) => all.map((x) => x.id === id ? { ...x, enabled: !x.enabled } : x));
-  return <AppShell title="Развлекательные механики" nav={false}><div className="space-y-4 pb-8">
-    <Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link>
-    <GlassCard className="px-4 py-4" glow><div className="flex items-start gap-3"><Sparkles className="mt-1 size-5 text-primary-glow" /><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Экспериментальные сценарии</p><h1 className="mt-1 font-display text-xl uppercase">Развлекательные механики</h1><p className="mt-1 text-[11px] text-muted-foreground">Мини-игры поверх обычного розыгрыша. Для каждого сезона включаются отдельно.</p></div></div></GlassCard>
-    <section className="space-y-2.5">{rows.map((row) => <GlassCard key={row.id} className="px-3.5 py-3.5"><div className="flex items-start gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl border border-glass-border bg-muted/20">{row.id === "gift-or-pass" ? <Gift className="size-4 text-primary-glow" /> : row.id === "good-or-bad" ? <Shuffle className="size-4 text-primary-glow" /> : <UsersRound className="size-4 text-primary-glow" />}</div><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{row.title}</p><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{row.description}</p></div><button type="button" onClick={() => toggle(row.id)} className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold ${row.enabled ? "border-primary/30 bg-primary/10" : "border-glass-border bg-muted/10 text-muted-foreground"}`}>{row.enabled ? "Включено" : "Выключено"}</button></div></GlassCard>)}</section>
-    <GlassCard className="space-y-3 px-3 py-3"><div className="flex items-center gap-2"><HandCoins className="size-4 text-primary-glow" /><p className="text-sm font-semibold">Параметры передачи</p></div><label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Подарков при передаче</span><input type="number" min={1} value={passCount} onChange={(e) => setPassCount(Math.max(1, Number(e.target.value) || 1))} className="admin-input w-full" /></label><label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Текст неудачного исхода</span><textarea value={failureText} onChange={(e) => setFailureText(e.target.value)} className="admin-input min-h-20 w-full resize-none" /></label><label className="flex items-center justify-between rounded-xl border border-glass-border bg-muted/10 px-3 py-3"><span><span className="block text-sm font-semibold">Подтверждать передачу</span><span className="text-[10px] text-muted-foreground">Показать итоговый выбор перед отправкой.</span></span><input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} /></label><button type="button" onClick={() => alert("Настройки сохранены в предпросмотре.")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5 text-xs font-semibold"><Sparkles className="size-4" /> Сохранить настройки</button></GlassCard>
-  </div></AppShell>;
+function initData(){if(typeof window==="undefined")return "";return (window as Window&{Telegram?:{WebApp?:{initData?:string}}}).Telegram?.WebApp?.initData?.trim()??"";}
+async function request<T>(url:string,method:"GET"|"PATCH",body?:Record<string,unknown>){const response=await fetch(url,{method,headers:{"content-type":"application/json"},...(body?{body:JSON.stringify({...body,initData:initData()})}:{})});const data=await response.json() as T&{ok?:boolean;code?:string};if(!response.ok||data.ok!==true)throw new Error(data.code??"REQUEST_FAILED");return data;}
+function Mechanics(){
+ const [settings,setSettings]=useState<Settings>({enabled:{"gift-or-pass":true,"good-or-bad":false,"owner-special":true},passCount:2,failureText:"Не повезло… но это было красиво 😈",confirm:true});
+ const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [error,setError]=useState("");const [message,setMessage]=useState("");
+ async function load(){setLoading(true);setError("");try{const data=await request<Api>(`/api/admin/mechanics?initData=${encodeURIComponent(initData())}`,"GET");if(data.settings)setSettings(data.settings);}catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить настройки.");}finally{setLoading(false);}}
+ useEffect(()=>{void load();},[]);
+ function toggle(id:string){setSettings(current=>({...current,enabled:{...current.enabled,[id]:!current.enabled[id]}}));}
+ async function save(){setSaving(true);setError("");try{await request<Api>("/api/admin/mechanics","PATCH",{settings});setMessage("Настройки сохранены в PostgreSQL.");}catch(e){setError(e instanceof Error?e.message:"Не удалось сохранить настройки.");}finally{setSaving(false);}}
+ return <AppShell title="Развлекательные механики" nav={false}><div className="space-y-4 pb-8"><Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5"/> Админ-панель</Link>
+  <GlassCard className="px-4 py-4" glow><div className="flex items-start gap-3"><Sparkles className="mt-1 size-5 text-primary-glow"/><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Настройки сезона</p><h1 className="mt-1 font-display text-xl uppercase">Развлекательные механики</h1><p className="mt-1 text-[11px] text-muted-foreground">Настройки хранятся в PostgreSQL и не сбрасываются после обновления страницы.</p></div></div></GlassCard>
+  {loading?<GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Загрузка…</GlassCard>:<>
+   <section className="space-y-2.5">{MECHANICS.map(({id,title,description,icon:Icon})=><GlassCard key={id} className="px-3.5 py-3.5"><div className="flex items-start gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl border border-glass-border bg-muted/20"><Icon className="size-4 text-primary-glow"/></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{description}</p></div><button type="button" onClick={()=>toggle(id)} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-semibold ${settings.enabled[id]?"border-primary/30 bg-primary/10":"border-glass-border bg-muted/10 text-muted-foreground"}`}><Power className="size-3"/>{settings.enabled[id]?"Включено":"Выключено"}</button></div></GlassCard>)}</section>
+   <GlassCard className="space-y-3 px-3 py-3"><div className="flex items-center gap-2"><HandCoins className="size-4 text-primary-glow"/><p className="text-sm font-semibold">Параметры передачи</p></div><label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Подарков при передаче</span><input type="number" min={1} max={20} value={settings.passCount} onChange={e=>setSettings(current=>({...current,passCount:Math.min(20,Math.max(1,Number(e.target.value)||1))}))} className="admin-input w-full"/></label><label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Текст неудачного исхода</span><textarea value={settings.failureText} onChange={e=>setSettings(current=>({...current,failureText:e.target.value}))} className="admin-input min-h-20 w-full resize-none"/></label><label className="flex items-center justify-between rounded-xl border border-glass-border bg-muted/10 px-3 py-3"><span><span className="block text-sm font-semibold">Подтверждать передачу</span><span className="text-[10px] text-muted-foreground">Показать итоговый выбор перед отправкой.</span></span><input type="checkbox" checked={settings.confirm} onChange={e=>setSettings(current=>({...current,confirm:e.target.checked}))}/></label><button disabled={saving} type="button" onClick={()=>void save()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5 text-xs font-semibold"><Sparkles className="size-4"/>{saving?"Сохраняем…":"Сохранить настройки"}</button></GlassCard>
+  </>}
+  {message&&<GlassCard className="border-primary/25 bg-primary/5 px-4 py-3 text-[11px]">{message}</GlassCard>}{error&&<GlassCard className="border-destructive/30 bg-destructive/5 px-4 py-3 text-[11px] text-destructive">{error}</GlassCard>}
+ </div></AppShell>;
 }
