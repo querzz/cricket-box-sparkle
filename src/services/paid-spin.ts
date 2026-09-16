@@ -1,7 +1,22 @@
 import type { Reward, ServiceError } from "@/lib/types";
 
-type SessionResponse = { ok: boolean; snapshot?: { spin: { totalSpins: number }; rewards: Reward[] }; code?: string };
-type InvoiceResponse = { ok: boolean; invoiceUrl?: string; price?: number; code?: string };
+type InvoiceResponse = { ok: boolean; invoiceUrl?: string; price?: number; payload?: string; code?: string };
+type PaymentStatusResponse = {
+  ok: boolean;
+  status?: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
+  code?: string;
+  spin?: {
+    id: string;
+    reward: {
+      kind: string;
+      title: string;
+      subtitle?: string | null;
+      amount?: number;
+      status: "RECEIVED" | "PENDING";
+      payoutStatus?: string | null;
+    };
+  } | null;
+};
 
 function initData() {
   if (typeof window === "undefined") return "";
@@ -25,13 +40,26 @@ function mapError(code: string) {
   }
 }
 
-async function getSession(): Promise<SessionResponse | null> {
+async function getPaymentStatus(payload: string): Promise<PaymentStatusResponse | null> {
   try {
-    const response = await fetch(`/api/session?initData=${encodeURIComponent(initData())}`, { cache: "no-store" });
-    return await response.json() as SessionResponse;
+    const response = await fetch(`/api/payment/status?initData=${encodeURIComponent(initData())}&payload=${encodeURIComponent(payload)}`, { cache: "no-store" });
+    return await response.json() as PaymentStatusResponse;
   } catch {
     return null;
   }
+}
+
+function toReward(reward: NonNullable<PaymentStatusResponse["spin"]>["reward"]): Reward {
+  return {
+    id: `paid_${crypto.randomUUID()}`,
+    kind: reward.kind as Reward["kind"],
+    title: reward.title,
+    subtitle: reward.subtitle ?? undefined,
+    amount: reward.amount,
+    wonAt: new Date().toISOString(),
+    status: reward.status,
+    payoutNote: reward.payoutStatus === "PAID" ? "Выдано." : "Ожидает выдачи администратором.",
+  };
 }
 
 export async function completePaidSpin(price: number) {
@@ -40,16 +68,14 @@ export async function completePaidSpin(price: number) {
   if (!tg?.openInvoice) return fail("NETWORK", "Эта версия Telegram не поддерживает оплату внутри Mini App.");
 
   try {
-    const before = await getSession();
-    const beforeCount = before?.ok && before.snapshot ? before.snapshot.spin.totalSpins : -1;
-
     const response = await fetch("/api/payment/invoice", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      cache: "no-store",
       body: JSON.stringify({ initData: initData() }),
     });
     const invoice = await response.json() as InvoiceResponse;
-    if (!response.ok || !invoice.ok || !invoice.invoiceUrl) return mapError(invoice.code ?? "INVOICE_FAILED");
+    if (!response.ok || !invoice.ok || !invoice.invoiceUrl || !invoice.payload) return mapError(invoice.code ?? "INVOICE_FAILED");
     if (Number(invoice.price) !== price) return fail("NETWORK", "Цена прокрутки изменилась. Обнови экран и попробуй снова.");
 
     const status = await new Promise<string>((resolve) => {
@@ -64,11 +90,12 @@ export async function completePaidSpin(price: number) {
     if (status === "timeout") return fail("PAYMENT_PROCESSING", "Платёж ещё обрабатывается. Вернись в приложение через несколько секунд.");
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      const session = await getSession();
-      if (session?.ok && session.snapshot && session.snapshot.spin.totalSpins > beforeCount) {
-        const reward = session.snapshot.rewards[0];
-        if (reward) return { ok: true as const, reward };
+      const payment = await getPaymentStatus(invoice.payload);
+      if (payment?.ok && payment.status === "SUCCESS" && payment.spin?.reward) {
+        return { ok: true as const, reward: toReward(payment.spin.reward) };
       }
+      if (payment?.status === "REFUNDED") return mapError("PAYMENT_REFUNDED");
+      if (payment?.status === "FAILED") return mapError("PAYMENT_PROCESSING");
       await new Promise((resolve) => window.setTimeout(resolve, 500));
     }
 
