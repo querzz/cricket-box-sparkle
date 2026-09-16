@@ -24,7 +24,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
         const user = await query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id = $1 LIMIT 1`, [telegramId]);
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
 
-        const state = await query<{ is_subscribed: boolean; is_participant: boolean }>(`SELECT is_subscribed,is_participant FROM user_state WHERE user_id=$1::uuid LIMIT 1`, [user.rows[0].id]);
+        const state = await query<{ is_subscribed: boolean; is_participant: boolean; stars_balance: number }>(`SELECT is_subscribed,is_participant,stars_balance FROM user_state WHERE user_id=$1::uuid LIMIT 1`, [user.rows[0].id]);
         if (!state.rows[0]?.is_subscribed) return Response.json({ ok: false, code: "NOT_SUBSCRIBED" }, { status: 403 });
         if (!state.rows[0]?.is_participant) return Response.json({ ok: false, code: "NOT_PARTICIPANT" }, { status: 403 });
 
@@ -51,6 +51,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
           pending = existingResult.rows[0] ?? null;
 
           if (!pending) {
+            const balance = Number(state.rows[0]?.stars_balance ?? 0);
             const availability = await client.query<{ total_remaining: string }>(
               `SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining
                  FROM prizes
@@ -58,7 +59,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
                   AND quantity_remaining>0
                   AND is_active=TRUE
                   AND (kind<>'STARS' OR $2::integer<$3::integer)`,
-              [seasonId, 0, MAX_STARS],
+              [seasonId, balance, MAX_STARS],
             );
             if (Number(availability.rows[0]?.total_remaining ?? 0) <= 0) throw new Error("NO_PRIZES");
 
