@@ -1,5 +1,3 @@
-import type { PoolClient } from "pg";
-
 import { enforceRateLimit } from "@/server/rate-limit";
 
 type TelegramInitDataUser = {
@@ -9,6 +7,7 @@ type TelegramInitDataUser = {
   username?: string;
   language_code?: string;
   is_premium?: boolean;
+  photo_url?: string;
 };
 
 export type TelegramInitData = {
