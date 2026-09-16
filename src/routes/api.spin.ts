@@ -83,8 +83,9 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const elapsedFraction=seasonElapsedFraction(season.starts_at,season.ends_at);
 
       const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE ORDER BY created_at ASC FOR UPDATE`,[season.id]);
-      if(!prizes.rows.length)throw new Error("NO_PRIZES");
-      const selection=pickDynamicPrize(prizes.rows,secureRandomUnit,{elapsedFraction,emptyStreak,recentKinds});
+      const eligiblePrizes=prizes.rows.filter((prize)=>prize.kind!=="STARS"||Number(state.stars_balance??0)<STARS_MAX_BALANCE);
+      if(!eligiblePrizes.length)throw new Error("NO_PRIZES");
+      const selection=pickDynamicPrize(eligiblePrizes,secureRandomUnit,{elapsedFraction,emptyStreak,recentKinds});
       const picked=selection.prize;
       const inventory=await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`,[picked.id]);
       if(!inventory.rows[0])throw new Error("NO_PRIZES");
@@ -106,7 +107,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
   }catch(error){
     if(error instanceof RateLimitError)return Response.json({ok:false,code:"RATE_LIMITED"},{status:429,headers:{"Retry-After":String(error.retryAfterSeconds)}});
     const code=error instanceof Error?error.message:"SPIN_FAILED";
-    const status=["NO_ATTEMPTS","NO_PRIZES","SEASON_NOT_ACTIVE"].includes(code)?409:["USER_NOT_FOUND","NOT_SUBSCRIBED","NOT_PARTICIPANT"].includes(code)?403:code==="PAYMENT_REQUIRED"?402:400;
+    const status=["NO_ATTEMPTS","NO_PRIZES","SEASON_NOT_ACTIVE"].includes(code)?409:code==="USER_NOT_FOUND"?404:["NOT_SUBSCRIBED","NOT_PARTICIPANT"].includes(code)?403:code==="PAYMENT_REQUIRED"?402:400;
     console.error("[CRICKET BOX] spin failed",{code});
     return Response.json({ok:false,code,detail:code},{status});
   }
