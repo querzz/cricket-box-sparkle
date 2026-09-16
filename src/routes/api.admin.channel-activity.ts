@@ -4,17 +4,36 @@ import { authenticateAdmin } from "@/server/auth/access";
 import { query, withTransaction } from "@/server/db";
 
 const CHANNEL_ID = process.env["TELEGRAM_CHANNEL_ID"];
+const TELEGRAM_BOT_TOKEN = process.env["TELEGRAM_BOT_TOKEN"];
 const ACTIVITY_POINTS_PER_SPIN = 10;
 const MAX_ACTIVITY_BONUS_SPINS = 20;
 const MAX_BONUS_SPINS = 1000;
 
 type ActivityStatus = "Низкая" | "Активный" | "Очень активный" | "Максимальная";
+type TelegramUser = { id:number; username?:string; first_name?:string; last_name?:string; is_bot?:boolean };
 
 function levelFromScore(score: number): ActivityStatus {
   if (score >= 16) return "Максимальная";
   if (score >= 8) return "Очень активный";
   if (score >= 3) return "Активный";
   return "Низкая";
+}
+
+async function getTelegramUser(telegramId:string):Promise<TelegramUser|null>{
+  if (!TELEGRAM_BOT_TOKEN || !CHANNEL_ID) return null;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: CHANNEL_ID, user_id: Number(telegramId) }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as { ok:boolean; result?:{ user?:TelegramUser } };
+    return data.ok ? data.result?.user ?? null : null;
+  } catch {
+    return null;
+  }
 }
 
 export const Route = createFileRoute("/api/admin/channel-activity")({
@@ -61,16 +80,24 @@ export const Route = createFileRoute("/api/admin/channel-activity")({
           [CHANNEL_ID, current.id, current.starts_at, current.ends_at],
         );
 
+        const missingProfiles = result.rows.filter((row) => !row.username || row.name === "Telegram user").slice(0, 50);
+        const profileEntries = await Promise.all(missingProfiles.map(async (row) => [row.telegram_id, await getTelegramUser(row.telegram_id)] as const));
+        const profiles = new Map(profileEntries);
+
         const users = result.rows.map((row) => {
           const score = Math.max(0, Number(row.score));
           const activityIssued = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.max(0, Number(row.activity_bonus_issued)));
           const activityUsed = Math.max(0, Number(row.activity_bonus_used));
           const bonusRemaining = Math.max(0, activityIssued - activityUsed);
+          const profile = profiles.get(row.telegram_id);
+          const profileName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+          const name = row.name !== "Telegram user" ? row.name : profileName || `Telegram ${row.telegram_id}`;
+          const username = row.username ? `@${row.username.replace(/^@/, "")}` : profile?.username ? `@${profile.username.replace(/^@/, "")}` : "—";
           return {
             id: row.user_id ?? `tg_${row.telegram_id}`,
             telegramId: row.telegram_id,
-            name: row.name,
-            username: row.username ? `@${row.username.replace(/^@/, "")}` : "—",
+            name,
+            username,
             activeDays: Number(row.active_days),
             reactions: Number(row.reactions),
             comments: Number(row.comments),
