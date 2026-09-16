@@ -103,7 +103,7 @@ Preferred MVP model: **weighted sampling without replacement**.
 
 Conceptually, each remaining reward unit participates in the finite pool. For each spin:
 - eligible rewards must have `remaining > 0` and be active;
-- Stars rewards are excluded for users already at their Stars cap;
+- during MVP manual Stars fulfillment, Stars rewards remain selectable regardless of the user's current internal Stars balance; the 500 ⭐ cap is enforced when a Stars payout is actually fulfilled;
 - one outcome is selected;
 - the selected inventory is decremented atomically;
 - the result is recorded server-side before the client reveal.
@@ -120,10 +120,11 @@ Example:
 
 The 30 ⭐ overflow must be explicitly recorded/audited and never become a second balance/currency.
 
-At `500 / 500`:
-- Stars rewards are removed from that user's eligible pool;
-- other rewards remain eligible;
-- spending Stars immediately frees capacity.
+At `500 / 500` during the MVP manual-fulfillment flow:
+- a Stars reward may still be won and placed into `PENDING`;
+- when an administrator fulfills it, only the available capacity is credited;
+- any overflow is explicitly audited as capped overflow and is not added to the user's balance;
+- spending Stars frees capacity for later fulfillment.
 
 ## 10. Daily Gift
 
