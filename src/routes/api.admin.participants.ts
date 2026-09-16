@@ -50,9 +50,12 @@ export const Route = createFileRoute("/api/admin/participants")({
                     COALESCE(ss.paid_spins,0)::int AS paid_spins, COALESCE(rs.rewards,0)::int AS rewards,
                     COALESCE(rs.stars,0)::int AS stars, ss.last_activity::text
                FROM users u
+               LEFT JOIN user_state us ON us.user_id=u.id
                LEFT JOIN spin_stats ss ON ss.user_id=u.id
                LEFT JOIN reward_stats rs ON rs.user_id=u.id
-              WHERE ($2='' OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR u.first_name ILIKE $1 OR COALESCE(u.last_name,'') ILIKE $1)
+              WHERE u.is_test=FALSE
+                AND COALESCE(us.is_participant,TRUE)=TRUE
+                AND ($2='' OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR u.first_name ILIKE $1 OR COALESCE(u.last_name,'') ILIKE $1)
               ORDER BY COALESCE(ss.last_activity, u.last_seen_at) DESC
               LIMIT $4`,
             params,
