@@ -8,7 +8,7 @@ import { appendStarsLedger } from "@/server/stars-ledger";
 const MINIMUM = 50;
 const MAX_STARS = 500;
 const LIVE_STATES = ["ACTIVE", "ENDING"] as const;
-const WITHDRAWAL_OPEN_STATES = ["CLOSED", "PAYOUT", "ARCHIVED"] as const;
+const WITHDRAWAL_OPEN_STATES = ["CLOSED", "PAYOUT"] as const;
 
 export const Route = createFileRoute("/api/withdraw")({
   server: { handlers: {
