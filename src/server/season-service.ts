@@ -98,17 +98,22 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const currentStart = current.starts_at ? new Date(current.starts_at) : null;
   const currentEnd = current.ends_at ? new Date(current.ends_at) : null;
   const now = new Date();
-  if (startsAt && Number.isNaN(new Date(startsAt).getTime())) throw new Error("INVALID_START_DATE");
-  if (endsAt && Number.isNaN(new Date(endsAt).getTime())) throw new Error("INVALID_END_DATE");
-  if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) throw new Error("INVALID_SEASON_DATES");
+  const parsedStart = startsAt ? new Date(startsAt) : null;
+  const parsedEnd = endsAt ? new Date(endsAt) : null;
+  if (startsAt && (!parsedStart || Number.isNaN(parsedStart.getTime()))) throw new Error("INVALID_START_DATE");
+  if (endsAt && (!parsedEnd || Number.isNaN(parsedEnd.getTime()))) throw new Error("INVALID_END_DATE");
+  if (parsedStart && parsedEnd && parsedStart >= parsedEnd) throw new Error("INVALID_SEASON_DATES");
 
   const hasStarted = current.state !== "DRAFT" && current.state !== "SCHEDULED" || Boolean(currentStart && currentStart <= now);
-  if (hasStarted && startsAt !== current.starts_at) throw new Error("SEASON_START_LOCKED");
-  if (hasStarted && currentEnd && endsAt && new Date(endsAt) < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
+  const startChanged = parsedStart && currentStart
+    ? parsedStart.getTime() !== currentStart.getTime()
+    : parsedStart !== currentStart;
+  if (hasStarted && startChanged) throw new Error("SEASON_START_LOCKED");
+  if (hasStarted && currentEnd && parsedEnd && parsedEnd < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
   if (hasStarted && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
-  if (nextState === "SCHEDULED" && (!startsAt || new Date(startsAt) <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
-  if (["ACTIVE", "ENDING"].includes(nextState) && (!startsAt || new Date(startsAt) > now)) throw new Error("ACTIVE_START_MUST_BE_NOW_OR_PAST");
-  if (["ACTIVE", "ENDING"].includes(nextState) && endsAt && new Date(endsAt) <= now) throw new Error("SEASON_END_ALREADY_PASSED");
+  if (nextState === "SCHEDULED" && (!parsedStart || parsedStart <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
+  if (["ACTIVE", "ENDING"].includes(nextState) && (!parsedStart || parsedStart > now)) throw new Error("ACTIVE_START_MUST_BE_NOW_OR_PAST");
+  if (["ACTIVE", "ENDING"].includes(nextState) && parsedEnd && parsedEnd <= now) throw new Error("SEASON_END_ALREADY_PASSED");
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
