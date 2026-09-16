@@ -38,6 +38,7 @@ async function api<T>(url: string, options?: RequestInit) {
 const emptyDraft = (): Draft => ({ kind: "CUSTOM", title: "", subtitle: "", amount: 0, quantity: 1, weight: 1, active: true, unitCost: 0, currency: null, imageUrl: "", won: 0 });
 
 function fromPrize(prize: Prize): Draft {
+  const parsedWeight = Number(prize.metadata?.weight ?? 1);
   return {
     id: prize.id,
     kind: prize.kind,
@@ -45,7 +46,7 @@ function fromPrize(prize: Prize): Draft {
     subtitle: prize.subtitle ?? "",
     amount: Number(prize.amount) || 0,
     quantity: prize.quantity_total,
-    weight: Number(prize.metadata?.weight ?? 1) || 1,
+    weight: Number.isFinite(parsedWeight) ? parsedWeight : 1,
     active: prize.is_active,
     unitCost: Number(prize.unit_cost) || 0,
     currency: prize.currency,
