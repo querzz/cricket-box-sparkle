@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { PoolClient } from "pg";
 import { authenticateAdmin } from "@/server/auth/access";
 import { withTransaction, query } from "@/server/db";
-import { appendStarsLedger } from "@/server/stars-ledger";
+import { appendStarsLedger, STARS_MAX_BALANCE } from "@/server/stars-ledger";
 
 type PayoutRow = {
   id: string; created_at: string; telegram_id: string; username: string | null;
@@ -18,15 +18,29 @@ async function refundWithdrawalStars(client: PoolClient, payoutId: string, userI
   if (!requested) return;
   const state = await client.query<{ stars_balance: number }>(`SELECT stars_balance FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [userId]);
   const currentBalance = Number(state.rows[0]?.stars_balance ?? 0);
-  const credited = Math.min(requested, Math.max(0, 500 - currentBalance));
+  const credited = Math.min(requested, Math.max(0, STARS_MAX_BALANCE - currentBalance));
   const overflow = requested - credited;
   if (credited > 0) await appendStarsLedger(client, { userId, type: "REFUND_REVERSAL", amount: credited, balanceDelta: credited, referenceId: payoutId, idempotencyKey: `withdrawal-refund:${payoutId}:credited`, metadata: { requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow, reason } });
   if (overflow > 0) await appendStarsLedger(client, { userId, type: "CAPPED_OVERFLOW_BURNED", amount: -overflow, balanceDelta: 0, referenceId: payoutId, idempotencyKey: `withdrawal-refund:${payoutId}:overflow`, metadata: { requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow, reason } });
   await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, after_data) VALUES ($1::uuid,'WITHDRAWAL_REFUNDED','payout',$2,$3::jsonb)`, [adminId, payoutId, JSON.stringify({ requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow, reason })]);
 }
 
+async function fulfillStarsPrize(client: PoolClient, payoutId: string, userId: string, amount: number, adminId: string) {
+  const requested = Math.max(0, Math.floor(amount));
+  if (!requested) return { requestedAmount: 0, creditedAmount: 0, overflowAmount: 0 };
+  await client.query(`INSERT INTO user_state(user_id) VALUES($1::uuid) ON CONFLICT(user_id) DO NOTHING`, [userId]);
+  const state = await client.query<{ stars_balance: number }>(`SELECT stars_balance FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [userId]);
+  const currentBalance = Number(state.rows[0]?.stars_balance ?? 0);
+  const credited = Math.min(requested, Math.max(0, STARS_MAX_BALANCE - currentBalance));
+  const overflow = requested - credited;
+  if (credited > 0) await appendStarsLedger(client, { userId, type: "REWARD", amount: requested, balanceDelta: credited, referenceId: payoutId, idempotencyKey: `payout:${payoutId}:stars-reward`, metadata: { requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow, source: "MANUAL_PAYOUT" } });
+  if (overflow > 0) await appendStarsLedger(client, { userId, type: "CAPPED_OVERFLOW_BURNED", amount: -overflow, balanceDelta: 0, referenceId: payoutId, idempotencyKey: `payout:${payoutId}:stars-overflow`, metadata: { requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow, source: "MANUAL_PAYOUT" } });
+  await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, after_data) VALUES ($1::uuid,'STARS_PRIZE_FULFILLED','payout',$2,$3::jsonb)`, [adminId, payoutId, JSON.stringify({ requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow })]);
+  return { requestedAmount: requested, creditedAmount: credited, overflowAmount: overflow };
+}
+
 async function changePayout(client: PoolClient, adminId: string, id: string, nextStatus: Status, fulfillmentReference?: string, fulfillmentNote?: string) {
-  const payout = await client.query<{ user_id: string; kind: string; amount: string; status: Status; note: string | null }>(`SELECT user_id::text, kind, amount::text, status, note FROM payouts WHERE id=$1::uuid FOR UPDATE`, [id]);
+  const payout = await client.query<{ user_id: string; kind: string; amount: string; status: Status; note: string | null; fulfillment_provider: string }>(`SELECT user_id::text, kind, amount::text, status, note, fulfillment_provider FROM payouts WHERE id=$1::uuid FOR UPDATE`, [id]);
   if (!payout.rows[0]) throw new Error("NOT_FOUND");
   const before = payout.rows[0];
   if (before.status === nextStatus) return false;
@@ -38,15 +52,18 @@ async function changePayout(client: PoolClient, adminId: string, id: string, nex
   if (nextStatus === "PAID" && !reference) throw new Error("FULFILLMENT_REFERENCE_REQUIRED");
 
   const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
+  const isStarsPrize = before.kind === "STARS" && !isWithdrawal;
   const provider = isWithdrawal ? "TELEGRAM_STARS_WITHDRAWAL" : "MANUAL";
-  if (nextStatus === "PAID" && isWithdrawal && reference.length < 2) throw new Error("FULFILLMENT_REFERENCE_REQUIRED");
+  let starsFulfillment = null;
+  if (nextStatus === "PAID" && isStarsPrize) starsFulfillment = await fulfillStarsPrize(client, id, before.user_id, Number(before.amount), adminId);
 
   const nextNote = nextStatus === "PAID"
     ? [before.note === "WITHDRAWAL_REQUEST" ? before.note : before.note ?? "", `FULFILLMENT_REF:${reference}`, operatorNote ? `FULFILLMENT_NOTE:${operatorNote}` : ""].filter(Boolean).join(" · ")
     : before.note;
-  await client.query(`UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, note=$4, fulfillment_provider=$5, fulfillment_reference=CASE WHEN $2='PAID' THEN $6 ELSE fulfillment_reference END, fulfillment_note=CASE WHEN $2='PAID' THEN $7 ELSE fulfillment_note END, fulfillment_metadata=CASE WHEN $2='PAID' THEN jsonb_build_object('operatorAdminId',$3::text,'provider',$5::text,'reference',$6::text) ELSE fulfillment_metadata END, paid_at=CASE WHEN $2='PAID' THEN COALESCE(paid_at, now()) ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`, [id, nextStatus, adminId, nextNote, provider, reference || null, operatorNote || null]);
+  const metadata = nextStatus === "PAID" ? { operatorAdminId: adminId, provider, reference, ...(starsFulfillment ? { stars: starsFulfillment } : {}) } : null;
+  await client.query(`UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, note=$4, fulfillment_provider=$5, fulfillment_reference=CASE WHEN $2='PAID' THEN $6 ELSE fulfillment_reference END, fulfillment_note=CASE WHEN $2='PAID' THEN $7 ELSE fulfillment_note END, fulfillment_metadata=CASE WHEN $2='PAID' THEN $8::jsonb ELSE fulfillment_metadata END, paid_at=CASE WHEN $2='PAID' THEN COALESCE(paid_at, now()) ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`, [id, nextStatus, adminId, nextNote, provider, reference || null, operatorNote || null, JSON.stringify(metadata ?? {})]);
   if (isWithdrawal && ["FAILED", "CANCELLED"].includes(nextStatus)) await refundWithdrawalStars(client, id, before.user_id, Number(before.amount), adminId, nextStatus);
-  await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`, [adminId, id, JSON.stringify(before), JSON.stringify({ status: nextStatus, fulfillmentProvider: provider, fulfillmentReference: reference || null, fulfillmentNote: operatorNote || null })]);
+  await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`, [adminId, id, JSON.stringify(before), JSON.stringify({ status: nextStatus, fulfillmentProvider: provider, fulfillmentReference: reference || null, fulfillmentNote: operatorNote || null, starsFulfillment })]);
   return true;
 }
 
