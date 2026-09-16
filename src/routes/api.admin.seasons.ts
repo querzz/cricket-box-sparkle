@@ -82,7 +82,7 @@ export const Route = createFileRoute("/api/admin/seasons")({
           return Response.json({ ok: true, season: result.season });
         } catch (error) {
           const code = error instanceof Error ? error.message : "REQUEST_FAILED";
-          const status = ["INVALID_STATE", "INVALID_PAID_SPIN_PRICE"].includes(code) ? 400 : ["INVALID_SEASON_TRANSITION", "PAID_SPIN_PRICE_LOCKED", "PAID_SPIN_REENABLE_LOCKED", "SEASON_START_LOCKED", "SEASON_END_CANNOT_BE_SHORTENED", "SEASON_END_CANNOT_BE_REMOVED"].includes(code) ? 409 : 400;
+          const status = ["INVALID_STATE", "INVALID_PAID_SPIN_PRICE"].includes(code) ? 400 : ["INVALID_SEASON_TRANSITION", "PAID_SPIN_PRICE_LOCKED", "PAID_SPIN_REENABLE_LOCKED", "SEASON_START_LOCKED", "SEASON_END_CANNOT_BE_SHORTENED", "SEASON_END_CANNOT_BE_REMOVED", "SEASON_PRIZE_POOL_INVALID"].includes(code) ? 409 : 400;
           console.error("Season update failed:", code);
           return Response.json({ ok: false, code }, { status });
         }
