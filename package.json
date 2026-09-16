@@ -8,7 +8,7 @@
     "bot": "node scripts/telegram-bot-entry.mjs",
     "db:init": "node scripts/init-db.mjs",
     "db:seed:demo": "node scripts/seed-demo.mjs",
-    "test:db": "node scripts/test-db-integration.mjs && node scripts/test-admin-read-models.mjs",
+    "test:db": "node scripts/test-db-integration.mjs && node scripts/test-admin-read-models.mjs && node scripts/test-payout-lifecycle.mjs",
     "test:liveops": "node scripts/test-liveops.mjs",
     "test:payment-security": "node scripts/test-payment-security.mjs && node scripts/test-rate-limit.mjs",
     "test:spin-idempotency": "node scripts/test-spin-idempotency.mjs",
