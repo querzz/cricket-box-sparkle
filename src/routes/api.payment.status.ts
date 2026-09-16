@@ -72,7 +72,7 @@ export const Route = createFileRoute("/api/payment/status")({
               title: spin.prize_title,
               subtitle: spin.prize_subtitle,
               amount: Number(spin.prize_amount) || undefined,
-              status: spin.payout_status === "PAID" || spin.prize_kind === "STARS" || spin.prize_kind === "EMPTY" ? "RECEIVED" : "PENDING",
+              status: spin.payout_status === "PAID" || spin.prize_kind === "EMPTY" ? "RECEIVED" : "PENDING",
               payoutStatus: spin.payout_status,
             },
           } : null,
