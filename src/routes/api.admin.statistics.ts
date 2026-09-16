@@ -10,9 +10,11 @@ export const Route = createFileRoute("/api/admin/statistics")({
         await authenticateAdmin(url.searchParams.get("initData") ?? "");
         const scope = url.searchParams.get("scope") === "all" ? "all" : "current";
         let seasonId: string | null = null;
+        let seasonStart: string | null = null;
         if (scope === "current") {
-          const season = await query<{ id: string }>(`SELECT id::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`);
+          const season = await query<{ id: string; starts_at: string | null }>(`SELECT id::text,starts_at::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`);
           seasonId = season.rows[0]?.id ?? null;
+          seasonStart = season.rows[0]?.starts_at ?? null;
         }
         const seasonFilter = seasonId ? `AND s.season_id = $1::uuid` : "";
         const params = seasonId ? [seasonId] : [];
@@ -32,8 +34,8 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const participantsToday = await query<{ value: string }>(`SELECT COUNT(DISTINCT user_id)::text AS value FROM spins WHERE status='COMPLETED' AND created_at >= current_date ${seasonId ? `AND season_id=$1::uuid` : ""}`, params);
 
         const registered = await query<{ value: string }>(seasonId
-          ? `SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s WHERE s.season_id=$1::uuid`
-          : `SELECT COUNT(*)::text AS value FROM users`, params);
+          ? `SELECT COUNT(*)::text AS value FROM users WHERE created_at <= COALESCE($1::timestamptz,now())`
+          : `SELECT COUNT(*)::text AS value FROM users`, seasonId ? [new Date(seasonStart ?? Date.now()).toISOString()] : []);
         const repeatUsers = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM (SELECT s.user_id FROM spins s WHERE s.status='COMPLETED' ${spinSeasonPredicate} GROUP BY s.user_id HAVING COUNT(*)>=2) x`, params);
         const paidUsers = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s WHERE s.status='COMPLETED' AND s.type='PAID' ${spinSeasonPredicate}`, params);
         const failedSpins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s WHERE s.status='FAILED' ${seasonFilter}`, params);
@@ -64,6 +66,7 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const repeatCount = Number(repeatUsers.rows[0]?.value ?? 0);
         const paidUserCount = Number(paidUsers.rows[0]?.value ?? 0);
         const failedSpinCount = Number(failedSpins.rows[0]?.value ?? 0);
+        const registeredUsers = Number(registered.rows[0]?.value ?? 0);
         const eligibleD1 = Number(cohortRetention.rows[0]?.eligible_d1 ?? 0);
         const retainedD1 = Number(cohortRetention.rows[0]?.retained_d1 ?? 0);
         const eligibleD7 = Number(cohortRetention.rows[0]?.eligible_d7 ?? 0);
@@ -88,9 +91,9 @@ export const Route = createFileRoute("/api/admin/statistics")({
             completedWithdrawals: Number(withdrawals.rows[0]?.paid ?? 0),
             dailyActiveToday: Number(participantsToday.rows[0]?.value ?? 0),
             funnel: {
-              registeredUsers: Number(registered.rows[0]?.value ?? 0),
+              registeredUsers,
               participants: metricParticipants,
-              participantRate: Number(registered.rows[0]?.value ?? 0) ? metricParticipants / Number(registered.rows[0].value) : 0,
+              participantRate: registeredUsers ? metricParticipants / registeredUsers : 0,
               spinCompletionRate: attemptedSpins ? totalSpins / attemptedSpins : 0,
               winnerRate: totalSpins ? winCount / totalSpins : 0,
               paidUsers: paidUserCount,
