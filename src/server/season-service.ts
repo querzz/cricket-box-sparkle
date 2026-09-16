@@ -148,8 +148,10 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
     if (!current.rows[0]) throw new Error("PRIZE_NOT_FOUND");
     if (current.rows[0].season_id !== input.seasonId) throw new Error("PRIZE_SEASON_MISMATCH");
 
+    const seasonState = await query<{ state: SeasonState }>(`SELECT state FROM seasons WHERE id = $1::uuid FOR UPDATE`, [input.seasonId]);
+    if (!seasonState.rows[0]) throw new Error("SEASON_NOT_FOUND");
     const spinCount = await query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id = $1::uuid`, [input.seasonId]);
-    const hasStarted = Number(spinCount.rows[0]?.count ?? 0) > 0;
+    const hasStarted = seasonState.rows[0].state === "ACTIVE" || seasonState.rows[0].state === "ENDING" || Number(spinCount.rows[0]?.count ?? 0) > 0;
     const old = current.rows[0];
     const oldWeight = validatePrizeWeight(old.metadata);
     const newWeight = validatePrizeWeight(input.metadata);
