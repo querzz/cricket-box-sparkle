@@ -4,13 +4,12 @@ import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
 import { activateDueDrops } from "@/server/liveops";
 import { secureRandomUnit } from "@/server/secure-random";
-import { appendStarsLedger } from "@/server/stars-ledger";
+import { appendStarsLedger, STARS_MAX_BALANCE } from "@/server/stars-ledger";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 import { seasonElapsedFraction } from "@/server/season-economy";
 import { pickDynamicPrize } from "@/server/dynamic-prize-selection";
 
-const MAX_STARS = 500;
 type PrizeKind = "STARS" | "PREMIUM" | "MONEY" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN" | "EMPTY";
 type Body = { initData?: unknown; paid?: unknown; idempotencyKey?: unknown };
 type Prize = { id:string; kind:PrizeKind; title:string; subtitle:string|null; amount:string; currency:string|null; quantity_total:number; quantity_remaining:number; metadata:Record<string,unknown>|null };
@@ -20,7 +19,7 @@ const rewardResponse = (result:{spinId:string;payoutId:string|null;createdAt:str
   return { ok:true, duplicate:result.duplicate,
     spin:{id:result.spinId,type:result.spinType,priceStars:0,status:"COMPLETED",createdAt:result.createdAt},
     reward:{id:result.payoutId??result.spinId,kind:prize.kind,title:prize.title,subtitle:prize.subtitle,amount:Number(prize.amount)||undefined,wonAt:result.createdAt,status:prize.kind==="EMPTY"||prize.kind==="STARS"?"RECEIVED":"PENDING",
-      payoutNote:prize.kind==="EMPTY"?"В этот раз без награды.":prize.kind==="STARS"?(result.credited<result.rewardStars?`Лимит 500 Stars: зачислено ${result.credited} из ${result.rewardStars}.`:"Stars зачислены на баланс."):"Награда записана и ожидает выдачи.",
+      payoutNote:prize.kind==="EMPTY"?"В этот раз без награды.":prize.kind==="STARS"?(result.credited<result.rewardStars?`Лимит ${STARS_MAX_BALANCE} Stars: зачислено ${result.credited} из ${result.rewardStars}.`:"Stars зачислены на баланс."):"Награда записана и ожидает выдачи.",
       creditedAmount:prize.kind==="STARS"?result.credited:undefined,uncreditedAmount:prize.kind==="STARS"?Math.max(0,result.rewardStars-result.credited):0}};
 };
 
@@ -45,15 +44,15 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const userResult=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE telegram_id=$1 LIMIT 1 FOR UPDATE`,[telegramId]);
       if(!userResult.rows[0])throw new Error("USER_NOT_FOUND");
       const user=userResult.rows[0];
-      const existing=await client.query<{id:string;created_at:string;type:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;payout_id:string|null;reward_stars:string;credited_stars:string}>(
-        `SELECT s.id::text,s.created_at::text,s.type,p.kind,p.title,p.subtitle,p.amount::text,p.currency,py.id::text AS payout_id,
+      const existing=await client.query<{id:string;prize_id:string;created_at:string;type:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;payout_id:string|null;reward_stars:string;credited_stars:string}>(
+        `SELECT s.id::text,s.prize_id::text AS prize_id,s.created_at::text,s.type,p.kind,p.title,p.subtitle,p.amount::text,p.currency,py.id::text AS payout_id,
                 COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'requestedAmount')::integer,sl.amount) ELSE 0 END) FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS reward_stars,
                 COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'creditedAmount')::integer,sl.amount) ELSE 0 END) FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS credited_stars
            FROM spins s JOIN prizes p ON p.id=s.prize_id LEFT JOIN payouts py ON py.spin_id=s.id
           WHERE s.user_id=$1::uuid AND s.idempotency_key=$2 AND s.status='COMPLETED' ORDER BY s.created_at DESC LIMIT 1`,[user.id,idempotencyKey]);
       if(existing.rows[0]){
         const row=existing.rows[0];
-        const prize={id:row.id,kind:row.kind,title:row.title,subtitle:row.subtitle,amount:row.amount,currency:row.currency,metadata:{},quantity_total:1,quantity_remaining:0};
+        const prize={id:row.prize_id,kind:row.kind,title:row.title,subtitle:row.subtitle,amount:row.amount,currency:row.currency,metadata:{},quantity_total:1,quantity_remaining:0};
         return {spinId:row.id,payoutId:row.payout_id,createdAt:row.created_at,prize,credited:Number(row.credited_stars)||0,rewardStars:Number(row.reward_stars)||0,spinType:row.type,duplicate:true};
       }
       await client.query(`INSERT INTO user_state(user_id,stars_balance,is_subscribed,is_participant,bonus_free_spins) VALUES($1::uuid,125,TRUE,TRUE,0) ON CONFLICT(user_id) DO NOTHING`,[user.id]);
@@ -82,7 +81,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       for(const kind of recentKinds){if(kind!=="EMPTY")break;emptyStreak+=1;}
       const elapsedFraction=seasonElapsedFraction(season.starts_at,season.ends_at);
 
-      const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`,[season.id,Number(state.stars_balance??0),MAX_STARS]);
+      const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`,[season.id,Number(state.stars_balance??0),STARS_MAX_BALANCE]);
       if(!prizes.rows.length)throw new Error("NO_PRIZES");
       const selection=pickDynamicPrize(prizes.rows,secureRandomUnit,{elapsedFraction,emptyStreak,recentKinds});
       const picked=selection.prize;
@@ -93,7 +92,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       if(useActivity||useGift)await client.query(`UPDATE user_state SET bonus_free_spins=GREATEST(0,bonus_free_spins-1),updated_at=now() WHERE user_id=$1::uuid`,[user.id]);
       const nextXp=Number(user.xp??0)+10; await client.query(`UPDATE users SET xp=$2,level=$3,last_seen_at=now() WHERE id=$1::uuid`,[user.id,nextXp,Math.max(1,Math.floor(nextXp/100)+1)]);
       const rewardStars=picked.kind==="STARS"?Math.max(0,Math.floor(Number(picked.amount)||0)):0;
-      const credited=rewardStars>0?Math.min(rewardStars,Math.max(0,MAX_STARS-Number(state.stars_balance??0))):0;
+      const credited=rewardStars>0?Math.min(rewardStars,Math.max(0,STARS_MAX_BALANCE-Number(state.stars_balance??0))):0;
       const overflow=Math.max(0,rewardStars-credited);
       if(rewardStars>0){
         await appendStarsLedger(client,{userId:user.id,seasonId:season.id,spinId:spin.rows[0].id,type:"REWARD",amount:rewardStars,balanceDelta:credited,referenceId:picked.id,idempotencyKey:`spin:${spin.rows[0].id}:stars-reward`,metadata:{requestedAmount:rewardStars,creditedAmount:credited,overflowAmount:overflow,source:spinType}});
@@ -102,7 +101,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       let payoutId:string|null=null;
       if(picked.kind!=="EMPTY"){
         const payoutStatus=rewardStars>0?"PAID":"PENDING";
-        const note=rewardStars>0?(credited<rewardStars?`Лимит 500 Stars: зачислено ${credited} из ${rewardStars}.`:"Stars зачислены на баланс."):"Приз ожидает выдачи администратором.";
+        const note=rewardStars>0?(credited<rewardStars?`Лимит ${STARS_MAX_BALANCE} Stars: зачислено ${credited} из ${rewardStars}.`:"Stars зачислены на баланс."):"Приз ожидает выдачи администратором.";
         const payout=await client.query<{id:string}>(`INSERT INTO payouts(spin_id,user_id,prize_id,kind,amount,currency,status,note,paid_at) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::numeric,$6,$7,$8,CASE WHEN $7='PAID' THEN now() ELSE NULL END) RETURNING id::text`,[spin.rows[0].id,user.id,picked.id,picked.kind,picked.amount,picked.currency,payoutStatus,note]);
         payoutId=payout.rows[0].id;
       }
