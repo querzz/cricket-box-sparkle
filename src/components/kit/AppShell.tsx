@@ -17,6 +17,16 @@ interface AppShellProps {
 }
 
 const ADMIN_BOT_URL = import.meta.env.VITE_ADMIN_BOT_URL || "https://t.me/your_bot?startapp=admin";
+const ADMIN_NAV = [
+  ["Обзор", "/admin"],
+  ["Призы", "/admin/prizes"],
+  ["Выплаты", "/admin/payouts"],
+  ["Участники", "/admin/participants"],
+  ["Прокрутки", "/admin/spins"],
+  ["Статистика", "/admin/statistics"],
+  ["Экономика", "/admin/economics"],
+  ["Аудит", "/admin/audit"],
+] as const;
 
 function telegramMiniAppIsAvailable() {
   if (typeof window === "undefined") return false;
@@ -41,6 +51,23 @@ function AdminBotGate() {
         <p className="mt-3 text-[9px] leading-relaxed text-muted-foreground">Для продакшена бот передаёт Telegram Mini App initData на сервер для проверки личности и роли.</p>
       </div>
     </main>
+  </div>;
+}
+
+function AdminSectionNav() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => setVisible(window.location.pathname.startsWith("/admin") && window.location.pathname !== "/admin/login"), []);
+  if (!visible) return null;
+
+  return <div className="mb-4 -mx-1 overflow-x-auto px-1 no-scrollbar">
+    <div className="flex min-w-max gap-1.5 rounded-2xl border border-glass-border bg-card/55 p-1 backdrop-blur-xl">
+      {ADMIN_NAV.map(([label, href]) => {
+        const active = typeof window !== "undefined" && (window.location.pathname === href || (href !== "/admin" && window.location.pathname.startsWith(`${href}/`)));
+        return <Link key={href} to={href as never} className={cn("rounded-xl px-3 py-2 text-[10px] font-semibold transition", active ? "bg-primary/15 text-primary-glow shadow-[0_0_18px_-8px_var(--primary)]" : "text-muted-foreground hover:text-foreground")}>
+          {label}
+        </Link>;
+      })}
+    </div>
   </div>;
 }
 
@@ -76,7 +103,7 @@ export function AppShell({ children, title, back, action, bare = false, nav = tr
 
   if (needsBotEntry) return <AdminBotGate />;
 
-  const content = <div className="grain relative mx-auto min-h-dvh w-full max-w-[430px] overflow-x-hidden bg-background">
+  const content = <div className="grain relative mx-auto min-h-dvh w-full max-w-[430px] overflow-x-hidden bg-background" data-admin={isAdmin && !isAdminLogin ? "true" : undefined}>
     <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-0 h-[68vh] stage-glow" />
     <div aria-hidden className="pointer-events-none fixed -left-24 top-[38vh] z-0 size-64 rounded-full bg-primary/20 blur-[90px] animate-drift" />
     <div aria-hidden className="pointer-events-none fixed -right-28 top-[62vh] z-0 size-72 rounded-full bg-primary-glow/12 blur-[110px] animate-drift [animation-delay:-6s]" />
@@ -86,6 +113,7 @@ export function AppShell({ children, title, back, action, bare = false, nav = tr
       <div className="flex justify-end">{action}</div>
     </header>}
     <main className={cn("relative z-10 px-4", bare ? "pt-0" : "pt-1", nav ? "pb-[calc(6.5rem+env(safe-area-inset-bottom))]" : "pb-10", className)}>
+      <AdminSectionNav />
       <AdminExtraActions />
       {children}
     </main>
