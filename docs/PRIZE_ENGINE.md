@@ -24,7 +24,17 @@ The selector receives some legacy context fields (`elapsedFraction`, `emptyStrea
 
 `weight` is optional and defaults to `1` when omitted. Explicit `0` is valid. Negative, non-finite or otherwise invalid values are rejected rather than silently converted to a usable weight.
 
-Prize economic fields, including weight, are locked after the season has started being used. This prevents changing odds retrospectively after users have already spun.
+Prize economic fields, including weight, are locked once a season is ACTIVE/ENDING or has recorded spins. This prevents changing odds retrospectively after users have started playing.
+
+Activating a season also requires at least one active prize with remaining inventory and positive weight, so a live season cannot start with an empty playable pool.
+
+## Prize fulfillment
+
+Winning an external or manually issued prize does not automatically transfer the reward in the MVP. This includes `NFT`, `STARS`, `PREMIUM`, `MONEY`, `PHYSICAL` and `CUSTOM` prizes won from a paid spin. The spin creates a `PENDING` payout and an admin operator completes the real-world/Telegram delivery manually.
+
+When an admin marks a payout as `PAID`, a fulfillment reference is required (for example transaction hash, order ID, delivery code or another traceable identifier) and is written to the payout and audit log. Bulk payout actions cannot mark rewards as paid because each reward needs its own fulfillment reference.
+
+The future automation layer should replace this manual fulfillment path with provider integrations while keeping the same payout lifecycle and audit trail.
 
 ## Per-user Stars eligibility
 
