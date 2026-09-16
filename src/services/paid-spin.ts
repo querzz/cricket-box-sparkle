@@ -17,7 +17,10 @@ function mapError(code: string) {
     case "NOT_SUBSCRIBED": return fail("NOT_SUBSCRIBED", "Подпишись на канал, чтобы участвовать.");
     case "NOT_PARTICIPANT": return fail("NOT_PARTICIPANT", "Ты пока не участвуешь в этом сезоне.");
     case "PAYMENT_PROCESSING": return fail("PAYMENT_PROCESSING", "Платёж получен, но результат ещё обрабатывается. Попробуй открыть экран ещё раз через несколько секунд.");
+    case "PAYMENT_REFUND_PENDING": return fail("PAYMENT_PROCESSING", "Платёж не потерян: возврат Stars ещё обрабатывается. Открой экран ещё раз позже.");
+    case "PAYMENT_REFUNDED": return fail("NETWORK", "Прокрутку не удалось завершить, поэтому платёж в Telegram Stars возвращён.");
     case "NO_PRIZES": return fail("NO_PRIZES", "В этом сезоне сейчас нет доступных призов.");
+    case "PAID_SPIN_DISABLED": return fail("NETWORK", "Платные прокрутки сейчас отключены.");
     default: return fail("NETWORK", "Не удалось выполнить оплату. Попробуй ещё раз.");
   }
 }
@@ -37,8 +40,6 @@ export async function completePaidSpin(price: number) {
   if (!tg?.openInvoice) return fail("NETWORK", "Эта версия Telegram не поддерживает оплату внутри Mini App.");
 
   try {
-    // Capture the counter before opening the invoice. The bot can complete the payment
-    // before Telegram invokes the invoice callback, so a later baseline would miss it.
     const before = await getSession();
     const beforeCount = before?.ok && before.snapshot ? before.snapshot.spin.totalSpins : -1;
 
