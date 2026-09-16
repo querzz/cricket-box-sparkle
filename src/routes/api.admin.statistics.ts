@@ -10,11 +10,9 @@ export const Route = createFileRoute("/api/admin/statistics")({
         await authenticateAdmin(url.searchParams.get("initData") ?? "");
         const scope = url.searchParams.get("scope") === "all" ? "all" : "current";
         let seasonId: string | null = null;
-        let seasonStart: string | null = null;
         if (scope === "current") {
-          const season = await query<{ id: string; starts_at: string | null }>(`SELECT id::text,starts_at::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`);
+          const season = await query<{ id: string }>(`SELECT id::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`);
           seasonId = season.rows[0]?.id ?? null;
-          seasonStart = season.rows[0]?.starts_at ?? null;
         }
         const seasonFilter = seasonId ? `AND s.season_id = $1::uuid` : "";
         const params = seasonId ? [seasonId] : [];
@@ -33,9 +31,7 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const spinDays = await query<{ day: string; value: string }>(`SELECT to_char(d.day,'DD.MM') AS day, COUNT(s.id)::text AS value FROM generate_series(current_date - interval '6 days', current_date, interval '1 day') d(day) LEFT JOIN spins s ON s.created_at >= d.day AND s.created_at < d.day + interval '1 day' AND s.status='COMPLETED' ${seasonId ? `AND s.season_id=$1::uuid` : ""} GROUP BY d.day ORDER BY d.day`, params);
         const participantsToday = await query<{ value: string }>(`SELECT COUNT(DISTINCT user_id)::text AS value FROM spins WHERE status='COMPLETED' AND created_at >= current_date ${seasonId ? `AND season_id=$1::uuid` : ""}`, params);
 
-        const registered = await query<{ value: string }>(seasonId
-          ? `SELECT COUNT(*)::text AS value FROM users WHERE created_at <= COALESCE($1::timestamptz,now())`
-          : `SELECT COUNT(*)::text AS value FROM users`, seasonId ? [new Date(seasonStart ?? Date.now()).toISOString()] : []);
+        const registered = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM users`);
         const repeatUsers = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM (SELECT s.user_id FROM spins s WHERE s.status='COMPLETED' ${spinSeasonPredicate} GROUP BY s.user_id HAVING COUNT(*)>=2) x`, params);
         const paidUsers = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s WHERE s.status='COMPLETED' AND s.type='PAID' ${spinSeasonPredicate}`, params);
         const failedSpins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s WHERE s.status='FAILED' ${seasonFilter}`, params);
