@@ -83,7 +83,7 @@ export async function createSeason(input: { code: string; name: string; paidSpin
 }
 
 export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paidSpinPrice: number; paidSpinEnabled: boolean; dailyFreeSpin: boolean }>, executor?: DbExecutor) {
-  const db = executor ?? { query };
+  const db: DbExecutor = executor ?? ({ query: (text: string, values?: unknown[]) => query(text, values) } as DbExecutor);
   const currentResult = await db.query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons WHERE id = $1 FOR UPDATE`, [id]);
   if (!currentResult.rows[0]) return undefined;
 
