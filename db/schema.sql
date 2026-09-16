@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS spins (
 ALTER TABLE spins ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_spins_user_idempotency ON spins(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS payouts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), spin_id UUID REFERENCES spins(id) ON DELETE SET NULL, user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT, prize_id UUID REFERENCES prizes(id) ON DELETE SET NULL, kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY')), amount NUMERIC(18,2) NOT NULL DEFAULT 0, currency TEXT, status TEXT NOT NULL CHECK (status IN ('PENDING','REVIEW','PAID','FAILED','CANCELLED')) DEFAULT 'PENDING', operator_admin_id UUID REFERENCES admins(id) ON DELETE SET NULL, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), paid_at TIMESTAMPTZ
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), spin_id UUID REFERENCES spins(id) ON DELETE SET NULL, user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT, prize_id UUID REFERENCES prizes(id) ON DELETE SET NULL, kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY')), amount NUMERIC(18,2) NOT NULL DEFAULT 0, currency TEXT, status TEXT NOT NULL CHECK (status IN ('PENDING','REVIEW','PAID','FAILED','CANCELLED')) DEFAULT 'PENDING', operator_admin_id UUID REFERENCES admins(id) ON DELETE SET NULL, note TEXT, fulfillment_provider TEXT NOT NULL DEFAULT 'MANUAL', fulfillment_reference TEXT, fulfillment_note TEXT, fulfillment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), paid_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS daily_gift_claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('NOTHING','STARS','FREE_SPIN','XP')), amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0), title TEXT NOT NULL, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -67,6 +67,10 @@ ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_spins_issued INTE
 ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS fulfillment_provider TEXT NOT NULL DEFAULT 'MANUAL';
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS fulfillment_reference TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS fulfillment_note TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS fulfillment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE prizes DROP CONSTRAINT IF EXISTS prizes_kind_check;
 ALTER TABLE prizes ADD CONSTRAINT prizes_kind_check CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY'));
 ALTER TABLE payouts DROP CONSTRAINT IF EXISTS payouts_kind_check;
@@ -77,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spins_user_season ON spins(user_id,season_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spins_season_time ON spins(season_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts(status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payouts_fulfillment_provider_status ON payouts(fulfillment_provider,status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(telegram_user_id,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_channel_activity_channel_event_time ON channel_activity(channel_id,event_type,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
