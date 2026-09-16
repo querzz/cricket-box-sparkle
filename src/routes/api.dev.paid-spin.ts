@@ -6,7 +6,17 @@ import { authenticateAdmin } from "@/server/auth/access";
 import { secureRandomUnit } from "@/server/secure-random";
 import { pickDynamicPrize } from "@/server/dynamic-prize-selection";
 
-type PrizeRow = { id:string; kind:string; title:string; subtitle:string|null; amount:string; currency:string|null; quantity_remaining:number; metadata:Record<string,unknown>|null; };
+type PrizeRow = {
+  id: string;
+  kind: string;
+  title: string;
+  subtitle: string | null;
+  amount: string;
+  currency: string | null;
+  quantity_remaining: number;
+  quantity_total: number;
+  metadata: Record<string, unknown> | null;
+};
 
 export const Route = createFileRoute("/api/dev/paid-spin")({
   server: {
@@ -21,12 +31,12 @@ export const Route = createFileRoute("/api/dev/paid-spin")({
           if (!telegramId) throw new Error("TELEGRAM_USER_MISSING");
 
           const result = await withTransaction(async (client) => {
-            const user = await client.query<{id:string; xp:number}>(`SELECT id::text,xp FROM users WHERE telegram_id=$1 FOR UPDATE`, [telegramId]);
+            const user = await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE telegram_id=$1 FOR UPDATE`, [telegramId]);
             if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
-            const season = await client.query<{id:string; code:string; state:string}>(`SELECT id::text,code,state FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
+            const season = await client.query<{id:string;code:string;state:string}>(`SELECT id::text,code,state FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
             const current = season.rows[0];
             if (!current) throw new Error("SEASON_NOT_ACTIVE");
-            const prizes = await client.query<PrizeRow>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE ORDER BY created_at ASC FOR UPDATE`, [current.id]);
+            const prizes = await client.query<PrizeRow>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_remaining,quantity_total,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE ORDER BY created_at ASC FOR UPDATE`, [current.id]);
             if (!prizes.rows.length) throw new Error("NO_PRIZES");
             const selection = pickDynamicPrize(prizes.rows, secureRandomUnit, {});
             const picked = selection.prize;
