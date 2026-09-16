@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
 import { secureRandomUnit } from "@/server/secure-random";
-import { STARS_MAX_BALANCE } from "@/server/stars-ledger";
 import { activateDueDrops } from "@/server/liveops";
 import { pickDynamicPrize } from "@/server/dynamic-prize-selection";
 
@@ -50,8 +49,8 @@ export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{P
       const seasonResult=await client.query<{state:string;starts_at:string|null;ends_at:string|null;paid_spin_enabled:boolean}>(`SELECT state,starts_at::text,ends_at::text,paid_spin_enabled FROM seasons WHERE id=$1::uuid FOR UPDATE`,[seasonId]); const season=seasonResult.rows[0]; if(!season||!["ACTIVE","ENDING"].includes(season.state))throw new Error("SEASON_NOT_ACTIVE"); if(!season.paid_spin_enabled)throw new Error("PAID_SPIN_DISABLED");
       await activateDueDrops(client,seasonId);
       const prizes=await client.query<PrizeRow>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE ORDER BY created_at ASC FOR UPDATE`,[seasonId]);
-      const eligiblePrizes=prizes.rows.filter((prize)=>prize.kind!=="STARS"||Number(state.stars_balance??0)<STARS_MAX_BALANCE); if(!eligiblePrizes.length)throw new Error("NO_PRIZES");
-      const selection=pickDynamicPrize(eligiblePrizes,secureRandomUnit,{}); const picked=selection.prize; const inventory=await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`,[picked.id]); if(!inventory.rows[0])throw new Error("NO_PRIZES");
+      if(!prizes.rows.length)throw new Error("NO_PRIZES");
+      const selection=pickDynamicPrize(prizes.rows,secureRandomUnit,{}); const picked=selection.prize; const inventory=await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`,[picked.id]); if(!inventory.rows[0])throw new Error("NO_PRIZES");
       const spin=await client.query<{id:string;created_at:string}>(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status,telegram_payment_charge_id,completed_at) VALUES($1::uuid,$2::uuid,'PAID',$3,$4::uuid,'COMPLETED',$5,now()) RETURNING id::text,created_at::text`,[userId,seasonId,totalAmount,picked.id,chargeId]);
       let payoutId:string|null=null;
       if(picked.kind!=="EMPTY"){
