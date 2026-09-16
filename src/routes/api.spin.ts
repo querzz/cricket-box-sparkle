@@ -82,7 +82,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       for(const kind of recentKinds){if(kind!=="EMPTY")break;emptyStreak+=1;}
       const elapsedFraction=seasonElapsedFraction(season.starts_at,season.ends_at);
 
-      const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE AND (kind<>'STARS' OR $2::integer<$3::integer) ORDER BY created_at ASC FOR UPDATE`,[season.id,Number(state.stars_balance??0),STARS_MAX_BALANCE]);
+      const prizes=await client.query<Prize>(`SELECT id::text,kind,title,subtitle,amount::text,currency,quantity_total,quantity_remaining,metadata FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE ORDER BY created_at ASC FOR UPDATE`,[season.id]);
       if(!prizes.rows.length)throw new Error("NO_PRIZES");
       const selection=pickDynamicPrize(prizes.rows,secureRandomUnit,{elapsedFraction,emptyStreak,recentKinds});
       const picked=selection.prize;
