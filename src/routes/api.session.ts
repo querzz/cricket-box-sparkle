@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { validateTelegramInitData } from "@/server/auth/telegram";
-import { isProductionApp, requireBotToken } from "@/server/config";
+import { isProductionApp } from "@/server/config";
 import { query } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
@@ -19,7 +19,6 @@ type UserRow = {
   first_name: string;
   last_name: string | null;
   is_premium: boolean;
-  avatar_file_id: string | null;
   xp: number;
   level: number;
 };
@@ -46,42 +45,13 @@ function displaySeasonTitle(code: string, name: string) {
   return cleanName || "CRICKET BOX";
 }
 
-async function fetchTelegramAvatarFileId(telegramId: number) {
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${requireBotToken()}/getUserProfilePhotos`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ user_id: telegramId, offset: 0, limit: 1 }), signal: AbortSignal.timeout(5000),
-    });
-    const data = await response.json() as { ok: boolean; result?: { total_count: number; photos: Array<Array<{ file_id: string; width: number; height: number }>> } };
-    return data.ok && data.result?.total_count && data.result.photos[0]?.length ? data.result.photos[0][data.result.photos[0].length - 1]?.file_id ?? null : null;
-  } catch { return null; }
-}
-
-async function fetchTelegramAvatarDataUrl(fileId: string | null) {
-  if (!fileId) return undefined;
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${requireBotToken()}/getFile`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file_id: fileId }), signal: AbortSignal.timeout(5000),
-    });
-    const data = await response.json() as { ok: boolean; result?: { file_path?: string } };
-    const filePath = data.ok ? data.result?.file_path : undefined;
-    if (!filePath) return undefined;
-    const imageResponse = await fetch(`https://api.telegram.org/file/bot${requireBotToken()}/${filePath}`, { signal: AbortSignal.timeout(5000) });
-    if (!imageResponse.ok) return undefined;
-    const buffer = await imageResponse.arrayBuffer();
-    const extension = filePath.split(".").pop()?.toLowerCase();
-    const mime = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
-    return `data:${mime};base64,${Buffer.from(buffer).toString("base64")}`;
-  } catch { return undefined; }
-}
-
 export const Route = createFileRoute("/api/session")({
   server: { handlers: {
     GET: async ({ request }) => {
       try {
         const initData = (new URL(request.url).searchParams.get("initData") ?? "").trim();
         if (!initData) return Response.json({ ok: false, code: "INIT_DATA_MISSING" }, { status: 400 });
-        const validated = await validateTelegramInitData(initData, requireBotToken());
+        const validated = await validateTelegramInitData(initData, process.env.TELEGRAM_BOT_TOKEN ?? "");
         const tgUser = validated.user;
         if (!tgUser?.id || !tgUser.first_name) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
 
@@ -90,18 +60,15 @@ export const Route = createFileRoute("/api/session")({
           `INSERT INTO users (telegram_id, username, first_name, last_name, language_code, is_premium, last_seen_at)
            VALUES ($1,$2,$3,$4,$5,$6,now())
            ON CONFLICT (telegram_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,language_code=EXCLUDED.language_code,is_premium=EXCLUDED.is_premium,last_seen_at=now()
-           RETURNING id::text,telegram_id::text,username,first_name,last_name,is_premium,avatar_file_id,xp,level`,
+           RETURNING id::text,telegram_id::text,username,first_name,last_name,is_premium,xp,level`,
           [tgUser.id, tgUser.username ?? null, tgUser.first_name, tgUser.last_name ?? null, tgUser.language_code ?? null, Boolean(tgUser.is_premium)],
         );
         const user = userResult.rows[0];
         if (!user) throw new Error("USER_NOT_FOUND");
 
-        const latestAvatarFileId = await fetchTelegramAvatarFileId(tgUser.id);
-        if (latestAvatarFileId !== user.avatar_file_id) {
-          await query(`UPDATE users SET avatar_file_id=$2,last_seen_at=now() WHERE id=$1::uuid`, [user.id, latestAvatarFileId]);
-          user.avatar_file_id = latestAvatarFileId;
-        }
-        const avatarUrl = await fetchTelegramAvatarDataUrl(user.avatar_file_id);
+        // Telegram supplies the Mini App profile photo URL in initData when available.
+        // Use it directly instead of making multiple blocking Bot API/file-download calls during every session load.
+        const avatarUrl = typeof tgUser.photo_url === "string" && tgUser.photo_url.trim() ? tgUser.photo_url.trim() : undefined;
         const levelInfo = getLevelInfo(Number(user.xp ?? 0));
 
         await query(`INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins) VALUES ($1::uuid,125,TRUE,TRUE,0) ON CONFLICT (user_id) DO NOTHING`, [user.id]);
@@ -157,14 +124,12 @@ export const Route = createFileRoute("/api/session")({
             activityIssued += grant;
           }
         }
-        const effectiveActivityBonusRemaining = activityBonusRemaining + Math.max(0, activityIssued - Number(activitySpinUsage.rows[0]?.used ?? 0) - activityBonusRemaining);
 
         const prizeResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;quantity_remaining:number;quantity_total:number;metadata:Record<string,unknown>|null;image_url:string|null}>(
           `SELECT id::text,kind,title,subtitle,amount::text,quantity_remaining,quantity_total,metadata,image_url FROM prizes WHERE season_id=$1::uuid AND is_active=TRUE ORDER BY created_at ASC`, [season.id]);
         const spinStats = await query<{total:string}>(`SELECT COUNT(*)::text AS total FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND status='COMPLETED'`, [user.id,season.id]);
         const freeToday = await query<{exists:boolean}>(
-          `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id],
-        );
+          `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id]);
         const live = season.state === "ACTIVE" || season.state === "ENDING";
         const dailyAvailable = season.daily_free_spin && live && isSubscribed && storedState.is_participant && !freeToday.rows[0]?.exists ? 1 : 0;
         bonusFreeSpins = live && isSubscribed && storedState.is_participant ? Math.max(0, bonusFreeSpins) : 0;
