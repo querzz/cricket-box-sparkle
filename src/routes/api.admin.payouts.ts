@@ -37,7 +37,7 @@ async function changePayout(client: PoolClient, adminId: string, id: string, nex
   if (nextStatus === "PAID" && !reference) throw new Error("FULFILLMENT_REFERENCE_REQUIRED");
 
   const nextNote = nextStatus === "PAID"
-    ? [before.note === "WITHDRAWAL_REQUEST" ? before.note : before.note ?? "", reference ? `FULFILLMENT_REF:${reference}` : "", operatorNote ? `FULFILLMENT_NOTE:${operatorNote}` : ""].filter(Boolean).join(" · ")
+    ? [before.note === "WITHDRAWAL_REQUEST" ? before.note : before.note ?? "", `FULFILLMENT_REF:${reference}`, operatorNote ? `FULFILLMENT_NOTE:${operatorNote}` : ""].filter(Boolean).join(" · ")
     : before.note;
   await client.query(`UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, note=$4, paid_at=CASE WHEN $2='PAID' THEN COALESCE(paid_at, now()) ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`, [id, nextStatus, adminId, nextNote]);
   const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
@@ -59,6 +59,12 @@ function payoutTypeLabel(kind: PayoutRow["kind"]) {
   }
 }
 
+function extractFulfillmentReference(note: string | null) {
+  if (!note) return null;
+  const match = note.match(/FULFILLMENT_REF:([^·]+)/);
+  return match?.[1]?.trim() || null;
+}
+
 export const Route = createFileRoute("/api/admin/payouts")({
   server: {
     handlers: {
@@ -71,7 +77,7 @@ export const Route = createFileRoute("/api/admin/payouts")({
           const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
           const result = await query<PayoutRow>(`SELECT py.id::text, py.created_at::text, u.telegram_id::text, u.username, py.kind, py.amount::text, py.currency, py.status, py.note, p.title AS prize_title, p.subtitle AS prize_subtitle FROM payouts py JOIN users u ON u.id=py.user_id LEFT JOIN prizes p ON p.id=py.prize_id WHERE ($2='' OR py.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1) AND ($3='' OR py.status=$3) ORDER BY py.created_at DESC LIMIT 200`, [pattern, search, status]);
           const counts = await query<{ pending:string; review:string; paid:string; failed:string; cancelled:string }>(`SELECT COUNT(*) FILTER (WHERE status='PENDING')::text AS pending, COUNT(*) FILTER (WHERE status='REVIEW')::text AS review, COUNT(*) FILTER (WHERE status='PAID')::text AS paid, COUNT(*) FILTER (WHERE status='FAILED')::text AS failed, COUNT(*) FILTER (WHERE status='CANCELLED')::text AS cancelled FROM payouts`);
-          return Response.json({ ok:true, counts:{ pending:Number(counts.rows[0]?.pending??0), review:Number(counts.rows[0]?.review??0), paid:Number(counts.rows[0]?.paid??0), failed:Number(counts.rows[0]?.failed??0), cancelled:Number(counts.rows[0]?.cancelled??0) }, payouts:result.rows.map(row=>({ id:row.id,time:row.created_at,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",telegramId:row.telegram_id,prize:row.prize_title?[row.prize_title,row.prize_subtitle].filter(Boolean).join(" · "):row.note==="WITHDRAWAL_REQUEST"?"Вывод Stars":"Без привязанного приза",type:payoutTypeLabel(row.kind),amount:row.kind==="STARS"?`${row.amount} ⭐`:`${row.amount} ${row.currency??""}`.trim(),status:row.status==="PENDING"?"Ожидает":row.status==="REVIEW"?"На проверке":row.status==="PAID"?"Выдан":"Ошибка"===row.status?"Ошибка":"Отменён" })) });
+          return Response.json({ ok:true, counts:{ pending:Number(counts.rows[0]?.pending??0), review:Number(counts.rows[0]?.review??0), paid:Number(counts.rows[0]?.paid??0), failed:Number(counts.rows[0]?.failed??0), cancelled:Number(counts.rows[0]?.cancelled??0) }, payouts:result.rows.map(row=>({ id:row.id,time:row.created_at,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",telegramId:row.telegram_id,prize:row.prize_title?[row.prize_title,row.prize_subtitle].filter(Boolean).join(" · "):row.note==="WITHDRAWAL_REQUEST"?"Вывод Stars":"Без привязанного приза",type:payoutTypeLabel(row.kind),amount:row.kind==="STARS"?`${row.amount} ⭐`:`${row.amount} ${row.currency??""}`.trim(),status:row.status==="PENDING"?"Ожидает":row.status==="REVIEW"?"На проверке":row.status==="PAID"?"Выдан":row.status==="FAILED"?"Ошибка":"Отменён",fulfillmentReference:extractFulfillmentReference(row.note) })) });
         } catch (error) { console.error("Payouts API failed:",error instanceof Error?error.message:error); return Response.json({ok:false,code:"PAYOUTS_FAILED"},{status:401}); }
       },
       PATCH: async ({ request }) => {
