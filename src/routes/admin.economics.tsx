@@ -1,49 +1,302 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Play, RefreshCw, RotateCcw, Save, X, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
 import { PrimaryButton } from "@/components/kit/PrimaryButton";
 
-export const Route=createFileRoute("/admin/economics")({head:()=>({meta:[{title:"Экономика — CRICKET BOX"}]}),component:EconomicsScreen});
-type Season={id:string;code:string;name:string;state:string;starts_at:string|null;ends_at:string|null;paid_spin_price:number;paid_spin_enabled:boolean;daily_free_spin:boolean};
-type Economy={season:Season;spins:{hour:number;day:number;week:number;season:number};metrics:{elapsedFraction:number;completedSpins:number;pacePerDay:number;projectedSeasonSpins:number;remainingDays:number};prizes:Array<{id:string;kind:string;title:string;quantityTotal:number;quantityRemaining:number;consumed:number;amount:number;unitCost:number;currency:string|null;active:boolean;multiplier:number;weight:number;effectiveWeight:number;currentChance:number}>};
-type Snapshot={id:string;completed_spins:number;spins_last_hour:number;spins_last_day:number;spins_last_week:number;pace_per_day:string;projected_season_spins:string;multipliers:Record<string,number>;created_at:string};
-type SimulationResult={spins:number;trials:number;averageCompleted:number;averageEmpty:number;averageInventoryConsumed:number;prizeResults:Array<{id:string;kind:string;title:string;initialQuantity:number;averageWon:number;averageRemaining:number;winRate:number;exhaustRate:number}>};
-type Drop={id:string;name:string;trigger_type:string;trigger_value:number|null;payload:{prizes?:Array<{kind?:string;title?:string;amount?:number;quantityTotal?:number}>};status:string;created_at:string;executed_at:string|null};
-type Api<T>={ok:boolean;code?:string;seasons?:T;drops?:T;season?:Season;spins?:Economy["spins"];metrics?:Economy["metrics"];prizes?:Economy["prizes"];snapshots?:Snapshot[];result?:SimulationResult};
-const BASE={participants:150,activity:50,days:14,paidConversion:25,avgPaid:3,price:100,safety:1.2};
-function initData(){return(window as Window&{Telegram?:{WebApp?:{initData?:string}}}).Telegram?.WebApp?.initData?.trim()??"";}
-function triggerLabel(type:string){return type==="SPIN_COUNT"?"После заданного числа прокруток":type==="SEASON_PERCENT"?"При прогрессе сезона":type==="AT"?"В заданные дату и время":"Вручную";}
-function triggerValueLabel(type:string,value:number|null){if(value===null)return"Запускается только вручную";if(type==="SPIN_COUNT")return`Когда завершится ${value} прокруток`;if(type==="SEASON_PERCENT")return`Когда сезон дойдёт до ${value}%`;if(type==="AT")return`Запланировано на ${new Date(value*1000).toLocaleString("ru-RU")}`;return String(value);}
-function EconomicsScreen(){
- const [seasons,setSeasons]=useState<Season[]>([]);const [seasonId,setSeasonId]=useState("");const [economy,setEconomy]=useState<Economy|null>(null);const [drops,setDrops]=useState<Drop[]>([]);const [snapshots,setSnapshots]=useState<Snapshot[]>([]);const [simulation,setSimulation]=useState<SimulationResult|null>(null);const [p,setP]=useState(BASE);const [simSpins,setSimSpins]=useState("10000");const [simTrials,setSimTrials]=useState("50");const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [simulating,setSimulating]=useState(false);const [dropSaving,setDropSaving]=useState(false);const [error,setError]=useState("");const [message,setMessage]=useState("");
- const [drop,setDrop]=useState({name:"",triggerType:"SPIN_COUNT",triggerValue:"100",scheduledAt:"",kind:"STARS",title:"20 Stars",amount:"20",quantity:"10"});
- const calc=useMemo(()=>{const eligible=Math.max(0,Math.round(p.participants*p.activity/100));const free=eligible*p.days;const paid=Math.round(eligible*p.paidConversion/100*p.avgPaid);const total=free+paid;const planning=Math.ceil(total*p.safety);const gross=paid*p.price;const starsLiability=economy?.prizes.filter(x=>x.kind==="STARS").reduce((s,x)=>s+x.amount*x.quantityTotal,0)??0;const material=economy?.prizes.reduce((s,x)=>s+x.unitCost*x.quantityTotal,0)??0;const breakEven=Math.ceil(material>0?(starsLiability+material)/Math.max(1,p.price):starsLiability/Math.max(1,p.price));const margin=gross-starsLiability;const status=margin>=starsLiability*0.25?"В норме":margin>=0?"Низкая маржа":"Риск убытка";return{eligible,free,paid,total,planning,gross,starsLiability,material,breakEven,margin,status,maxFree:p.participants*p.days};},[p,economy]);
- const loadSeasons=async()=>{setLoading(true);setError("");try{const d=await api<Season[]>(`/api/admin/seasons?initData=${encodeURIComponent(initData())}`);const list=d.seasons??[];setSeasons(list);setSeasonId(v=>v&&list.some(x=>x.id===v)?v:list.find(x=>x.state==="ACTIVE")?.id??list.find(x=>x.state==="ENDING")?.id??list[0]?.id??"");}catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить сезоны.");}finally{setLoading(false);}};
- const load=async(id:string)=>{if(!id){setEconomy(null);setDrops([]);setSnapshots([]);return;}setError("");try{const [e,d]=await Promise.all([api<Economy>(`/api/admin/economy?seasonId=${encodeURIComponent(id)}&history=10&initData=${encodeURIComponent(initData())}`),api<Drop[]>(`/api/admin/drops?seasonId=${encodeURIComponent(id)}&initData=${encodeURIComponent(initData())}`)]);if(e.season&&e.spins&&e.metrics&&e.prizes)setEconomy({season:e.season,spins:e.spins,metrics:e.metrics,prizes:e.prizes});else throw new Error("INVALID_ECONOMY_RESPONSE");setSnapshots(e.snapshots??[]);setDrops(d.drops??[]);setSimulation(null);}catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить экономику.");}};
- useEffect(()=>{void loadSeasons();},[]);useEffect(()=>{void load(seasonId);},[seasonId]);
- const snapshot=async()=>{if(!seasonId)return;setSaving(true);setError("");try{await api(`/api/admin/economy`,"POST",{seasonId});setMessage("Снимок экономики сохранён.");await load(seasonId);}catch(e){setError(e instanceof Error?e.message:"Не удалось сохранить снимок.");}finally{setSaving(false);}};
- const simulate=async()=>{if(!seasonId)return;const spins=Number(simSpins),trials=Number(simTrials);if(!Number.isInteger(spins)||spins<1||spins>100000||!Number.isInteger(trials)||trials<1||trials>200){setError("Для симуляции: спины 1–100000, прогоны 1–200.");return;}setSimulating(true);setError("");try{const d=await api<SimulationResult>(`/api/admin/economy/simulate`,"POST",{seasonId,spins,trials});if(d.result)setSimulation(d.result);else throw new Error("INVALID_SIMULATION_RESPONSE");setMessage("Симуляция завершена. Реальный фонд не изменён.");}catch(e){setError(e instanceof Error?e.message:"Симуляция не выполнена.");}finally{setSimulating(false);}};
- const createDrop=async()=>{if(!seasonId||!drop.name.trim())return;const quantity=Math.max(1,Math.floor(Number(drop.quantity)||0)),amount=Math.max(0,Number(drop.amount)||0);let triggerValue:number|null=null;if(drop.triggerType==="SPIN_COUNT"||drop.triggerType==="SEASON_PERCENT")triggerValue=Math.max(1,Number(drop.triggerValue)||1);if(drop.triggerType==="AT"){if(!drop.scheduledAt){setError("Укажи дату и время для дропа.");return;}triggerValue=Math.floor(new Date(drop.scheduledAt).getTime()/1000);if(!Number.isFinite(triggerValue)||triggerValue<=0){setError("Некорректная дата дропа.");return;}}const payload={prizes:[{kind:drop.kind,title:drop.title.trim()||`${drop.kind} drop`,amount,quantityTotal:quantity,active:true}]};setDropSaving(true);setError("");try{await api(`/api/admin/drops`,"POST",{seasonId,name:drop.name.trim(),triggerType:drop.triggerType,triggerValue,payload});setMessage("LiveOps-дроп запланирован.");setDrop({...drop,name:""});await load(seasonId);}catch(e){setError(e instanceof Error?e.message:"Не удалось создать дроп.");}finally{setDropSaving(false);}};
- const dropAction=async(id:string,action:"ACTIVATE"|"CANCEL")=>{try{await api(`/api/admin/drops`,"PATCH",{id,seasonId,action});setMessage(action==="ACTIVATE"?"Дроп активирован и приз добавлен в фонд.":"Дроп отменён.");await load(seasonId);}catch(e){setError(e instanceof Error?e.message:"Операция с дропом не выполнена.");}};
- return <AppShell title="Экономика" nav={false}><div className="space-y-4 pb-8"><Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5"/> Админ-панель</Link>
-  <GlassCard className="px-4 py-4" glow><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Экономика сезона</p><h1 className="mt-1 font-display text-xl uppercase">{economy?.season.code??"Выбери сезон"}</h1><p className="mt-1 text-[10px] text-muted-foreground">Здесь можно проверить фонд, прогноз и LiveOps-события.</p></div><button type="button" onClick={()=>void load(seasonId)} className="grid size-9 place-items-center rounded-xl border border-glass-border"><RefreshCw className="size-4"/></button></div><select value={seasonId} onChange={e=>setSeasonId(e.target.value)} className="admin-input mt-4 w-full">{seasons.map(s=><option key={s.id} value={s.id}>{s.code} · {s.state}</option>)}</select>{economy&&<div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5"><Metric label="Спинов" value={String(economy.metrics.completedSpins)}/><Metric label="В день" value={economy.metrics.pacePerDay.toFixed(1)}/><Metric label="Прогноз" value={economy.metrics.projectedSeasonSpins.toFixed(0)}/><Metric label="Осталось" value={`${economy.metrics.remainingDays.toFixed(1)} д.`}/><Metric label="Прогресс" value={`${Math.round(economy.metrics.elapsedFraction*100)}%`}/></div>}</GlassCard>
-  {loading&&<p className="text-center text-[10px] text-muted-foreground">Загрузка…</p>}{error&&<GlassCard className="border-destructive/30 bg-destructive/5 px-4 py-3 text-[11px] text-destructive">{error}</GlassCard>}{message&&<GlassCard className="border-primary/25 bg-primary/5 px-4 py-3 text-[11px]">{message}</GlassCard>}
-  <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Сценарий</h2><button type="button" onClick={()=>setP(BASE)} className="text-[10px] text-muted-foreground"><RotateCcw className="mr-1 inline size-3"/>Сбросить</button></div><GlassCard className="space-y-3 px-4 py-4">{([['Участники','participants','чел.'],['Активность','activity','%'],['Дни','days','дней'],['Конверсия','paidConversion','%'],['Платных на покупателя','avgPaid','шт.'],['Цена paid spin','price','⭐'],['Safety multiplier','safety','×']] as const).map(([label,key,suffix])=><Row key={key} label={label} value={p[key]} suffix={suffix} onChange={v=>setP({...p,[key]:v})}/>)}</GlassCard></section>
-  <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Прогноз</h2><span className={statusClass(calc.status)}>{calc.status}</span></div><div className="mt-3 grid grid-cols-2 gap-2"><Metric label="Ожидаемые free" value={calc.free.toLocaleString("ru-RU")}/><Metric label="Максимум free" value={calc.maxFree.toLocaleString("ru-RU")}/><Metric label="Ожидаемые paid" value={calc.paid.toLocaleString("ru-RU")}/><Metric label="Плановый объём" value={calc.planning.toLocaleString("ru-RU")}/></div><div className="mt-3"><ResultRow label="Оборот" value={`${calc.gross.toLocaleString("ru-RU")} ⭐`}/><ResultRow label="Обязательства Stars" value={`${calc.starsLiability.toLocaleString("ru-RU")} ⭐`}/><ResultRow label="Материальные затраты" value={calc.material.toFixed(2)}/><ResultRow label="Break-even paid spins" value={String(calc.breakEven)}/><ResultRow label="Маржа Stars" value={`${calc.margin.toLocaleString("ru-RU")} ⭐`}/></div></GlassCard>
-  <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Симулятор фонда</h2><span className="text-[9px] text-muted-foreground">dry run · БД не меняет</span></div><div className="mt-3 grid grid-cols-2 gap-2"><Field label="Спины"><input type="number" min={1} max={100000} value={simSpins} onChange={e=>setSimSpins(e.target.value)} className="admin-input w-full"/></Field><Field label="Прогоны"><input type="number" min={1} max={200} value={simTrials} onChange={e=>setSimTrials(e.target.value)} className="admin-input w-full"/></Field></div><PrimaryButton fullWidth disabled={simulating||loading||!seasonId} onClick={()=>void simulate()} className="mt-3"><Play className="mr-2 size-4"/>{simulating?"Симуляция…":"Запустить симуляцию"}</PrimaryButton>{simulation&&<div className="mt-3 space-y-2"><div className="grid grid-cols-2 gap-2"><Metric label="Средний wins" value={simulation.averageCompleted.toFixed(0)}/><Metric label="Средний empty" value={simulation.averageEmpty.toFixed(0)}/><Metric label="Прогонов" value={String(simulation.trials)}/><Metric label="Потреблено фонда" value={simulation.averageInventoryConsumed.toFixed(0)}/></div>{simulation.prizeResults.map(x=><div key={x.id} className="rounded-xl border border-glass-border px-3 py-2"><div className="flex justify-between gap-3"><span className="truncate text-[10px] font-semibold">{x.title}</span><span className="text-[10px]">{(x.winRate*100).toFixed(1)}%</span></div><p className="mt-1 text-[9px] text-muted-foreground">avg выиграно {x.averageWon.toFixed(1)} · остаток {x.averageRemaining.toFixed(1)} · исчерпание {(x.exhaustRate*100).toFixed(0)}%</p></div>)}</div>}</GlassCard>
-  <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Фонд и шансы</h2><span className="text-[9px] text-muted-foreground">Расчёт по остаткам</span></div><div className="mt-3 space-y-2">{economy?.prizes.filter(x=>x.active).map(x=><div key={x.id} className="rounded-xl border border-glass-border bg-muted/10 px-3 py-2"><div className="flex justify-between gap-3"><span className="truncate text-xs font-semibold">{x.title}</span><span className="text-xs font-semibold">{(x.currentChance*100).toLocaleString("ru-RU",{maximumFractionDigits:4})}%</span></div><p className="mt-1 text-[9px] text-muted-foreground">Осталось {x.quantityRemaining} из {x.quantityTotal} · базовый вес {x.weight}</p></div>)}</div></GlassCard>
-  <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">История снимков</h2><span className="text-[9px] text-muted-foreground">последние 10</span></div><div className="mt-3 space-y-1">{snapshots.length===0&&<p className="text-center text-[10px] text-muted-foreground">Снимков пока нет.</p>}{snapshots.map(x=><div key={x.id} className="flex items-center justify-between gap-3 rounded-xl border border-glass-border px-3 py-2"><div><p className="text-[10px] font-semibold">{new Date(x.created_at).toLocaleString("ru-RU")}</p><p className="mt-1 text-[9px] text-muted-foreground">{x.completed_spins} спинов · {Number(x.pace_per_day).toFixed(1)}/д · прогноз {Number(x.projected_season_spins).toFixed(0)}</p></div><span className="text-[10px] tabular-nums">{Object.keys(x.multipliers).length} призов</span></div>)}</div></GlassCard>
-  <PrimaryButton fullWidth disabled={saving||loading||!seasonId} onClick={()=>void snapshot()}><Save className="mr-2 size-4"/>Сохранить live snapshot</PrimaryButton>
-  <section><div className="mb-2"><h2 className="section-label">LiveOps-дропы</h2><p className="text-[10px] leading-relaxed text-muted-foreground">Дроп — это дополнительная партия призов, которая автоматически добавляется в фонд, когда выполняется выбранное условие. JSON больше не нужен.</p></div><GlassCard className="space-y-3 px-4 py-4"><Field label="Название события"><input value={drop.name} onChange={e=>setDrop({...drop,name:e.target.value})} placeholder="Например: 1000-й спин" className="admin-input w-full"/></Field><Field label="Когда добавить призы"><select value={drop.triggerType} onChange={e=>setDrop({...drop,triggerType:e.target.value})} className="admin-input w-full"><option value="SPIN_COUNT">После N прокруток</option><option value="SEASON_PERCENT">При N% сезона</option><option value="AT">В конкретное время</option><option value="MANUAL">Только вручную</option></select></Field>{drop.triggerType!=="MANUAL"&&drop.triggerType!=="AT"&&<Field label={drop.triggerType==="SPIN_COUNT"?"Количество прокруток":"Процент сезона"><input type="number" min={1} max={drop.triggerType==="SEASON_PERCENT"?100:1000000} value={drop.triggerValue} onChange={e=>setDrop({...drop,triggerValue:e.target.value})} className="admin-input w-full"/></Field>}{drop.triggerType==="AT"&&<Field label="Дата и время"><input type="datetime-local" value={drop.scheduledAt} onChange={e=>setDrop({...drop,scheduledAt:e.target.value})} className="admin-input w-full"/></Field>}<div className="rounded-2xl border border-primary/15 bg-primary/5 px-3 py-3"><p className="text-xs font-semibold">Что выдаём</p><div className="mt-2 space-y-2"><select value={drop.kind} onChange={e=>setDrop({...drop,kind:e.target.value})} className="admin-input w-full"><option value="STARS">Stars</option><option value="PREMIUM">Telegram Premium</option><option value="MONEY">Деньги</option><option value="EMPTY">Ничего</option></select>{drop.kind!=="EMPTY"&&<input value={drop.title} onChange={e=>setDrop({...drop,title:e.target.value})} placeholder="Название награды" className="admin-input w-full"/>}<div className="grid grid-cols-2 gap-2"><input type="number" min={0} value={drop.amount} onChange={e=>setDrop({...drop,amount:e.target.value})} placeholder="Сумма" className="admin-input w-full"/><input type="number" min={1} value={drop.quantity} onChange={e=>setDrop({...drop,quantity:e.target.value})} placeholder="Количество" className="admin-input w-full"/></div></div></div><div className="rounded-xl border border-glass-border bg-muted/10 px-3 py-2 text-[10px] text-muted-foreground"><strong className="text-foreground">Пример:</strong> «1000-й спин» → триггер «После N прокруток» → 1000 → Stars 20 × 10. После 1000-й завершённой прокрутки эти 10 призов попадают в реальный фонд.</div><PrimaryButton fullWidth disabled={dropSaving||!seasonId||!drop.name.trim()} onClick={()=>void createDrop()}><Zap className="mr-2 size-4"/>{dropSaving?"Создаём…":"Запланировать дроп"}</PrimaryButton></GlassCard>
-  <div className="space-y-2">{drops.length===0&&<p className="text-center text-[10px] text-muted-foreground">Дропов пока нет.</p>}{drops.map(x=><GlassCard key={x.id} className="px-3.5 py-3"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-xs font-semibold">{x.name}</p><p className="mt-1 text-[9px] font-medium text-primary-glow">{triggerLabel(x.trigger_type)}</p><p className="mt-1 text-[9px] text-muted-foreground">{triggerValueLabel(x.trigger_type,x.trigger_value)}</p><p className="mt-1 text-[9px] text-muted-foreground">Награда: {x.payload?.prizes?.map(p=>`${p.title??p.kind??"приз"} × ${p.quantityTotal??"?"}`).join(", ")||"не указана"}</p><p className="mt-1 text-[9px] text-muted-foreground">Статус: {x.status==="SCHEDULED"?"Запланирован":x.status==="EXECUTED"?"Выполнен":x.status==="CANCELLED"?"Отменён":"Активен"}</p></div>{x.status==="SCHEDULED"&&<div className="flex shrink-0 gap-1.5"><button type="button" onClick={()=>void dropAction(x.id,"ACTIVATE")} title="Активировать сейчас" className="grid size-8 place-items-center rounded-lg border border-primary/25 bg-primary/5"><Zap className="size-3"/></button><button type="button" onClick={()=>void dropAction(x.id,"CANCEL")} title="Отменить" className="grid size-8 place-items-center rounded-lg border border-destructive/20 bg-destructive/5 text-destructive"><X className="size-3"/></button></div>}</div></GlassCard>)}</div></section>
- </div></AppShell>;
+export const Route = createFileRoute("/admin/economics")({
+  head: () => ({ meta: [{ title: "Экономика — CRICKET BOX" }] }),
+  component: EconomicsScreen,
+});
+
+type Season = {
+  id: string;
+  code: string;
+  name: string;
+  state: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  paid_spin_price: number;
+  paid_spin_enabled: boolean;
+  daily_free_spin: boolean;
+};
+
+type Prize = {
+  id: string;
+  kind: string;
+  title: string;
+  quantityTotal: number;
+  quantityRemaining: number;
+  unitCost: number;
+  amount: number;
+  active: boolean;
+  weight: number;
+  currentChance: number;
+};
+
+type Economy = {
+  season: Season;
+  spins: { hour: number; day: number; week: number; season: number };
+  metrics: {
+    elapsedFraction: number;
+    completedSpins: number;
+    pacePerDay: number;
+    projectedSeasonSpins: number;
+    remainingDays: number;
+  };
+  prizes: Prize[];
+};
+
+type Drop = {
+  id: string;
+  name: string;
+  trigger_type: string;
+  trigger_value: number | null;
+  payload?: { prizes?: Array<{ kind?: string; title?: string; quantityTotal?: number }> };
+  status: string;
+};
+
+type SimulationResult = {
+  trials: number;
+  averageCompleted: number;
+  averageEmpty: number;
+  averageInventoryConsumed: number;
+  prizeResults: Array<{
+    id: string;
+    title: string;
+    averageWon: number;
+    averageRemaining: number;
+    winRate: number;
+    exhaustRate: number;
+  }>;
+};
+
+type Api<T> = {
+  ok: boolean;
+  code?: string;
+  seasons?: T;
+  season?: Season;
+  spins?: Economy["spins"];
+  metrics?: Economy["metrics"];
+  prizes?: Prize[];
+  snapshots?: unknown[];
+  drops?: T;
+  result?: SimulationResult;
+};
+
+const BASE = {
+  participants: 150,
+  activity: 50,
+  days: 14,
+  paidConversion: 25,
+  avgPaid: 3,
+  price: 100,
+  safety: 1.2,
+};
+
+function getInitData() {
+  return (window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData?.trim() ?? "";
 }
-function apiCall<T>(r:Promise<Response>){return r.then(async response=>{const data=await response.json() as Api<T>;if(!response.ok||!data.ok)throw new Error(data.code??"REQUEST_FAILED");return data;});}
-async function api<T>(url:string,method:"GET"|"POST"|"PATCH"="GET",body?:Record<string,unknown>){return apiCall<T>(fetch(url,{method,headers:{"content-type":"application/json"},...(body?{body:JSON.stringify({...body,initData:initData()})}:{})}));}
-function Metric({label,value}:{label:string;value:string}){return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.15em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>;}
-function ResultRow({label,value}:{label:string;value:string}){return <div className="flex justify-between gap-3 border-b border-glass-border py-2 last:border-0"><span className="text-[10px] text-muted-foreground">{label}</span><span className="text-right text-xs font-semibold tabular-nums">{value}</span></div>;}
-function Row({label,value,suffix,onChange}:{label:string;value:number;suffix:string;onChange:(v:number)=>void}){return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span><div className="relative"><input type="number" value={value} onChange={e=>onChange(Number(e.target.value)||0)} className="admin-input w-full pr-14"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">{suffix}</span></div></label>;}
-function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>;}
-function statusClass(status:string){return status==="В норме"?"rounded-full border border-primary/25 bg-primary/5 px-2.5 py-1 text-[9px] font-semibold":status==="Низкая маржа"?"rounded-full border border-amber-300/25 bg-amber-300/5 px-2.5 py-1 text-[9px] font-semibold":"rounded-full border border-destructive/25 bg-destructive/5 px-2.5 py-1 text-[9px] font-semibold text-destructive";}
+
+async function api<T>(url: string, method: "GET" | "POST" | "PATCH" = "GET", body?: Record<string, unknown>) {
+  const response = await fetch(url, {
+    method,
+    headers: { "content-type": "application/json" },
+    ...(body ? { body: JSON.stringify({ ...body, initData: getInitData() }) } : {}),
+  });
+  const data = (await response.json()) as Api<T>;
+  if (!response.ok || !data.ok) throw new Error(data.code ?? "REQUEST_FAILED");
+  return data;
+}
+
+function triggerLabel(type: string) {
+  if (type === "SPIN_COUNT") return "После заданного числа прокруток";
+  if (type === "SEASON_PERCENT") return "При прогрессе сезона";
+  if (type === "AT") return "В заданные дату и время";
+  return "Вручную";
+}
+
+function EconomicsScreen() {
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [seasonId, setSeasonId] = useState("");
+  const [economy, setEconomy] = useState<Economy | null>(null);
+  const [drops, setDrops] = useState<Drop[]>([]);
+  const [simulation, setSimulation] = useState<SimulationResult | null>(null);
+  const [params, setParams] = useState(BASE);
+  const [simSpins, setSimSpins] = useState("10000");
+  const [simTrials, setSimTrials] = useState("50");
+  const [dropName, setDropName] = useState("");
+  const [triggerType, setTriggerType] = useState("SPIN_COUNT");
+  const [triggerValue, setTriggerValue] = useState("100");
+  const [dropKind, setDropKind] = useState("STARS");
+  const [dropTitle, setDropTitle] = useState("20 Stars");
+  const [dropAmount, setDropAmount] = useState("20");
+  const [dropQuantity, setDropQuantity] = useState("10");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const loadSeasons = async () => {
+    setLoading(true);
+    try {
+      const data = await api<Season[]>(`/api/admin/seasons?initData=${encodeURIComponent(getInitData())}`);
+      const list = data.seasons ?? [];
+      setSeasons(list);
+      setSeasonId((current) => current && list.some((s) => s.id === current) ? current : list.find((s) => s.state === "ACTIVE")?.id ?? list[0]?.id ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось загрузить сезоны.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const load = async (id: string) => {
+    if (!id) return;
+    setError("");
+    try {
+      const [economyData, dropData] = await Promise.all([
+        api<Economy>(`/api/admin/economy?seasonId=${encodeURIComponent(id)}&history=10&initData=${encodeURIComponent(getInitData())}`),
+        api<Drop[]>(`/api/admin/drops?seasonId=${encodeURIComponent(id)}&initData=${encodeURIComponent(getInitData())}`),
+      ]);
+      if (!economyData.season || !economyData.spins || !economyData.metrics || !economyData.prizes) throw new Error("INVALID_ECONOMY_RESPONSE");
+      setEconomy({ season: economyData.season, spins: economyData.spins, metrics: economyData.metrics, prizes: economyData.prizes });
+      setDrops(dropData.drops ?? []);
+      setSimulation(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось загрузить экономику.");
+    }
+  };
+
+  useEffect(() => { void loadSeasons(); }, []);
+  useEffect(() => { void load(seasonId); }, [seasonId]);
+
+  const saveSnapshot = async () => {
+    if (!seasonId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/economy`, "POST", { seasonId });
+      setMessage("Снимок экономики сохранён.");
+      await load(seasonId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить снимок.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const simulate = async () => {
+    if (!seasonId) return;
+    const spins = Number(simSpins);
+    const trials = Number(simTrials);
+    if (!Number.isInteger(spins) || spins < 1 || spins > 100000 || !Number.isInteger(trials) || trials < 1 || trials > 200) {
+      setError("Для симуляции: спины 1–100000, прогоны 1–200.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const data = await api<SimulationResult>(`/api/admin/economy/simulate`, "POST", { seasonId, spins, trials });
+      if (!data.result) throw new Error("INVALID_SIMULATION_RESPONSE");
+      setSimulation(data.result);
+      setMessage("Симуляция завершена. Реальный фонд не изменён.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Симуляция не выполнена.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createDrop = async () => {
+    if (!seasonId || !dropName.trim()) return;
+    const quantity = Math.max(1, Math.floor(Number(dropQuantity) || 0));
+    const amount = Math.max(0, Number(dropAmount) || 0);
+    let value: number | null = null;
+    if (triggerType !== "MANUAL") value = triggerType === "SPIN_COUNT" ? Math.max(1, Number(triggerValue) || 1) : Math.min(100, Math.max(1, Number(triggerValue) || 1));
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/drops`, "POST", {
+        seasonId,
+        name: dropName.trim(),
+        triggerType,
+        triggerValue: value,
+        payload: { prizes: [{ kind: dropKind, title: dropTitle.trim() || `${dropKind} drop`, amount, quantityTotal: quantity, active: true }] },
+      });
+      setDropName("");
+      setMessage("LiveOps-дроп запланирован.");
+      await load(seasonId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать дроп.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dropAction = async (id: string, action: "ACTIVATE" | "CANCEL") => {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/drops`, "PATCH", { id, seasonId, action });
+      setMessage(action === "ACTIVATE" ? "Дроп активирован и добавлен в фонд." : "Дроп отменён.");
+      await load(seasonId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Операция с дропом не выполнена.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const eligible = Math.max(0, Math.round(params.participants * params.activity / 100));
+  const expectedFree = eligible * params.days;
+  const expectedPaid = Math.round(eligible * params.paidConversion / 100 * params.avgPaid);
+  const planned = Math.ceil((expectedFree + expectedPaid) * params.safety);
+
+  return (
+    <AppShell title="Экономика" nav={false}>
+      <div className="space-y-4 pb-8">
+        <Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><ArrowLeft className="size-3.5" /> Админ-панель</Link>
+
+        <GlassCard className="px-4 py-4" glow>
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Экономика сезона</p><h1 className="mt-1 font-display text-xl uppercase">{economy?.season.code ?? "Выбери сезон"}</h1><p className="mt-1 text-[10px] text-muted-foreground">Фонд, прогноз и LiveOps в одном месте.</p></div>
+            <button type="button" onClick={() => void load(seasonId)} className="grid size-9 place-items-center rounded-xl border border-glass-border"><RefreshCw className="size-4" /></button>
+          </div>
+          <select value={seasonId} onChange={(e) => setSeasonId(e.target.value)} className="admin-input mt-4 w-full">{seasons.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.state}</option>)}</select>
+          {economy && <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5"><Metric label="Спинов" value={String(economy.metrics.completedSpins)} /><Metric label="В день" value={economy.metrics.pacePerDay.toFixed(1)} /><Metric label="Прогноз" value={economy.metrics.projectedSeasonSpins.toFixed(0)} /><Metric label="Осталось" value={`${economy.metrics.remainingDays.toFixed(1)} д.`} /><Metric label="Прогресс" value={`${Math.round(economy.metrics.elapsedFraction * 100)}%`} /></div>}
+        </GlassCard>
+
+        {loading && <p className="text-center text-[10px] text-muted-foreground">Загрузка…</p>}
+        {error && <GlassCard className="border-destructive/30 bg-destructive/5 px-4 py-3 text-[11px] text-destructive">{error}</GlassCard>}
+        {message && <GlassCard className="border-primary/25 bg-primary/5 px-4 py-3 text-[11px]">{message}</GlassCard>}
+
+        <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Сценарий</h2><button type="button" onClick={() => setParams(BASE)} className="text-[10px] text-muted-foreground"><RotateCcw className="mr-1 inline size-3" /> Сбросить</button></div>
+          <GlassCard className="grid gap-3 px-4 py-4 md:grid-cols-2">{([['Участники','participants'],['Активность, %','activity'],['Дни','days'],['Конверсия, %','paidConversion'],['Платных на покупателя','avgPaid'],['Цена paid spin, ⭐','price'],['Safety multiplier','safety']] as const).map(([label, key]) => <Field key={key} label={label}><input type="number" value={params[key]} onChange={(e) => setParams({ ...params, [key]: Number(e.target.value) || 0 })} className="admin-input w-full" /></Field>)}</GlassCard>
+        </section>
+
+        <GlassCard className="px-4 py-4"><h2 className="section-label">Прогноз</h2><div className="mt-3 grid grid-cols-2 gap-2"><Metric label="Ожидаемые free" value={expectedFree.toLocaleString('ru-RU')} /><Metric label="Ожидаемые paid" value={expectedPaid.toLocaleString('ru-RU')} /><Metric label="Плановый объём" value={planned.toLocaleString('ru-RU')} /><Metric label="Цена paid spin" value={`${params.price} ⭐`} /></div></GlassCard>
+
+        <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Фонд и шансы</h2><span className="text-[9px] text-muted-foreground">по остаткам</span></div><div className="mt-3 space-y-2">{economy?.prizes.filter((p) => p.active).map((p) => <div key={p.id} className="rounded-xl border border-glass-border bg-muted/10 px-3 py-2"><div className="flex justify-between gap-3"><span className="truncate text-xs font-semibold">{p.title}</span><span className="text-xs font-semibold">{(p.currentChance * 100).toLocaleString('ru-RU', { maximumFractionDigits: 4 })}%</span></div><p className="mt-1 text-[9px] text-muted-foreground">Осталось {p.quantityRemaining} из {p.quantityTotal} · вес {p.weight}</p></div>)}</div></GlassCard>
+
+        <GlassCard className="px-4 py-4"><div className="flex items-center justify-between"><h2 className="section-label">Симулятор фонда</h2><span className="text-[9px] text-muted-foreground">dry run</span></div><div className="mt-3 grid grid-cols-2 gap-2"><Field label="Спины"><input type="number" min={1} max={100000} value={simSpins} onChange={(e) => setSimSpins(e.target.value)} className="admin-input w-full" /></Field><Field label="Прогоны"><input type="number" min={1} max={200} value={simTrials} onChange={(e) => setSimTrials(e.target.value)} className="admin-input w-full" /></Field></div><PrimaryButton fullWidth disabled={busy || !seasonId} onClick={() => void simulate()} className="mt-3"><Play className="mr-2 size-4" />{busy ? 'Считаем…' : 'Запустить симуляцию'}</PrimaryButton>{simulation && <div className="mt-3 grid gap-2 md:grid-cols-2"><Metric label="Средний wins" value={simulation.averageCompleted.toFixed(0)} /><Metric label="Средний empty" value={simulation.averageEmpty.toFixed(0)} /><Metric label="Прогонов" value={String(simulation.trials)} /><Metric label="Потреблено фонда" value={simulation.averageInventoryConsumed.toFixed(0)} />{simulation.prizeResults.map((p) => <div key={p.id} className="rounded-xl border border-glass-border px-3 py-2"><div className="flex justify-between text-[10px] font-semibold"><span>{p.title}</span><span>{(p.winRate * 100).toFixed(1)}%</span></div><p className="mt-1 text-[9px] text-muted-foreground">avg выиграно {p.averageWon.toFixed(1)} · остаток {p.averageRemaining.toFixed(1)} · исчерпание {(p.exhaustRate * 100).toFixed(0)}%</p></div>)}</div>}</GlassCard>
+
+        <section><div className="mb-2"><h2 className="section-label">LiveOps-дропы</h2><p className="text-[10px] leading-relaxed text-muted-foreground">Дополнительная партия призов, которая добавляется в фонд по условию или вручную.</p></div>
+          <GlassCard className="space-y-3 px-4 py-4"><Field label="Название события"><input value={dropName} onChange={(e) => setDropName(e.target.value)} placeholder="Например: 1000-й спин" className="admin-input w-full" /></Field><Field label="Триггер"><select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} className="admin-input w-full"><option value="SPIN_COUNT">После N прокруток</option><option value="SEASON_PERCENT">При N% сезона</option><option value="MANUAL">Только вручную</option></select></Field>{triggerType !== 'MANUAL' && <Field label={triggerType === 'SPIN_COUNT' ? 'Количество прокруток' : 'Процент сезона'}><input type="number" min={1} max={triggerType === 'SPIN_COUNT' ? 1000000 : 100} value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)} className="admin-input w-full" /></Field>}<div className="rounded-2xl border border-primary/15 bg-primary/5 px-3 py-3"><p className="text-xs font-semibold">Что выдаём</p><div className="mt-2 space-y-2"><select value={dropKind} onChange={(e) => setDropKind(e.target.value)} className="admin-input w-full"><option value="STARS">Stars</option><option value="PREMIUM">Telegram Premium</option><option value="MONEY">Деньги</option><option value="EMPTY">Ничего</option></select><input value={dropTitle} onChange={(e) => setDropTitle(e.target.value)} placeholder="Название награды" className="admin-input w-full" /><div className="grid grid-cols-2 gap-2"><input type="number" min={0} value={dropAmount} onChange={(e) => setDropAmount(e.target.value)} placeholder="Сумма" className="admin-input w-full" /><input type="number" min={1} value={dropQuantity} onChange={(e) => setDropQuantity(e.target.value)} placeholder="Количество" className="admin-input w-full" /></div></div></div><PrimaryButton fullWidth disabled={busy || !seasonId || !dropName.trim()} onClick={() => void createDrop()}><Zap className="mr-2 size-4" /> Запланировать дроп</PrimaryButton></GlassCard>
+          <div className="space-y-2">{drops.length === 0 && <p className="text-center text-[10px] text-muted-foreground">Дропов пока нет.</p>}{drops.map((drop) => <GlassCard key={drop.id} className="px-3.5 py-3"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-xs font-semibold">{drop.name}</p><p className="mt-1 text-[9px] font-medium text-primary-glow">{triggerLabel(drop.trigger_type)}</p><p className="mt-1 text-[9px] text-muted-foreground">{drop.trigger_value === null ? 'Запускается вручную' : `Порог: ${drop.trigger_value}`}</p><p className="mt-1 text-[9px] text-muted-foreground">Награда: {drop.payload?.prizes?.map((p) => `${p.title ?? p.kind ?? 'приз'} × ${p.quantityTotal ?? '?'}`).join(', ') ?? 'не указана'}</p><p className="mt-1 text-[9px] text-muted-foreground">Статус: {drop.status === 'SCHEDULED' ? 'Запланирован' : drop.status === 'EXECUTED' ? 'Выполнен' : drop.status === 'CANCELLED' ? 'Отменён' : 'Активен'}</p></div>{drop.status === 'SCHEDULED' && <div className="flex shrink-0 gap-1.5"><button type="button" disabled={busy} onClick={() => void dropAction(drop.id, 'ACTIVATE')} className="grid size-8 place-items-center rounded-lg border border-primary/25 bg-primary/5"><Zap className="size-3" /></button><button type="button" disabled={busy} onClick={() => void dropAction(drop.id, 'CANCEL')} className="grid size-8 place-items-center rounded-lg border border-destructive/20 bg-destructive/5 text-destructive"><X className="size-3" /></button></div>}</div></GlassCard>)}</div>
+        </section>
+
+        <PrimaryButton fullWidth disabled={busy || !seasonId} onClick={() => void saveSnapshot()}><Save className="mr-2 size-4" /> Сохранить live snapshot</PrimaryButton>
+      </div>
+    </AppShell>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl border border-glass-border bg-muted/20 px-3 py-3"><p className="text-[9px] uppercase tracking-[0.15em] text-muted-foreground">{label}</p><p className="mt-1 font-display text-lg">{value}</p></div>;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>{children}</label>;
+}
