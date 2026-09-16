@@ -83,7 +83,7 @@ export const Route = createFileRoute("/api/admin/channel-activity")({
           };
         });
         const totalPoints = users.reduce((sum, row) => sum + row.score, 0);
-        const totalActions = users.reduce((sum, row) => sum + row.score, 0);
+        const totalActions = result.rows.reduce((sum, row) => sum + Number(row.reactions) + Number(row.comments) + Number(row.joins), 0);
         const bonusReady = users.filter((row) => row.activityBonusRemaining > 0).length;
         return Response.json({ ok:true, season:{ id:current.id, code:current.code, name:current.name, startsAt:current.starts_at, endsAt:current.ends_at }, stats:{ activeUsers:users.length,totalPoints,totalActions,bonusReady }, users });
       } catch (error) {
