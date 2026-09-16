@@ -43,7 +43,6 @@ const ALLOWED_TRANSITIONS: Record<SeasonState, readonly SeasonState[]> = {
 const PRIZE_KINDS = ["STARS", "PREMIUM", "MONEY", "NFT", "PHYSICAL", "CUSTOM", "FREE_SPIN", "EMPTY"] as const;
 
 type DbExecutor = Pick<PoolClient, "query">;
-
 type PrizeMetadata = Record<string, unknown>;
 
 function validatePrizeWeight(metadata: PrizeMetadata | undefined | null) {
@@ -53,6 +52,23 @@ function validatePrizeWeight(metadata: PrizeMetadata | undefined | null) {
   const weight = Number(raw);
   if (!Number.isFinite(weight) || weight < 0) throw new Error("INVALID_PRIZE_WEIGHT");
   return weight;
+}
+
+async function ensurePlayablePrizePool(db: DbExecutor, seasonId: string) {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM prizes
+      WHERE season_id = $1::uuid
+        AND is_active = TRUE
+        AND quantity_remaining > 0
+        AND (
+          COALESCE(NULLIF(metadata->>'weight', ''), '1')::numeric > 0
+          OR kind = 'EMPTY'
+        )`,
+    [seasonId],
+  );
+
+  if (Number(result.rows[0]?.count ?? 0) <= 0) throw new Error("SEASON_PRIZE_POOL_INVALID");
 }
 
 export async function listSeasons() {
@@ -97,8 +113,15 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
 
+  const paidSpinHasStartedResult = await db.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id = $1::uuid AND type = 'PAID'`, [id]);
+  const paidSpinHasStarted = Number(paidSpinHasStartedResult.rows[0]?.count ?? 0) > 0;
+  if (paidSpinHasStarted && requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) throw new Error("PAID_SPIN_PRICE_LOCKED");
   if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) throw new Error("PAID_SPIN_REENABLE_LOCKED");
-  if (nextState === "ACTIVE" || nextState === "ENDING") await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
+
+  if (nextState === "ACTIVE" || nextState === "ENDING") {
+    await ensurePlayablePrizePool(db, id);
+    await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
+  }
 
   const result = await db.query<DbSeason>(
     `UPDATE seasons SET code = COALESCE($2, code), name = COALESCE($3, name), state = $4, starts_at = $5, ends_at = $6, paid_spin_price = COALESCE($7, paid_spin_price), paid_spin_enabled = COALESCE($8, paid_spin_enabled), daily_free_spin = COALESCE($9, daily_free_spin), updated_at = now() WHERE id = $1 RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin`,
