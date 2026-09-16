@@ -9,6 +9,7 @@ type PayoutRow = {
   kind: "STARS" | "PREMIUM" | "MONEY" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN" | "EMPTY";
   amount: string; currency: string | null; status: "PENDING" | "REVIEW" | "PAID" | "FAILED" | "CANCELLED";
   note: string | null; prize_title: string | null; prize_subtitle: string | null;
+  fulfillment_provider: string; fulfillment_reference: string | null; fulfillment_note: string | null;
 };
 type Status = PayoutRow["status"];
 
@@ -36,13 +37,16 @@ async function changePayout(client: PoolClient, adminId: string, id: string, nex
   const operatorNote = typeof fulfillmentNote === "string" ? fulfillmentNote.trim().slice(0, 1000) : "";
   if (nextStatus === "PAID" && !reference) throw new Error("FULFILLMENT_REFERENCE_REQUIRED");
 
+  const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
+  const provider = isWithdrawal ? "TELEGRAM_STARS_WITHDRAWAL" : "MANUAL";
+  if (nextStatus === "PAID" && isWithdrawal && reference.length < 2) throw new Error("FULFILLMENT_REFERENCE_REQUIRED");
+
   const nextNote = nextStatus === "PAID"
     ? [before.note === "WITHDRAWAL_REQUEST" ? before.note : before.note ?? "", `FULFILLMENT_REF:${reference}`, operatorNote ? `FULFILLMENT_NOTE:${operatorNote}` : ""].filter(Boolean).join(" · ")
     : before.note;
-  await client.query(`UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, note=$4, paid_at=CASE WHEN $2='PAID' THEN COALESCE(paid_at, now()) ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`, [id, nextStatus, adminId, nextNote]);
-  const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
+  await client.query(`UPDATE payouts SET status=$2, operator_admin_id=$3::uuid, note=$4, fulfillment_provider=$5, fulfillment_reference=CASE WHEN $2='PAID' THEN $6 ELSE fulfillment_reference END, fulfillment_note=CASE WHEN $2='PAID' THEN $7 ELSE fulfillment_note END, fulfillment_metadata=CASE WHEN $2='PAID' THEN jsonb_build_object('operatorAdminId',$3::text,'provider',$5::text,'reference',$6::text) ELSE fulfillment_metadata END, paid_at=CASE WHEN $2='PAID' THEN COALESCE(paid_at, now()) ELSE paid_at END, updated_at=now() WHERE id=$1::uuid`, [id, nextStatus, adminId, nextNote, provider, reference || null, operatorNote || null]);
   if (isWithdrawal && ["FAILED", "CANCELLED"].includes(nextStatus)) await refundWithdrawalStars(client, id, before.user_id, Number(before.amount), adminId, nextStatus);
-  await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`, [adminId, id, JSON.stringify(before), JSON.stringify({ status: nextStatus, fulfillmentReference: reference || null, fulfillmentNote: operatorNote || null })]);
+  await client.query(`INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, before_data, after_data) VALUES ($1::uuid,'PAYOUT_STATUS_CHANGED','payout',$2,$3::jsonb,$4::jsonb)`, [adminId, id, JSON.stringify(before), JSON.stringify({ status: nextStatus, fulfillmentProvider: provider, fulfillmentReference: reference || null, fulfillmentNote: operatorNote || null })]);
   return true;
 }
 
@@ -59,12 +63,6 @@ function payoutTypeLabel(kind: PayoutRow["kind"]) {
   }
 }
 
-function extractFulfillmentReference(note: string | null) {
-  if (!note) return null;
-  const match = note.match(/FULFILLMENT_REF:([^·]+)/);
-  return match?.[1]?.trim() || null;
-}
-
 const isWithdrawalNote = (note: string | null) => Boolean(note?.startsWith("WITHDRAWAL_REQUEST"));
 
 export const Route = createFileRoute("/api/admin/payouts")({
@@ -77,9 +75,9 @@ export const Route = createFileRoute("/api/admin/payouts")({
           const search = (url.searchParams.get("search") ?? "").trim();
           const status = (url.searchParams.get("status") ?? "") as Status | "";
           const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
-          const result = await query<PayoutRow>(`SELECT py.id::text, py.created_at::text, u.telegram_id::text, u.username, py.kind, py.amount::text, py.currency, py.status, py.note, p.title AS prize_title, p.subtitle AS prize_subtitle FROM payouts py JOIN users u ON u.id=py.user_id LEFT JOIN prizes p ON p.id=py.prize_id WHERE ($2='' OR py.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1 OR COALESCE(py.note,'') ILIKE $1) AND ($3='' OR py.status=$3) ORDER BY py.created_at DESC LIMIT 200`, [pattern, search, status]);
+          const result = await query<PayoutRow>(`SELECT py.id::text, py.created_at::text, u.telegram_id::text, u.username, py.kind, py.amount::text, py.currency, py.status, py.note, p.title AS prize_title, p.subtitle AS prize_subtitle, py.fulfillment_provider, py.fulfillment_reference, py.fulfillment_note FROM payouts py JOIN users u ON u.id=py.user_id LEFT JOIN prizes p ON p.id=py.prize_id WHERE ($2='' OR py.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1 OR COALESCE(py.note,'') ILIKE $1 OR COALESCE(py.fulfillment_reference,'') ILIKE $1) AND ($3='' OR py.status=$3) ORDER BY py.created_at DESC LIMIT 200`, [pattern, search, status]);
           const counts = await query<{ pending:string; review:string; paid:string; failed:string; cancelled:string }>(`SELECT COUNT(*) FILTER (WHERE status='PENDING')::text AS pending, COUNT(*) FILTER (WHERE status='REVIEW')::text AS review, COUNT(*) FILTER (WHERE status='PAID')::text AS paid, COUNT(*) FILTER (WHERE status='FAILED')::text AS failed, COUNT(*) FILTER (WHERE status='CANCELLED')::text AS cancelled FROM payouts`);
-          return Response.json({ ok:true, counts:{ pending:Number(counts.rows[0]?.pending??0), review:Number(counts.rows[0]?.review??0), paid:Number(counts.rows[0]?.paid??0), failed:Number(counts.rows[0]?.failed??0), cancelled:Number(counts.rows[0]?.cancelled??0) }, payouts:result.rows.map(row=>({ id:row.id,time:row.created_at,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",telegramId:row.telegram_id,prize:isWithdrawalNote(row.note)?"Вывод Stars":row.prize_title?[row.prize_title,row.prize_subtitle].filter(Boolean).join(" · "):"Без привязанного приза",type:payoutTypeLabel(row.kind),amount:row.kind==="STARS"?`${row.amount} ⭐`:`${row.amount} ${row.currency??""}`.trim(),status:row.status==="PENDING"?"Ожидает":row.status==="REVIEW"?"На проверке":row.status==="PAID"?"Выдан":row.status==="FAILED"?"Ошибка":"Отменён",fulfillmentReference:extractFulfillmentReference(row.note) })) });
+          return Response.json({ ok:true, counts:{ pending:Number(counts.rows[0]?.pending??0), review:Number(counts.rows[0]?.review??0), paid:Number(counts.rows[0]?.paid??0), failed:Number(counts.rows[0]?.failed??0), cancelled:Number(counts.rows[0]?.cancelled??0) }, payouts:result.rows.map(row=>({ id:row.id,time:row.created_at,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",telegramId:row.telegram_id,prize:isWithdrawalNote(row.note)?"Вывод Stars":row.prize_title?[row.prize_title,row.prize_subtitle].filter(Boolean).join(" · "):"Без привязанного приза",type:payoutTypeLabel(row.kind),amount:row.kind==="STARS"?`${row.amount} ⭐`:`${row.amount} ${row.currency??""}`.trim(),status:row.status==="PENDING"?"Ожидает":row.status==="REVIEW"?"На проверке":row.status==="PAID"?"Выдан":row.status==="FAILED"?"Ошибка":"Отменён",fulfillmentReference:row.fulfillment_reference??undefined,fulfillmentProvider:row.fulfillment_provider })) });
         } catch (error) { console.error("Payouts API failed:",error instanceof Error?error.message:error); return Response.json({ok:false,code:"PAYOUTS_FAILED"},{status:401}); }
       },
       PATCH: async ({ request }) => {
