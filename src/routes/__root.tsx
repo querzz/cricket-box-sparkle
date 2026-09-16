@@ -40,6 +40,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     { charSet: "utf-8" },
     { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" },
     { name: "theme-color", content: "#120a0f" },
+    { name: "mobile-web-app-capable", content: "yes" },
   ], links: [
     { rel: "stylesheet", href: appCss },
     { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -59,5 +60,12 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => {
+    const webApp = (window as Window & { Telegram?: { WebApp?: { ready?: () => void; expand?: () => void } } }).Telegram?.WebApp;
+    webApp?.ready?.();
+    webApp?.expand?.();
+    document.documentElement.style.backgroundColor = "#120a0f";
+    document.body.style.backgroundColor = "#120a0f";
+  }, []);
   return <QueryClientProvider client={queryClient}><SessionProvider><Outlet /><Toaster position="top-center" /></SessionProvider></QueryClientProvider>;
 }
