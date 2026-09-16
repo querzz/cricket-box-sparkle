@@ -5,7 +5,6 @@ import { requireBotToken } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
-const MAX_STARS = 500;
 type PendingPayment = { id: string; payload: string; amount: string; created_at: string; metadata: Record<string, unknown> };
 
 export const Route = createFileRoute("/api/payment/invoice")({
@@ -24,7 +23,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
         const user = await query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id = $1 LIMIT 1`, [telegramId]);
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
 
-        const state = await query<{ is_subscribed: boolean; is_participant: boolean; stars_balance: number }>(`SELECT is_subscribed,is_participant,stars_balance FROM user_state WHERE user_id=$1::uuid LIMIT 1`, [user.rows[0].id]);
+        const state = await query<{ is_subscribed: boolean; is_participant: boolean }>(`SELECT is_subscribed,is_participant FROM user_state WHERE user_id=$1::uuid LIMIT 1`, [user.rows[0].id]);
         if (!state.rows[0]?.is_subscribed) return Response.json({ ok: false, code: "NOT_SUBSCRIBED" }, { status: 403 });
         if (!state.rows[0]?.is_participant) return Response.json({ ok: false, code: "NOT_PARTICIPANT" }, { status: 403 });
 
@@ -50,16 +49,24 @@ export const Route = createFileRoute("/api/payment/invoice")({
           );
           pending = existingResult.rows[0] ?? null;
 
+          if (pending && Number(pending.amount) !== price) {
+            await client.query(
+              `UPDATE star_transactions
+                  SET status='FAILED',processed_at=now(),payload=payload||jsonb_build_object('supersededByPrice',$2::integer)
+                WHERE id=$1::uuid AND status='PENDING'`,
+              [pending.id, price],
+            );
+            pending = null;
+          }
+
           if (!pending) {
-            const balance = Number(state.rows[0]?.stars_balance ?? 0);
             const availability = await client.query<{ total_remaining: string }>(
               `SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining
                  FROM prizes
                 WHERE season_id=$1::uuid
                   AND quantity_remaining>0
-                  AND is_active=TRUE
-                  AND (kind<>'STARS' OR $2::integer<$3::integer)`,
-              [seasonId, balance, MAX_STARS],
+                  AND is_active=TRUE`,
+              [seasonId],
             );
             if (Number(availability.rows[0]?.total_remaining ?? 0) <= 0) throw new Error("NO_PRIZES");
 
@@ -86,6 +93,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
                 [userId, seasonId],
               );
               pending = raced.rows[0] ?? null;
+              if (pending && Number(pending.amount) !== price) throw new Error("PAYMENT_PROCESSING");
             } finally {
               await client.query("RELEASE SAVEPOINT create_pending_payment").catch(() => {});
             }
@@ -93,7 +101,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
 
           if (!pending?.payload) throw new Error("PAYMENT_PROCESSING");
           const transactionAmount = Number(pending.amount);
-          if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount !== price) throw new Error("PAYMENT_AMOUNT_MISMATCH");
+          if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount !== price) throw new Error("PAYMENT_PROCESSING");
 
           const storedInvoiceUrl = typeof pending.metadata?.invoiceUrl === "string" ? pending.metadata.invoiceUrl : null;
           if (storedInvoiceUrl) return { invoiceUrl: storedInvoiceUrl, price: transactionAmount, payload: pending.payload, recovery: !created };
@@ -116,7 +124,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok:false, code:"RATE_LIMITED" }, { status:429, headers:{ "Retry-After":String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
-        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_AMOUNT_MISMATCH" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" ? 502 : 400;
+        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
         return Response.json({ ok:false, code }, { status });
       }
