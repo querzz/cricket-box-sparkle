@@ -93,6 +93,8 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const nextState = requestedState ?? current.state;
   if (!ALLOWED_TRANSITIONS[current.state].includes(nextState)) throw new Error("INVALID_SEASON_TRANSITION");
 
+  const startsAtWasPatched = patch.startsAt !== undefined;
+  const endsAtWasPatched = patch.endsAt !== undefined;
   const startsAt = patch.startsAt === undefined ? current.starts_at : patch.startsAt;
   const endsAt = patch.endsAt === undefined ? current.ends_at : patch.endsAt;
   const currentStart = current.starts_at ? new Date(current.starts_at) : null;
@@ -108,19 +110,17 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   const startChanged = parsedStart && currentStart
     ? parsedStart.getTime() !== currentStart.getTime()
     : parsedStart !== currentStart;
-  if (hasStarted && startChanged) throw new Error("SEASON_START_LOCKED");
+  if (hasStarted && startsAtWasPatched && startChanged) throw new Error("SEASON_START_LOCKED");
   if (hasStarted && currentEnd && parsedEnd && parsedEnd < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
-  if (hasStarted && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
+  if (hasStarted && endsAtWasPatched && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
+
+  const activatingSeason = (nextState === "ACTIVE" || nextState === "ENDING") && current.state !== nextState;
   if (nextState === "SCHEDULED" && (!parsedStart || parsedStart <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
-  if (["ACTIVE", "ENDING"].includes(nextState) && (!parsedStart || parsedStart > now)) throw new Error("ACTIVE_START_MUST_BE_NOW_OR_PAST");
-  if (["ACTIVE", "ENDING"].includes(nextState) && parsedEnd && parsedEnd <= now) throw new Error("SEASON_END_ALREADY_PASSED");
+  if (activatingSeason && (!parsedStart || parsedStart > now)) throw new Error("ACTIVE_START_MUST_BE_NOW_OR_PAST");
+  if ((nextState === "ACTIVE" || nextState === "ENDING") && parsedEnd && parsedEnd <= now) throw new Error("SEASON_END_ALREADY_PASSED");
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
-
-  const paidSpinHasStartedResult = await db.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id = $1::uuid AND type = 'PAID'`, [id]);
-  const paidSpinHasStarted = Number(paidSpinHasStartedResult.rows[0]?.count ?? 0) > 0;
-  if (paidSpinHasStarted && requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) throw new Error("PAID_SPIN_PRICE_LOCKED");
   if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) throw new Error("PAID_SPIN_REENABLE_LOCKED");
 
   if (nextState === "ACTIVE" || nextState === "ENDING") {
