@@ -55,20 +55,20 @@ function validatePrizeWeight(metadata: PrizeMetadata | undefined | null) {
 }
 
 async function ensurePlayablePrizePool(db: DbExecutor, seasonId: string) {
-  const result = await db.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count
+  const result = await db.query<{ kind: string; quantity_remaining: number; metadata: PrizeMetadata | null; is_active: boolean }>(
+    `SELECT kind, quantity_remaining, metadata, is_active
        FROM prizes
-      WHERE season_id = $1::uuid
-        AND is_active = TRUE
-        AND quantity_remaining > 0
-        AND (
-          COALESCE(NULLIF(metadata->>'weight', ''), '1')::numeric > 0
-          OR kind = 'EMPTY'
-        )`,
+      WHERE season_id = $1::uuid`,
     [seasonId],
   );
 
-  if (Number(result.rows[0]?.count ?? 0) <= 0) throw new Error("SEASON_PRIZE_POOL_INVALID");
+  const playable = result.rows.some((prize) => {
+    if (!prize.is_active || prize.quantity_remaining <= 0) return false;
+    const weight = validatePrizeWeight(prize.metadata);
+    return weight > 0;
+  });
+
+  if (!playable) throw new Error("SEASON_PRIZE_POOL_INVALID");
 }
 
 export async function listSeasons() {
