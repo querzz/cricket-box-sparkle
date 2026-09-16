@@ -89,7 +89,7 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const picked=selection.prize;
       const inventory=await client.query(`UPDATE prizes SET quantity_remaining=quantity_remaining-1,updated_at=now() WHERE id=$1::uuid AND quantity_remaining>0 RETURNING id`,[picked.id]);
       if(!inventory.rows[0])throw new Error("NO_PRIZES");
-      const spinType=useActivity?"ACTIVITY_BONUS":"FREE";
+      const spinType=useActivity?"ACTIVITY_BONUS":useGift?"FREE":"FREE";
       const spin=await client.query<{id:string;created_at:string}>(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status,idempotency_key,completed_at) VALUES($1::uuid,$2::uuid,$3,0,$4::uuid,'COMPLETED',$5,now()) RETURNING id::text,created_at::text`,[user.id,season.id,spinType,picked.id,idempotencyKey]);
       if(useGift)await client.query(`UPDATE user_state SET bonus_free_spins=GREATEST(0,bonus_free_spins-1),updated_at=now() WHERE user_id=$1::uuid`,[user.id]);
       const nextXp=Number(user.xp??0)+10; await client.query(`UPDATE users SET xp=$2,level=$3,last_seen_at=now() WHERE id=$1::uuid`,[user.id,nextXp,Math.max(1,Math.floor(nextXp/100)+1)]);
