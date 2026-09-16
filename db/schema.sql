@@ -77,6 +77,18 @@ ALTER TABLE payouts DROP CONSTRAINT IF EXISTS payouts_kind_check;
 ALTER TABLE payouts ADD CONSTRAINT payouts_kind_check CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY'));
 ALTER TABLE season_drop_events ADD COLUMN IF NOT EXISTS trigger_type TEXT;
 ALTER TABLE season_drop_events ADD COLUMN IF NOT EXISTS trigger_value NUMERIC(18,4);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS veteran_bonus_season_id UUID;
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS veteran_bonus_spins_issued INTEGER NOT NULL DEFAULT 0 CHECK (veteran_bonus_spins_issued >= 0 AND veteran_bonus_spins_issued <= 1000);
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":true}'::jsonb) ON CONFLICT(key) DO NOTHING;
+UPDATE users SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
+UPDATE admins SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spins_user_season ON spins(user_id,season_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spins_season_time ON spins(season_id,created_at DESC);
