@@ -4,7 +4,7 @@ import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
 import { activateDueDrops } from "@/server/liveops";
 import { secureRandomUnit } from "@/server/secure-random";
-import { appendStarsLedger, STARS_MAX_BALANCE } from "@/server/stars-ledger";
+import { STARS_MAX_BALANCE } from "@/server/stars-ledger";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 import { seasonElapsedFraction } from "@/server/season-economy";
@@ -16,11 +16,12 @@ type Prize = { id:string; kind:PrizeKind; title:string; subtitle:string|null; am
 
 const rewardResponse = (result:{spinId:string;payoutId:string|null;createdAt:string;prize:Prize;credited:number;rewardStars:number;spinType:string;duplicate:boolean}) => {
   const prize=result.prize;
+  const manual=prize.kind!=="EMPTY";
   return { ok:true, duplicate:result.duplicate,
     spin:{id:result.spinId,type:result.spinType,priceStars:0,status:"COMPLETED",createdAt:result.createdAt},
-    reward:{id:result.payoutId??result.spinId,kind:prize.kind,title:prize.title,subtitle:prize.subtitle,amount:Number(prize.amount)||undefined,wonAt:result.createdAt,status:prize.kind==="EMPTY"||prize.kind==="STARS"?"RECEIVED":"PENDING",
-      payoutNote:prize.kind==="EMPTY"?"В этот раз без награды.":prize.kind==="STARS"?(result.credited<result.rewardStars?`Лимит ${STARS_MAX_BALANCE} Stars: зачислено ${result.credited} из ${result.rewardStars}.`:"Stars зачислены на баланс."):"Награда записана и ожидает выдачи.",
-      creditedAmount:prize.kind==="STARS"?result.credited:undefined,uncreditedAmount:prize.kind==="STARS"?Math.max(0,result.rewardStars-result.credited):0}};
+    reward:{id:result.payoutId??result.spinId,kind:prize.kind,title:prize.title,subtitle:prize.subtitle,amount:Number(prize.amount)||undefined,wonAt:result.createdAt,status:!manual?"RECEIVED":"PENDING",
+      payoutNote:!manual?"В этот раз без награды.":"Приз получен в розыгрыше и ожидает ручной выдачи администрацией.",
+      creditedAmount:prize.kind==="STARS"?result.credited:undefined,uncreditedAmount:0}};
 };
 
 export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({request})=>{
@@ -46,14 +47,14 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       const user=userResult.rows[0];
       const existing=await client.query<{id:string;prize_id:string;created_at:string;type:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;payout_id:string|null;reward_stars:string;credited_stars:string}>(
         `SELECT s.id::text,s.prize_id::text AS prize_id,s.created_at::text,s.type,p.kind,p.title,p.subtitle,p.amount::text,p.currency,py.id::text AS payout_id,
-                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'requestedAmount')::integer,sl.amount) ELSE 0 END) FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS reward_stars,
-                COALESCE((SELECT SUM(CASE WHEN sl.type='REWARD' THEN COALESCE((sl.metadata->>'creditedAmount')::integer,sl.amount) ELSE 0 END) FROM stars_ledger sl WHERE sl.spin_id=s.id),0)::text AS credited_stars
+                CASE WHEN p.kind='STARS' THEN GREATEST(0,TRUNC(p.amount)) ELSE 0 END::text AS reward_stars,
+                0::text AS credited_stars
            FROM spins s JOIN prizes p ON p.id=s.prize_id LEFT JOIN payouts py ON py.spin_id=s.id
           WHERE s.user_id=$1::uuid AND s.idempotency_key=$2 AND s.status='COMPLETED' ORDER BY s.created_at DESC LIMIT 1`,[user.id,idempotencyKey]);
       if(existing.rows[0]){
         const row=existing.rows[0];
         const prize={id:row.prize_id,kind:row.kind,title:row.title,subtitle:row.subtitle,amount:row.amount,currency:row.currency,metadata:{},quantity_total:1,quantity_remaining:0};
-        return {spinId:row.id,payoutId:row.payout_id,createdAt:row.created_at,prize,credited:Number(row.credited_stars)||0,rewardStars:Number(row.reward_stars)||0,spinType:row.type,duplicate:true};
+        return {spinId:row.id,payoutId:row.payout_id,createdAt:row.created_at,prize,credited:0,rewardStars:Number(row.reward_stars)||0,spinType:row.type,duplicate:true};
       }
       await client.query(`INSERT INTO user_state(user_id,stars_balance,is_subscribed,is_participant,bonus_free_spins) VALUES($1::uuid,125,TRUE,TRUE,0) ON CONFLICT(user_id) DO NOTHING`,[user.id]);
       const stateResult=await client.query<{is_subscribed:boolean;is_participant:boolean;stars_balance:number;bonus_free_spins:number;activity_bonus_season_id:string|null;activity_bonus_spins_issued:number}>(`SELECT is_subscribed,is_participant,stars_balance,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,[user.id]);
@@ -92,21 +93,14 @@ export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({r
       if(useActivity||useGift)await client.query(`UPDATE user_state SET bonus_free_spins=GREATEST(0,bonus_free_spins-1),updated_at=now() WHERE user_id=$1::uuid`,[user.id]);
       const nextXp=Number(user.xp??0)+10; await client.query(`UPDATE users SET xp=$2,level=$3,last_seen_at=now() WHERE id=$1::uuid`,[user.id,nextXp,Math.max(1,Math.floor(nextXp/100)+1)]);
       const rewardStars=picked.kind==="STARS"?Math.max(0,Math.floor(Number(picked.amount)||0)):0;
-      const credited=rewardStars>0?Math.min(rewardStars,Math.max(0,STARS_MAX_BALANCE-Number(state.stars_balance??0))):0;
-      const overflow=Math.max(0,rewardStars-credited);
-      if(rewardStars>0){
-        await appendStarsLedger(client,{userId:user.id,seasonId:season.id,spinId:spin.rows[0].id,type:"REWARD",amount:rewardStars,balanceDelta:credited,referenceId:picked.id,idempotencyKey:`spin:${spin.rows[0].id}:stars-reward`,metadata:{requestedAmount:rewardStars,creditedAmount:credited,overflowAmount:overflow,source:spinType}});
-        if(overflow>0)await appendStarsLedger(client,{userId:user.id,seasonId:season.id,spinId:spin.rows[0].id,type:"CAPPED_OVERFLOW_BURNED",amount:-overflow,balanceDelta:0,referenceId:picked.id,idempotencyKey:`spin:${spin.rows[0].id}:stars-overflow`,metadata:{requestedAmount:rewardStars,creditedAmount:credited,overflowAmount:overflow}});
-      }
       let payoutId:string|null=null;
       if(picked.kind!=="EMPTY"){
-        const payoutStatus=rewardStars>0?"PAID":"PENDING";
-        const note=rewardStars>0?(credited<rewardStars?`Лимит ${STARS_MAX_BALANCE} Stars: зачислено ${credited} из ${rewardStars}.`:"Stars зачислены на баланс."):"Приз ожидает выдачи администратором.";
-        const payout=await client.query<{id:string}>(`INSERT INTO payouts(spin_id,user_id,prize_id,kind,amount,currency,status,note,paid_at) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::numeric,$6,$7,$8,CASE WHEN $7='PAID' THEN now() ELSE NULL END) RETURNING id::text`,[spin.rows[0].id,user.id,picked.id,picked.kind,picked.amount,picked.currency,payoutStatus,note]);
+        const note=picked.kind==="STARS"?"Stars prize ожидает ручной выдачи администратором.":"Приз ожидает выдачи администратором.";
+        const payout=await client.query<{id:string}>(`INSERT INTO payouts(spin_id,user_id,prize_id,kind,amount,currency,status,note) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::numeric,$6,'PENDING',$7) RETURNING id::text`,[spin.rows[0].id,user.id,picked.id,picked.kind,picked.amount,picked.currency,note]);
         payoutId=payout.rows[0].id;
       }
-      await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('SPIN_COMPLETED','spin',$1,$2::jsonb)`,[spin.rows[0].id,JSON.stringify({userId:user.id,seasonId:season.id,prizeId:picked.id,type:spinType,idempotencyKey,usedDaily:useDaily,usedActivityBonus:useActivity,usedGiftBonus:useGift,rewardKind:picked.kind,creditedStars:credited,overflowStars:overflow,algorithmVersion:"finite-pool-v1",elapsedFraction,emptyStreak,recentKinds:recentKinds.slice(0,8),selection:selection.diagnostics[picked.id]})]);
-      return {spinId:spin.rows[0].id,payoutId,createdAt:spin.rows[0].created_at,prize:picked,credited,rewardStars,spinType,duplicate:false};
+      await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('SPIN_COMPLETED','spin',$1,$2::jsonb)`,[spin.rows[0].id,JSON.stringify({userId:user.id,seasonId:season.id,prizeId:picked.id,type:spinType,idempotencyKey,usedDaily:useDaily,usedActivityBonus:useActivity,usedGiftBonus:useGift,rewardKind:picked.kind,manualFulfillment:picked.kind!=="EMPTY",rewardStars,algorithmVersion:"finite-pool-v1",elapsedFraction,emptyStreak,recentKinds:recentKinds.slice(0,8),selection:selection.diagnostics[picked.id]})]);
+      return {spinId:spin.rows[0].id,payoutId,createdAt:spin.rows[0].created_at,prize:picked,credited:0,rewardStars,spinType,duplicate:false};
     });
     return Response.json(rewardResponse(result));
   }catch(error){
