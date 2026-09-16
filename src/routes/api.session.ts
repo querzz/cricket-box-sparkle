@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { validateTelegramInitData } from "@/server/auth/telegram";
-import { isProductionApp } from "@/server/config";
+import { requireBotToken, isProductionApp } from "@/server/config";
 import { query } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
@@ -51,7 +51,7 @@ export const Route = createFileRoute("/api/session")({
       try {
         const initData = (new URL(request.url).searchParams.get("initData") ?? "").trim();
         if (!initData) return Response.json({ ok: false, code: "INIT_DATA_MISSING" }, { status: 400 });
-        const validated = await validateTelegramInitData(initData, process.env.TELEGRAM_BOT_TOKEN ?? "");
+        const validated = await validateTelegramInitData(initData, requireBotToken());
         const tgUser = validated.user;
         if (!tgUser?.id || !tgUser.first_name) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
 
@@ -66,8 +66,8 @@ export const Route = createFileRoute("/api/session")({
         const user = userResult.rows[0];
         if (!user) throw new Error("USER_NOT_FOUND");
 
-        // Telegram supplies the Mini App profile photo URL in initData when available.
-        // Use it directly instead of making multiple blocking Bot API/file-download calls during every session load.
+        // Use Telegram's Mini App photo URL directly when available. This avoids several
+        // sequential Bot API/file-download calls that could make the first screen appear stuck.
         const avatarUrl = typeof tgUser.photo_url === "string" && tgUser.photo_url.trim() ? tgUser.photo_url.trim() : undefined;
         const levelInfo = getLevelInfo(Number(user.xp ?? 0));
 
@@ -113,7 +113,6 @@ export const Route = createFileRoute("/api/session")({
           [user.id, season.id],
         );
         const activityUsed = Number(activitySpinUsage.rows[0]?.used ?? 0);
-        const activityBonusRemaining = Math.max(0, activityIssued - activityUsed);
 
         if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && storedState.is_participant) {
           const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
