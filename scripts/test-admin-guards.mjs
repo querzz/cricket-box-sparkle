@@ -76,7 +76,7 @@ try {
 
   const cosmeticPrize = await upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 10, quantityRemaining: 9, metadata: { weight: 1 } }, { query: (text, values) => db.query(text, values) });
   assert(cosmeticPrize.title === "Guard Stars Updated", "prize title edit remains allowed");
-  assert(cosmeticPrize.quantityRemaining === 9, "remaining quantity can follow actual won inventory floor");
+  assert(cosmeticPrize.quantity_remaining === 9, "remaining quantity can follow actual won inventory floor");
 
   await expectError(
     () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 10, quantityRemaining: 9, metadata: { weight: 2 } }, { query: (text, values) => db.query(text, values) }),
