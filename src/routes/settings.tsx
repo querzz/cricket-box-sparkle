@@ -44,11 +44,14 @@ function SettingsScreen() {
 
   const runDevPaidSpin = async () => {
     try {
-      const response = await fetch("/api/dev/paid-spin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: initData() }) });
+      const response = await fetch("/api/dev/paid-spin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ initData: initData() }),
+      });
       const data = await response.json() as { ok?: boolean; code?: string; reward?: { title?: string } };
       if (!response.ok || !data.ok) throw new Error(data.code ?? "DEV_PAID_SPIN_FAILED");
-      window.alert(`Тестовая платная прокрутка готова: ${data.reward?.title ?? "приз"}. Реальные Stars не списывались.`);
-      await resetSession();
+      window.alert(`Тестовая платная прокрутка: ${data.reward?.title ?? "приз"}. Фонд, выплаты, XP и Stars не изменены.`);
     } catch (error) {
       window.alert(`Тестовая прокрутка не выполнена: ${error instanceof Error ? error.message : "UNKNOWN"}`);
     }
@@ -105,7 +108,7 @@ function SettingsScreen() {
       <GlassCard className="mt-3 space-y-3 px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Инструменты разработчика</p>
         <div className="flex items-center gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Stars</p><p className="text-[11px] text-muted-foreground">{snapshot.stars.amount} / {snapshot.stars.max}</p></div><PrimaryButton variant="outline" onClick={() => void setStarsAmount(snapshot.stars.max)}>Установить {snapshot.stars.max}</PrimaryButton></div>
-        <div className="flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Тестовая платная прокрутка</p><p className="text-[11px] text-muted-foreground">Полный spin → приз → payout, без списания Stars.</p></div><PrimaryButton variant="outline" onClick={() => void runDevPaidSpin()}>Тест</PrimaryButton></div>
+        <div className="flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Тестовая платная прокрутка</p><p className="text-[11px] text-muted-foreground">Проверяет реальный выбор приза по текущему фонду, но ничего не списывает и не изменяет.</p></div><PrimaryButton variant="outline" onClick={() => void runDevPaidSpin()}>Тест</PrimaryButton></div>
         <div className="flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Бесплатная попытка сегодня</p><p className="text-[11px] text-muted-foreground">Выдать дневную попытку повторно для тестирования.</p></div><PrimaryButton variant="outline" onClick={() => void resetDailyFreeSpin()}>Выдать</PrimaryButton></div>
         <div className="flex items-center gap-3 border-t border-glass-border pt-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Симуляция ошибки сети</p><p className="text-[11px] text-muted-foreground">{snapshot.dev.simulateNetworkError ? "Все запросы завершатся ошибкой" : "Запросы работают"}</p></div><PrimaryButton variant="outline" onClick={() => void setSimulateNetworkError(!snapshot.dev.simulateNetworkError)}>{snapshot.dev.simulateNetworkError ? "Отключить" : "Включить"}</PrimaryButton></div>
       </GlassCard>
