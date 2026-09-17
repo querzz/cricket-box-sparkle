@@ -150,7 +150,17 @@ async function validatePreCheckout(query) {
   }
 
   const availability = await paymentDbQuery(
-    `SELECT EXISTS (SELECT 1 FROM prizes WHERE season_id=$1::uuid AND quantity_remaining>0 AND is_active=TRUE) AS available`,
+    `SELECT EXISTS (
+       SELECT 1 FROM prizes
+        WHERE season_id=$1::uuid
+          AND quantity_remaining>0
+          AND is_active=TRUE
+          AND CASE
+            WHEN COALESCE(metadata->>'weight','') = '' THEN 1::numeric
+            WHEN metadata->>'weight' ~ '^([0-9]+(\\.[0-9]+)?)$' THEN (metadata->>'weight')::numeric
+            ELSE 0::numeric
+          END > 0
+     ) AS available`,
     [seasonId],
   );
   if (!availability.rows[0]?.available) return { ok: false, error: "Призы этого сезона уже закончились." };
@@ -218,183 +228,3 @@ async function completeOrRefundPayment(message) {
   const refunded = await refundSuccessfulPayment(message);
   return { completed: false, refunded };
 }
-
-function adminButton() {
-  const base = appUrl.replace(/\/$/, "");
-  const url = `${base}/admin`;
-  if (/^https:\/\//i.test(url)) return { text: "🛡 Админ-панель", web_app: { url } };
-  return { text: "🛡 Открыть админку", url };
-}
-
-function supportText() {
-  return supportUsername
-    ? `💳 Поддержка по оплате\n\nОпиши проблему и напиши нам: @${supportUsername}\n\nСохрани чек/квитанцию Telegram, если проблема связана с оплатой.`
-    : "💳 Поддержка по оплате\n\nОпиши проблему с оплатой и сохрани чек/квитанцию Telegram. Поддержка проекта обработает запрос вручную.";
-}
-
-async function checkChannelAccess() {
-  if (!channelId) throw new Error("TELEGRAM_CHANNEL_ID is missing in .env");
-  const bot = await api("getMe");
-  const chat = await api("getChat", { chat_id: channelId });
-  const member = await api("getChatMember", { chat_id: channelId, user_id: bot.id });
-  return { bot, chat, member };
-}
-
-async function sendChannelStatus(chatId) {
-  try {
-    const { bot, chat, member } = await checkChannelAccess();
-    const status = member.status || "unknown";
-    const admin = ["administrator", "creator"].includes(status);
-    const title = chat.title || "без названия";
-    const username = chat.username ? `@${chat.username}` : "без username";
-    await api("sendMessage", {
-      chat_id: chatId,
-      text: `📢 Канал: ${chat.id}\n📝 ${title}\n🔗 ${username}\n🤖 Бот: @${bot.username || botUsername}\n\nСтатус: ${status}\n\n${admin ? "✅ Бот имеет права администратора." : "❌ Бот НЕ является администратором."}`,
-    });
-  } catch (error) {
-    await api("sendMessage", { chat_id: chatId, text: `❌ Не удалось проверить канал.\n\n${error instanceof Error ? error.message : String(error)}` });
-  }
-}
-
-async function handleChannelMemberUpdate(update) {
-  const chatId = Number(update.chat?.id ?? 0);
-  if (!chatId || !channelId || String(chatId) !== String(channelId)) return;
-  const userId = Number(update.new_chat_member?.user?.id ?? 0);
-  if (!userId) return;
-  const status = update.new_chat_member.status;
-  const eventType = ["member", "administrator", "creator", "restricted"].includes(status) ? "JOIN" : ["left", "kicked"].includes(status) ? "LEAVE" : "MEMBERSHIP_UPDATE";
-  await recordChannelActivity({ telegramUserId: userId, eventType, eventKey: `${chatId}:${userId}:${status}:${update.date ?? ""}`, points: eventType === "JOIN" ? 5 : 0, metadata: { status } });
-}
-
-async function handleReactionUpdate(update) {
-  const chatId = Number(update.chat?.id ?? 0);
-  if (!chatId || !channelId || (String(chatId) !== String(channelId) && String(chatId) !== String(discussionChatId))) return;
-  const userId = Number(update.user?.id ?? 0);
-  if (!userId) return;
-  const hasNewReaction = Array.isArray(update.new_reaction) && update.new_reaction.length > 0;
-  if (!hasNewReaction) return;
-  await recordChannelActivity({ telegramUserId: userId, eventType: "REACTION", eventKey: `${chatId}:${update.message_id}:${userId}`, points: 1, metadata: { messageId: update.message_id, chatId } });
-}
-
-async function handleDiscussionMessage(message) {
-  const chatId = Number(message.chat?.id ?? 0);
-  const userId = Number(message.from?.id ?? 0);
-  if (!userId || !discussionChatId || chatId !== discussionChatId) return;
-  if (message.from?.is_bot) return;
-  await recordChannelActivity({ telegramUserId: userId, eventType: "COMMENT", eventKey: `${chatId}:${message.message_id}:${userId}`, points: 2, metadata: { messageId: message.message_id, replyToMessageId: message.reply_to_message?.message_id ?? null, textLength: typeof message.text === "string" ? message.text.length : 0 } });
-}
-
-let discussionChatId = null;
-
-async function configureBotCommands() {
-  await api("setMyCommands", {
-    commands: [
-      { command: "start", description: "Открыть CRICKET BOX" },
-      { command: "paysupport", description: "Поддержка по оплате" },
-      { command: "id", description: "Показать Telegram ID" },
-      { command: "admin", description: "Открыть админ-панель" },
-      { command: "checkchannel", description: "Проверить настройки канала" },
-    ],
-  });
-}
-
-async function main() {
-  const me = await api("getMe");
-  console.log(`@${me.username || botUsername} is running`);
-  console.log(`App URL: ${appUrl}`);
-  await configureBotCommands();
-
-  if (!/^https:\/\//i.test(appUrl)) console.warn("APP_URL is not HTTPS. Telegram Web Apps and invoices require HTTPS in production.");
-  if (channelId) {
-    discussionChatId = await getLinkedDiscussionChatId();
-    console.log(`Channel ID: ${channelId}`);
-    console.log(`Linked discussion chat: ${discussionChatId ?? "none"}`);
-    try {
-      const member = await api("getChatMember", { chat_id: channelId, user_id: me.id });
-      console.log(`Bot channel status: ${member.status}`);
-      if (!["administrator", "creator"].includes(member.status)) console.warn("Bot is not an administrator of TELEGRAM_CHANNEL_ID; channel activity and membership updates may be incomplete.");
-    } catch (error) {
-      console.warn(`Bot channel status check failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  } else {
-    console.warn("TELEGRAM_CHANNEL_ID is empty; channel activity collection is disabled.");
-  }
-
-  let offset = 0;
-  while (true) {
-    try {
-      const updates = await api("getUpdates", { timeout: 25, offset, allowed_updates: ["message", "edited_message", "channel_post", "edited_channel_post", "chat_member", "my_chat_member", "message_reaction", "message_reaction_count", "pre_checkout_query"] });
-
-      for (const update of updates) {
-        offset = update.update_id + 1;
-        if (update.my_chat_member) {
-          console.log(`Bot membership update: chat=${update.my_chat_member.chat?.id ?? "unknown"}, status=${update.my_chat_member.new_chat_member?.status ?? "unknown"}`);
-          continue;
-        }
-        if (update.chat_member) {
-          await handleChannelMemberUpdate(update.chat_member);
-          continue;
-        }
-        if (update.message_reaction) {
-          await handleReactionUpdate(update.message_reaction);
-          continue;
-        }
-        if (update.channel_post) {
-          const chatId = Number(update.channel_post.chat?.id ?? 0);
-          if (channelId && String(chatId) === String(channelId)) await recordChannelActivity({ telegramUserId: 0, eventType: "CHANNEL_POST", eventKey: `${chatId}:${update.channel_post.message_id}`, points: 0, metadata: { messageId: update.channel_post.message_id } });
-          continue;
-        }
-        if (update.pre_checkout_query) {
-          try {
-            const validation = await validatePreCheckout(update.pre_checkout_query);
-            await api("answerPreCheckoutQuery", { pre_checkout_query_id: update.pre_checkout_query.id, ok: validation.ok, ...(validation.ok ? {} : { error_message: validation.error }) });
-          } catch (error) {
-            console.error("Pre-checkout validation failed:", error);
-            await api("answerPreCheckoutQuery", { pre_checkout_query_id: update.pre_checkout_query.id, ok: false, error_message: "Не удалось проверить заказ. Попробуй ещё раз." });
-          }
-          continue;
-        }
-
-        const message = update.message;
-        if (!message?.chat?.id) continue;
-
-        if (message.successful_payment) {
-          const result = await completeOrRefundPayment(message);
-          if (result.completed) {
-            await api("sendMessage", { chat_id: message.chat.id, text: "✅ Оплата прошла. Результат прокрутки уже в CRICKET BOX.", reply_markup: { inline_keyboard: [[appButton()]] } });
-          } else if (result.refunded) {
-            await api("sendMessage", { chat_id: message.chat.id, text: "⚠️ Оплата не завершилась корректно, поэтому Stars были возвращены Telegram. Попробуй ещё раз.", reply_markup: { inline_keyboard: [[appButton()]] } });
-          } else {
-            await api("sendMessage", { chat_id: message.chat.id, text: "⚠️ Оплата получена, но её обработка требует повторной попытки. Напиши /paysupport, если результат не появится.", reply_markup: { inline_keyboard: [[appButton()]] } });
-          }
-          continue;
-        }
-
-        if (message.chat.type === "private" && message.text === "/start") {
-          await api("sendMessage", { chat_id: message.chat.id, text: "🎁 CRICKET BOX\n\nРозыгрыши, призы и сезонные бонусы в одном месте.", reply_markup: { inline_keyboard: [[appButton()]] } });
-          continue;
-        }
-        if (message.chat.type === "private" && message.text === "/admin") {
-          if (!(await isAdmin(message.from?.id))) { await api("sendMessage", { chat_id: message.chat.id, text: "⛔ Доступ только для администраторов." }); continue; }
-          await api("sendMessage", { chat_id: message.chat.id, text: "🛡 Админ-панель CRICKET BOX", reply_markup: { inline_keyboard: [[adminButton()]] } });
-          continue;
-        }
-        if (message.chat.type === "private" && message.text === "/id") {
-          await api("sendMessage", { chat_id: message.chat.id, text: `🆔 Telegram ID: ${message.from?.id ?? "неизвестен"}` });
-          continue;
-        }
-        if (message.chat.type === "private" && message.text === "/checkchannel") { await sendChannelStatus(message.chat.id); continue; }
-        if (message.chat.type === "private" && message.text === "/paysupport") { await api("sendMessage", { chat_id: message.chat.id, text: supportText(), reply_markup: { inline_keyboard: [[appButton()]] } }); continue; }
-        if (message.chat.type === "private") await handleDiscussionMessage(message);
-      }
-    } catch (error) {
-      console.error(`Polling loop error: ${error instanceof Error ? error.message : String(error)}`);
-      await sleep(2000);
-    }
-  }
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
