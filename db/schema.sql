@@ -54,6 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_season_economy_snapshots_season_time ON season_ec
 CREATE INDEX IF NOT EXISTS idx_stars_ledger_user_time ON stars_ledger(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stars_ledger_season_time ON stars_ledger(season_id,created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_paid_spin_user_season ON star_transactions(user_id,(payload->>'seasonId')) WHERE status='PENDING' AND payload->>'type'='PAID_SPIN';
+CREATE INDEX IF NOT EXISTS idx_star_transactions_status_created_at ON star_transactions(status,created_at ASC);
 CREATE OR REPLACE FUNCTION prevent_stars_ledger_mutation() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'STARS_LEDGER_APPEND_ONLY'; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS stars_ledger_no_update_delete ON stars_ledger;
 CREATE TRIGGER stars_ledger_no_update_delete BEFORE UPDATE OR DELETE ON stars_ledger FOR EACH ROW EXECUTE FUNCTION prevent_stars_ledger_mutation();
@@ -98,7 +99,6 @@ CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(te
 CREATE INDEX IF NOT EXISTS idx_channel_activity_channel_event_time ON channel_activity(channel_id,event_type,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
-CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id,created_at DESC);
 CREATE OR REPLACE VIEW season_leaderboard AS
 WITH spin_stats AS (SELECT season_id,user_id,COUNT(*)::int spins_count FROM spins WHERE status='COMPLETED' GROUP BY season_id,user_id),
 win_stats AS (SELECT s.season_id,py.user_id,COUNT(*)::int wins_count,COALESCE(SUM(CASE WHEN py.kind='STARS' THEN py.amount ELSE 0 END),0)::numeric stars_won FROM payouts py JOIN spins s ON s.id=py.spin_id WHERE py.prize_id IS NOT NULL AND py.kind<>'EMPTY' GROUP BY s.season_id,py.user_id),
