@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken, isProductionApp } from "@/server/config";
-import { query } from "@/server/db";
+import { query, withTransaction } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 
@@ -100,13 +100,45 @@ export const Route = createFileRoute("/api/session")({
         );
         const activityPoints = Math.max(0, Number(activityResult.rows[0]?.points ?? 0));
         const targetActivityBonusSpins = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.floor(activityPoints / ACTIVITY_POINTS_PER_SPIN));
-        let activityIssued = Number(storedState.activity_bonus_spins_issued ?? 0);
-        let bonusFreeSpins = Math.max(0, Number(storedState.bonus_free_spins ?? 0));
 
-        if (storedState.activity_bonus_season_id !== season.id) {
-          activityIssued = 0;
-          await query(`UPDATE user_state SET activity_bonus_season_id=$2::uuid,activity_bonus_spins_issued=0,updated_at=now() WHERE user_id=$1::uuid`, [user.id, season.id]);
-        }
+        // Bonus issuance is a write performed from a GET. Serialize it by locking the
+        // user's state row and re-reading the counters inside the same transaction so two
+        // concurrent session refreshes cannot grant the same activity bonus twice.
+        const activityState = await withTransaction(async client => {
+          await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [user.id]);
+          const locked = await client.query<{ is_subscribed:boolean; is_participant:boolean; bonus_free_spins:number; activity_bonus_season_id:string|null; activity_bonus_spins_issued:number }>(
+            `SELECT is_subscribed,is_participant,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,
+            [user.id],
+          );
+          const current = locked.rows[0];
+          if (!current) throw new Error("USER_STATE_NOT_FOUND");
+
+          let activityIssued = Number(current.activity_bonus_spins_issued ?? 0);
+          let bonusFreeSpins = Math.max(0, Number(current.bonus_free_spins ?? 0));
+          if (current.activity_bonus_season_id !== season.id) {
+            activityIssued = 0;
+            await client.query(`UPDATE user_state SET activity_bonus_season_id=$2::uuid,activity_bonus_spins_issued=0,updated_at=now() WHERE user_id=$1::uuid`, [user.id, season.id]);
+          }
+
+          if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+            const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
+            const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
+            if (grant > 0) {
+              await client.query(`UPDATE user_state SET bonus_free_spins=LEAST($2,bonus_free_spins+$3),activity_bonus_spins_issued=LEAST($4,activity_bonus_spins_issued+$3),updated_at=now() WHERE user_id=$1::uuid`, [user.id, MAX_BONUS_SPINS, grant, MAX_ACTIVITY_BONUS_SPINS]);
+              bonusFreeSpins += grant;
+              activityIssued += grant;
+            }
+          }
+
+          if (membership !== null && membership !== current.is_subscribed) {
+            await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
+          }
+          return { isSubscribed: membership ?? current.is_subscribed, isParticipant: current.is_participant, bonusFreeSpins, activityIssued, dailyGiftClaimedAt: storedState.daily_gift_claimed_at, starsBalance: Number(storedState.stars_balance ?? 0) };
+        });
+
+        const isParticipant = activityState.isParticipant;
+        const activityIssued = activityState.activityIssued;
+        let bonusFreeSpins = activityState.bonusFreeSpins;
 
         const activitySpinUsage = await query<{ used:string }>(
           `SELECT COUNT(*)::text AS used FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='ACTIVITY_BONUS' AND status='COMPLETED'`,
@@ -114,24 +146,14 @@ export const Route = createFileRoute("/api/session")({
         );
         const activityUsed = Number(activitySpinUsage.rows[0]?.used ?? 0);
 
-        if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && storedState.is_participant) {
-          const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
-          const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
-          if (grant > 0) {
-            await query(`UPDATE user_state SET bonus_free_spins=LEAST($2,bonus_free_spins+$3),activity_bonus_spins_issued=LEAST($4,activity_bonus_spins_issued+$3),updated_at=now() WHERE user_id=$1::uuid`, [user.id, MAX_BONUS_SPINS, grant, MAX_ACTIVITY_BONUS_SPINS]);
-            bonusFreeSpins += grant;
-            activityIssued += grant;
-          }
-        }
-
         const prizeResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;quantity_remaining:number;quantity_total:number;metadata:Record<string,unknown>|null;image_url:string|null}>(
           `SELECT id::text,kind,title,subtitle,amount::text,quantity_remaining,quantity_total,metadata,image_url FROM prizes WHERE season_id=$1::uuid AND is_active=TRUE ORDER BY created_at ASC`, [season.id]);
         const spinStats = await query<{total:string}>(`SELECT COUNT(*)::text AS total FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND status='COMPLETED'`, [user.id,season.id]);
         const freeToday = await query<{exists:boolean}>(
           `SELECT EXISTS(SELECT 1 FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='FREE' AND status='COMPLETED' AND created_at>=date_trunc('day',now())) AS exists`, [user.id,season.id]);
         const live = season.state === "ACTIVE" || season.state === "ENDING";
-        const dailyAvailable = season.daily_free_spin && live && isSubscribed && storedState.is_participant && !freeToday.rows[0]?.exists ? 1 : 0;
-        bonusFreeSpins = live && isSubscribed && storedState.is_participant ? Math.max(0, bonusFreeSpins) : 0;
+        const dailyAvailable = season.daily_free_spin && live && isSubscribed && isParticipant && !freeToday.rows[0]?.exists ? 1 : 0;
+        bonusFreeSpins = live && isSubscribed && isParticipant ? Math.max(0, bonusFreeSpins) : 0;
         const freeSpins = dailyAvailable + bonusFreeSpins;
 
         const rewardResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;status:string;created_at:string}>(
@@ -144,7 +166,7 @@ export const Route = createFileRoute("/api/session")({
         const leaderboardResult = await query<{rank:number;user_id:string;username:string|null;spins_count:number;wins_count:number;stars_won:string;level:number}>(
           `SELECT sl.rank,sl.user_id::text,u.username,sl.spins_count,sl.wins_count,sl.stars_won::text,u.level FROM season_leaderboard sl JOIN users u ON u.id=sl.user_id WHERE sl.season_id=$1::uuid AND (sl.rank<=10 OR sl.user_id=$2::uuid) ORDER BY sl.rank ASC`, [season.id,user.id]);
         const withdrawalResult = await query<{id:string;amount:string;status:string;created_at:string}>(`SELECT id::text,amount::text,status,created_at::text FROM payouts WHERE user_id=$1::uuid AND prize_id IS NULL AND note='WITHDRAWAL_REQUEST' ORDER BY created_at DESC LIMIT 20`, [user.id]);
-        const claimedAt = storedState.daily_gift_claimed_at ? new Date(storedState.daily_gift_claimed_at) : null;
+        const claimedAt = activityState.dailyGiftClaimedAt ? new Date(activityState.dailyGiftClaimedAt) : null;
         const giftedRecently = Boolean(claimedAt && Number.isFinite(claimedAt.getTime()) && Date.now()-claimedAt.getTime()<GIFT_COOLDOWN_MS);
         const nextGift = giftedRecently && claimedAt ? new Date(claimedAt.getTime()+GIFT_COOLDOWN_MS) : new Date();
         const activityPercent = activityPoints >= MAX_ACTIVITY_BONUS_SPINS * ACTIVITY_POINTS_PER_SPIN ? 100 : Math.round(((activityPoints % ACTIVITY_POINTS_PER_SPIN) / ACTIVITY_POINTS_PER_SPIN) * 100);
@@ -152,11 +174,11 @@ export const Route = createFileRoute("/api/session")({
         const currentActivityRemaining = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.max(0, activityIssued - activityUsed + (targetActivityBonusSpins > activityIssued ? targetActivityBonusSpins - activityIssued : 0)));
 
         return Response.json({ ok:true, snapshot:{
-          user:{id:user.id,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant:storedState.is_participant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
+          user:{id:user.id,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
           season:{id:season.id,code:season.code,title:displaySeasonTitle(season.code,season.name),state:season.state,startsAt:season.starts_at??new Date().toISOString(),endsAt:season.ends_at??new Date(Date.now()+14*86400000).toISOString(),paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null},
-          stars:{amount:Math.max(0,Math.min(MAX_STARS,Number(storedState.stars_balance??0))),max:MAX_STARS},
+          stars:{amount:Math.max(0,Math.min(MAX_STARS,activityState.starsBalance)),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
-          gift:{state:giftedRecently?"COOLDOWN":live&&isSubscribed&&storedState.is_participant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
+          gift:{state:giftedRecently?"COOLDOWN":live&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
           activity:{points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
           rewards,
