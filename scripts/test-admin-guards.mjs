@@ -50,6 +50,15 @@ try {
   const prize = await db.query(`INSERT INTO prizes(season_id,kind,title,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,metadata) VALUES($1,'STARS','Guard Stars',20,1,'XTR',10,10,TRUE,'{"weight":1}'::jsonb) RETURNING id::text`, [seasonId]);
   prizeId = prize.rows[0].id;
 
+  const paidPayload = `paidspin:v1:${userId}:${seasonId}:guard-price-lock`;
+  await db.query(`INSERT INTO star_transactions(user_id,amount,status,payload) VALUES($1,100,'PENDING',$2::jsonb)`, [userId, JSON.stringify({ payload: paidPayload, type: "PAID_SPIN", seasonId, userId })]);
+  await expectError(
+    () => updateSeason(seasonId, { paidSpinPrice: 75 }, { query: (text, values) => db.query(text, values) }),
+    "PAID_SPIN_PRICE_LOCKED",
+    "paid spin price is locked after the first payment transaction, even before settlement",
+  );
+  await db.query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE user_id=$1::uuid AND payload->>'payload'=$2`, [userId, paidPayload]);
+
   const freeSpin = await db.query(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status) VALUES($1,$2,'FREE',0,$3::uuid,'COMPLETED') RETURNING id`, [userId, seasonId, prizeId]);
   assert(Boolean(freeSpin.rows[0]?.id), "season has a completed spin fixture");
 
@@ -109,7 +118,7 @@ try {
   );
 
   await expectError(
-    () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 12, quantityRemaining: 11, metadata: { weight: 3 }, economicOverride: true, economicOverrideReason: "short" }, { query: (text, values) => db.query(text, values) }),
+    () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 12, quantityRemaining: 11, metadata: { weight: 3 }, economicOverride: true, economicOverrideRole: "OWNER", economicOverrideReason: "short" }, { query: (text, values) => db.query(text, values) }),
     "INVALID_OVERRIDE_REASON",
     "owner override requires a sufficiently descriptive reason",
   );
@@ -117,6 +126,7 @@ try {
   console.log("✅ Admin guard tests passed");
 } finally {
   if (userId) await db.query(`DELETE FROM stars_ledger WHERE user_id=$1::uuid`, [userId]).catch(() => {});
+  if (userId) await db.query(`DELETE FROM star_transactions WHERE user_id=$1::uuid`, [userId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM spins WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM prizes WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM seasons WHERE id=$1::uuid`, [seasonId]).catch(() => {});
