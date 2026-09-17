@@ -18,6 +18,7 @@ type InvoiceContext = {
   id: string;
   payload: string;
   price: number;
+  seasonCode: string;
   recovery: boolean;
 };
 
@@ -39,7 +40,7 @@ async function createTelegramInvoice(seasonCode: string, payload: string, amount
   return data.result;
 }
 
-async function ensureInvoiceUrl(context: InvoiceContext, seasonCode: string) {
+async function ensureInvoiceUrl(context: InvoiceContext) {
   return withTransaction(async client => {
     const row = await client.query<{ status: string; payload: Record<string, unknown> | null }>(
       `SELECT status,payload FROM star_transactions WHERE id=$1::uuid FOR UPDATE`,
@@ -47,10 +48,14 @@ async function ensureInvoiceUrl(context: InvoiceContext, seasonCode: string) {
     );
     if (!row.rows[0]) throw new Error("PAYMENT_NOT_FOUND");
     if (row.rows[0].status === "REFUND_PENDING") throw new Error("PAYMENT_REFUND_PENDING");
+    if (row.rows[0].status !== "PENDING") throw new Error("PAYMENT_NOT_PENDING");
     const stored = typeof row.rows[0].payload?.invoiceUrl === "string" ? row.rows[0].payload.invoiceUrl : null;
     if (stored) return stored;
 
-    const invoiceUrl = await createTelegramInvoice(seasonCode, context.payload, context.price);
+    // Keep the row lock while asking Telegram for the invoice. This serializes
+    // concurrent invoice requests for the same pending payment and prevents two
+    // different invoice URLs from being generated for one transaction.
+    const invoiceUrl = await createTelegramInvoice(context.seasonCode, context.payload, context.price);
     const persisted = await client.query<{ invoice_url: string | null }>(
       `UPDATE star_transactions
           SET payload=payload||jsonb_build_object('invoiceUrl',$2::text)
@@ -187,24 +192,20 @@ export const Route = createFileRoute("/api/payment/invoice")({
             id: pending.id,
             payload: pending.payload,
             price: transactionAmount,
+            seasonCode: current.code,
             recovery: !created,
           } satisfies InvoiceContext;
         });
 
-        const invoiceUrl = await ensureInvoiceUrl(context, context.payload.includes(currentSeasonMarker()) ? "CRICKET BOX" : "CRICKET BOX");
-
+        const invoiceUrl = await ensureInvoiceUrl(context);
         return Response.json({ ok: true, invoiceUrl, price: context.price, payload: context.payload, recovery: context.recovery });
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok: false, code: "RATE_LIMITED" }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
-        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" || code === "SEASON_NOT_ACTIVE" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
+        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" || code === "SEASON_NOT_ACTIVE" || code === "PAYMENT_NOT_PENDING" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
         return Response.json({ ok: false, code }, { status });
       }
     },
   }},
 });
-
-function currentSeasonMarker() {
-  return "paidspin:v1:";
-}
