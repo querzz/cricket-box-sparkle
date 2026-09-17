@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":true}'::jsonb) ON CONFLICT(key) DO NOTHING;
+INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
 UPDATE users SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
 UPDATE admins SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
