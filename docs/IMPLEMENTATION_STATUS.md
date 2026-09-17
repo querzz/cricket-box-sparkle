@@ -15,6 +15,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Stars balance changes use the append-only `stars_ledger`; idempotency keys are enforced and the cached balance is capped at 500.
 - Concurrent inventory claims are serialized by database locks and conditional decrement.
 - PostgreSQL-backed API rate-limit buckets are initialized by `scripts/init-db.mjs`.
+- Stars ledger writes now use `ON CONFLICT DO NOTHING` plus payload verification, so a concurrent/idempotent replay cannot silently reuse a key for a different user, amount or operation.
 
 ### Telegram identity / security
 
@@ -31,6 +32,7 @@ Repository: `querzz/cricket-box-sparkle`
 - Start time cannot be changed after a season has started; the season end cannot be shortened or removed after start.
 - Paid-spin enablement/price are guarded after the season is in use.
 - Prize economic fields are guarded after the season is in use; cosmetic edits remain available.
+- Season/prize mutation transactions lock the season before the prize, matching the spin transaction lock order and reducing deadlock/race risk.
 - LiveOps reconciles due scheduled seasons, expiry and payout/archive lifecycle.
 
 ### Spin engine
@@ -70,6 +72,7 @@ finalWeight = configuredWeight × quantityRemaining
 - Payment-status polling is authenticated and rate-limited.
 - Failed settlement now persists `REFUND_PENDING` before the external Telegram refund call, so a timeout between the database and Telegram does not lose the refund obligation.
 - LiveOps now reconciles stale `REFUND_PENDING` payments automatically in bounded batches; successful refunds are marked `REFUNDED` and audited, failed attempts retain the last error for the next retry.
+- New paid checkout requests are blocked while a refund is still pending for that user/season, preventing a second charge from being opened while the first charge is unresolved.
 
 ### LiveOps / economics administration
 
@@ -83,6 +86,7 @@ finalWeight = configuredWeight × quantityRemaining
 - The repository scheduler exits cleanly when its required secrets are not configured.
 - The economic planner is consolidated into `/admin/economics`: scenario presets, expected/max free spins, expected paid spins, planning volume, gross Stars, Stars prize liability, configurable planning rate, Daily Gift budget, operating reserve, break-even calculations, pool utilization and explicit warnings are calculated without mutating season settings.
 - The planner keeps non-USD material costs separate instead of silently converting them with an invented FX rate.
+- A centralized `/admin/settings` page now collects existing cross-season controls without duplicating season economics; Veteran remains owner-controlled and Mechanics remains available as a dedicated configuration screen.
 
 ### Payouts / withdrawals
 
@@ -95,31 +99,34 @@ finalWeight = configuredWeight × quantityRemaining
 
 - PostgreSQL-backed statistics exist for current and historical seasons.
 - Funnel, winner, conversion, repeat-user and D1/D7 retention metrics are exposed.
-- Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran, Economics and Mechanics.
+- Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran, Economics, Mechanics and Settings.
 - Admin Access supports OWNER/ADMIN management and ownership transfer.
 - Admin payout flow requires fulfillment references for individual PAID actions and keeps payout history immutable.
 - Admin prize/access/mechanics mutations are now transactionally audited, and season/prize economics guards have regression coverage.
+- Mechanics input is validated server-side, including enum-like enabled keys, integer pass count, bounded text and actual boolean confirmation values.
 
 ## Verification
 
-The repository contains regression suites for database invariants, LiveOps, payment security/rate limits, spin idempotency, prize probabilities and admin season/prize guards.
+The repository contains regression suites for database invariants, LiveOps, payment security/rate limits, spin idempotency, prize probabilities, admin season/prize guards and Stars-ledger idempotency.
 
 `npm run test:prize-probabilities` covers weighted sampling, explicit zero weights, exhausted inventory, sequential finite-pool depletion and invalid-weight rejection.
 
 `npm run check:season-odds` reads the current `ACTIVE`/`ENDING` season and prints configured weight, remaining inventory, effective weight and baseline odds without mutating production data.
 
-The most recent confirmed clean baseline had Build, TypeScript, lint, PostgreSQL integration, LiveOps and spin-idempotency checks green. Fresh CI runs are triggered automatically for the latest hardening commits and must be green before calling the repository production-ready.
+`npm run test:stars-ledger` verifies identical replay is a no-op while reusing an idempotency key for a different amount is rejected without changing balance.
+
+The latest CI runs are executing against the current hardening commits. Production readiness should only be declared after the current-head Build/typecheck/lint and PostgreSQL/payment-security workflows finish green.
 
 ## Remaining production work
 
 1. Full live HTTP replay/double-click/payment-recovery testing still needs runtime execution against the deployed app.
 2. Browser/Telegram Mini App QA and real payout/refund verification still need to be performed.
 3. A deployed app URL plus `LIVEOPS_CRON_SECRET` must be configured before automated production scheduler ticks can run.
-4. Paid-payment inventory is not reserved at invoice creation. The current safety model resolves an inventory race at settlement with a compensating Telegram refund; stale refund obligations are now automatically reconciled, but the external Telegram payment still cannot be rolled back atomically with PostgreSQL.
+4. Paid-payment inventory is not reserved at invoice creation. The current safety model resolves an inventory race at settlement with a compensating Telegram refund; stale refund obligations are now automatically reconciled, but the external Telegram payment still cannot be rolled back atomically with PostgreSQL. Invoice creation still performs an external Telegram request before its invoice URL is persisted, so an external success followed by database failure can leave an orphaned invoice link.
 5. External acquisition attribution and impression/session-level funnel data are not persisted historically.
 6. Exact numeric probability display in user-facing paid-spin flows needs final product/legal review.
 7. Economic Planner supports non-USD cost separation, but an approved FX/accounting model is still needed if those costs must be included in USD margin.
-8. Admin global Settings is still not a separate system-control page; existing cross-season controls remain in dedicated Veteran/Mechanics areas.
+8. The centralized Settings page now exists, but no additional global business settings have been invented; any future controls need explicit product definitions before being added.
 9. Russian i18n infrastructure exists (`src/lib/i18n.ts` + `src/locales/ru.json`), but most UI copy is still hardcoded and has not been migrated to translation keys.
 
 ## Documentation policy
