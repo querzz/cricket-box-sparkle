@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { AdminAuthGate } from "@/components/kit/AdminAuthGate";
 import { BottomNavigation } from "@/components/kit/BottomNavigation";
+import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface AppShellProps {
@@ -18,16 +19,16 @@ interface AppShellProps {
 
 const ADMIN_BOT_URL = import.meta.env.VITE_ADMIN_BOT_URL || "https://t.me/your_bot?startapp=admin";
 const ADMIN_NAV = [
-  ["Обзор", "/admin"],
-  ["Призы", "/admin/prizes"],
-  ["Выплаты", "/admin/payouts"],
-  ["Участники", "/admin/participants"],
-  ["Прокрутки", "/admin/spins"],
-  ["Статистика", "/admin/statistics"],
-  ["Экономика", "/admin/economics"],
-  ["Настройки", "/admin/settings"],
-  ["Админы", "/admin/access"],
-  ["Логи", "/admin/audit"],
+  ["overview", "/admin"],
+  ["prizes", "/admin/prizes"],
+  ["payouts", "/admin/payouts"],
+  ["participants", "/admin/participants"],
+  ["spins", "/admin/spins"],
+  ["statistics", "/admin/statistics"],
+  ["economics", "/admin/economics"],
+  ["settings", "/admin/settings"],
+  ["access", "/admin/access"],
+  ["audit", "/admin/audit"],
 ] as const;
 
 function telegramMiniAppIsAvailable() {
@@ -63,10 +64,10 @@ function AdminSectionNav() {
 
   return <div className="mb-4 -mx-1 overflow-x-auto px-1 no-scrollbar">
     <div className="flex min-w-max gap-1.5 rounded-2xl border border-glass-border bg-card/55 p-1 backdrop-blur-xl">
-      {ADMIN_NAV.map(([label, href]) => {
+      {ADMIN_NAV.map(([key, href]) => {
         const active = typeof window !== "undefined" && (window.location.pathname === href || (href !== "/admin" && window.location.pathname.startsWith(`${href}/`)));
         return <Link key={href} to={href as never} className={cn("rounded-xl px-3 py-2 text-[10px] font-semibold transition", active ? "bg-primary/15 text-primary-glow shadow-[0_0_18px_-8px_var(--primary)]" : "text-muted-foreground hover:text-foreground")}>
-          {label}
+          {t(`navigation.admin.${key}`)}
         </Link>;
       })}
     </div>
