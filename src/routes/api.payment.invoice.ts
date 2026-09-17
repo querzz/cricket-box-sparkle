@@ -19,7 +19,6 @@ type InvoiceContext = {
   payload: string;
   price: number;
   recovery: boolean;
-  storedInvoiceUrl: string | null;
 };
 
 async function createTelegramInvoice(seasonCode: string, payload: string, amount: number) {
@@ -40,27 +39,27 @@ async function createTelegramInvoice(seasonCode: string, payload: string, amount
   return data.result;
 }
 
-async function persistInvoiceUrl(transactionId: string, invoiceUrl: string) {
+async function ensureInvoiceUrl(context: InvoiceContext, seasonCode: string) {
   return withTransaction(async client => {
-    const result = await client.query<{ invoice_url: string | null }>(
+    const row = await client.query<{ status: string; payload: Record<string, unknown> | null }>(
+      `SELECT status,payload FROM star_transactions WHERE id=$1::uuid FOR UPDATE`,
+      [context.id],
+    );
+    if (!row.rows[0]) throw new Error("PAYMENT_NOT_FOUND");
+    if (row.rows[0].status === "REFUND_PENDING") throw new Error("PAYMENT_REFUND_PENDING");
+    const stored = typeof row.rows[0].payload?.invoiceUrl === "string" ? row.rows[0].payload.invoiceUrl : null;
+    if (stored) return stored;
+
+    const invoiceUrl = await createTelegramInvoice(seasonCode, context.payload, context.price);
+    const persisted = await client.query<{ invoice_url: string | null }>(
       `UPDATE star_transactions
           SET payload=payload||jsonb_build_object('invoiceUrl',$2::text)
         WHERE id=$1::uuid AND status='PENDING'
       RETURNING payload->>'invoiceUrl' AS invoice_url`,
-      [transactionId, invoiceUrl],
+      [context.id, invoiceUrl],
     );
-    if (result.rows[0]?.invoice_url) return result.rows[0].invoice_url;
-
-    const existing = await client.query<{ invoice_url: string | null; status: string }>(
-      `SELECT payload->>'invoiceUrl' AS invoice_url,status
-         FROM star_transactions
-        WHERE id=$1::uuid
-        FOR UPDATE`,
-      [transactionId],
-    );
-    if (existing.rows[0]?.invoice_url) return existing.rows[0].invoice_url;
-    if (existing.rows[0]?.status === "REFUND_PENDING") throw new Error("PAYMENT_REFUND_PENDING");
-    throw new Error("INVOICE_PERSIST_FAILED");
+    if (!persisted.rows[0]?.invoice_url) throw new Error("INVOICE_PERSIST_FAILED");
+    return persisted.rows[0].invoice_url;
   });
 }
 
@@ -84,18 +83,19 @@ export const Route = createFileRoute("/api/payment/invoice")({
         if (!state.rows[0]?.is_subscribed) return Response.json({ ok: false, code: "NOT_SUBSCRIBED" }, { status: 403 });
         if (!state.rows[0]?.is_participant) return Response.json({ ok: false, code: "NOT_PARTICIPANT" }, { status: 403 });
 
-        const season = await query<{ id: string; code: string; state: string; paid_spin_price: number; paid_spin_enabled: boolean }>(
-          `SELECT id::text,code,state,paid_spin_price,paid_spin_enabled
-             FROM seasons
-            WHERE state IN ('ACTIVE','ENDING')
-            ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC
-            LIMIT 1`,
-        );
-        const current = season.rows[0];
-        if (!current) return Response.json({ ok: false, code: "SEASON_NOT_ACTIVE" }, { status: 409 });
-        if (!current.paid_spin_enabled) return Response.json({ ok: false, code: "PAID_SPIN_DISABLED" }, { status: 409 });
-
         const context = await withTransaction(async client => {
+          const seasonResult = await client.query<{ id: string; code: string; state: string; paid_spin_price: number; paid_spin_enabled: boolean }>(
+            `SELECT id::text,code,state,paid_spin_price,paid_spin_enabled
+               FROM seasons
+              WHERE state IN ('ACTIVE','ENDING')
+              ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC
+              LIMIT 1
+              FOR UPDATE`,
+          );
+          const current = seasonResult.rows[0];
+          if (!current) throw new Error("SEASON_NOT_ACTIVE");
+          if (!current.paid_spin_enabled) throw new Error("PAID_SPIN_DISABLED");
+
           const seasonId = current.id;
           const userId = user.rows[0].id;
           const price = Number(current.paid_spin_price);
@@ -183,31 +183,28 @@ export const Route = createFileRoute("/api/payment/invoice")({
           const transactionAmount = Number(pending.amount);
           if (!Number.isSafeInteger(transactionAmount) || transactionAmount <= 0 || transactionAmount !== price) throw new Error("PAYMENT_PROCESSING");
 
-          const storedInvoiceUrl = typeof pending.metadata?.invoiceUrl === "string" ? pending.metadata.invoiceUrl : null;
           return {
             id: pending.id,
             payload: pending.payload,
             price: transactionAmount,
             recovery: !created,
-            storedInvoiceUrl,
           } satisfies InvoiceContext;
         });
 
-        if (context.storedInvoiceUrl) {
-          return Response.json({ ok: true, invoiceUrl: context.storedInvoiceUrl, price: context.price, payload: context.payload, recovery: context.recovery });
-        }
+        const invoiceUrl = await ensureInvoiceUrl(context, context.payload.includes(currentSeasonMarker()) ? "CRICKET BOX" : "CRICKET BOX");
 
-        const invoiceUrl = await createTelegramInvoice(current.code, context.payload, context.price);
-        const canonicalInvoiceUrl = await persistInvoiceUrl(context.id, invoiceUrl);
-
-        return Response.json({ ok: true, invoiceUrl: canonicalInvoiceUrl, price: context.price, payload: context.payload, recovery: context.recovery });
+        return Response.json({ ok: true, invoiceUrl, price: context.price, payload: context.payload, recovery: context.recovery });
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok: false, code: "RATE_LIMITED" }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
-        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
+        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" || code === "SEASON_NOT_ACTIVE" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
         return Response.json({ ok: false, code }, { status });
       }
     },
   }},
 });
+
+function currentSeasonMarker() {
+  return "paidspin:v1:";
+}
