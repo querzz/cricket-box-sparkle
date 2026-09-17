@@ -129,15 +129,21 @@ export const Route = createFileRoute("/api/payment/invoice")({
           }
 
           if (!pending) {
-            const availability = await client.query<{ total_remaining: string }>(
-              `SELECT COALESCE(SUM(quantity_remaining),0)::text AS total_remaining
+            const availability = await client.query<{ playable: string }>(
+              `SELECT COUNT(*) FILTER (
+                 WHERE quantity_remaining>0
+                   AND is_active=TRUE
+                   AND CASE
+                     WHEN COALESCE(metadata->>'weight','') = '' THEN 1::numeric
+                     WHEN metadata->>'weight' ~ '^([0-9]+(\\.[0-9]+)?)$' THEN (metadata->>'weight')::numeric
+                     ELSE 0::numeric
+                   END > 0
+               )::text AS playable
                  FROM prizes
-                WHERE season_id=$1::uuid
-                  AND quantity_remaining>0
-                  AND is_active=TRUE`,
+                WHERE season_id=$1::uuid`,
               [seasonId],
             );
-            if (Number(availability.rows[0]?.total_remaining ?? 0) <= 0) throw new Error("NO_PRIZES");
+            if (Number(availability.rows[0]?.playable ?? 0) <= 0) throw new Error("NO_PRIZES");
 
             const payload = `paidspin:v1:${userId}:${seasonId}:${crypto.randomUUID().replaceAll("-", "")}`;
             await client.query("SAVEPOINT create_pending_payment");
