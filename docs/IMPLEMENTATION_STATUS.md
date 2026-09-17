@@ -1,6 +1,6 @@
 # CRICKET BOX — IMPLEMENTATION STATUS
 
-Updated: 2026-09-09
+Updated: 2026-09-17
 Repository: `querzz/cricket-box-sparkle`
 
 ## Verified implemented
@@ -79,6 +79,8 @@ finalWeight = configuredWeight × quantityRemaining
 - The simulator uses the same finite-pool selector as production.
 - `/api/internal/liveops/tick` is secret-protected and advisory-locked.
 - The repository scheduler exits cleanly when its required secrets are not configured.
+- Admin Economic Planner v1 is implemented at `/admin/economic-planner`: scenario presets, expected/max free spins, expected paid spins, planning volume, gross Stars, Stars prize liability, configurable planning rate, Daily Gift budget, operating reserve, break-even calculations, pool utilization and explicit warnings are calculated without mutating season settings.
+- The planner keeps non-USD material costs separate instead of silently converting them with an invented FX rate.
 
 ### Payouts / withdrawals
 
@@ -91,7 +93,9 @@ finalWeight = configuredWeight × quantityRemaining
 
 - PostgreSQL-backed statistics exist for current and historical seasons.
 - Funnel, winner, conversion, repeat-user and D1/D7 retention metrics are exposed.
-- Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran, Economics and Season Sync.
+- Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran, Economics and Economic Planner.
+- Admin Access supports OWNER/ADMIN management and ownership transfer.
+- Admin payout flow requires fulfillment references for individual PAID actions and keeps payout history immutable.
 
 ## Verification
 
@@ -110,6 +114,8 @@ The repository contains regression suites for database invariants, LiveOps, paym
 5. Paid-payment inventory is not reserved at invoice creation; the current safety model resolves an inventory race at settlement with a compensating Telegram refund. Failed refunds remain a production reconciliation concern.
 6. External acquisition attribution and impression/session-level funnel data are not persisted historically.
 7. Exact numeric probability display in user-facing paid-spin flows needs final product/legal review.
+8. Economic Planner v1 is available, but non-USD material costs still need an approved FX/accounting model and the planner does not yet persist its scenario assumptions as reusable season configuration.
+9. Admin global Settings is still not a dedicated route; season-specific configuration lives in the Seasons area and separate mechanics configuration remains outside the core Settings page.
 
 ## Documentation policy
 
