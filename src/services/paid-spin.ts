@@ -3,7 +3,7 @@ import type { Reward, ServiceError } from "@/lib/types";
 type InvoiceResponse = { ok: boolean; invoiceUrl?: string; price?: number; payload?: string; code?: string };
 type PaymentStatusResponse = {
   ok: boolean;
-  status?: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
+  status?: "PENDING" | "REFUND_PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
   code?: string;
   spin?: {
     id: string;
@@ -94,6 +94,7 @@ export async function completePaidSpin(price: number) {
       if (payment?.ok && payment.status === "SUCCESS" && payment.spin?.reward) {
         return { ok: true as const, reward: toReward(payment.spin.reward) };
       }
+      if (payment?.status === "REFUND_PENDING") return mapError("PAYMENT_REFUND_PENDING");
       if (payment?.status === "REFUNDED") return mapError("PAYMENT_REFUNDED");
       if (payment?.status === "FAILED") return mapError("PAYMENT_PROCESSING");
       await new Promise((resolve) => window.setTimeout(resolve, 500));
