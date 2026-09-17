@@ -12,6 +12,7 @@ import { RewardModal } from "@/components/kit/RewardModal";
 import { ErrorState, LoadingState, NoticeBar } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
 import { StatusBadge } from "@/components/kit/StatusBadge";
+import { t } from "@/lib/i18n";
 import { seasonUi } from "@/lib/season";
 import { completePaidSpin } from "@/services/paid-spin";
 import type { Reward } from "@/lib/types";
@@ -124,20 +125,22 @@ function DrawScreen() {
   const ui = seasonUi(snapshot);
   const price = snapshot.spin.paidSpinPrice;
   const freeSpins = snapshot.spin.freeSpins;
-  const canPay = price !== null && snapshot.stars.amount >= price;
+  // Paid spins are charged by Telegram XTR. The internal CRICKET BOX Stars
+  // balance must not gate access to the Telegram payment flow.
+  const canPay = price !== null;
   const starsFull = snapshot.stars.amount >= snapshot.stars.max;
   const seasonTitle = publicSeasonTitle ?? snapshot.season.title;
 
   return (
-    <AppShell title="Розыгрыш" action={<Link to="/prizes" aria-label="История призов" className="press grid size-9 place-items-center rounded-full bg-muted/50"><History className="size-4" /></Link>}>
+    <AppShell title="Розыгрыш" action={<Link to="/prizes" aria-label={t("draw.history")} className="press grid size-9 place-items-center rounded-full bg-muted/50"><History className="size-4" /></Link>}>
       <div className="flex items-center justify-between"><StatusBadge status={{ type: "season", value: snapshot.season.state }} /><StarsBalance balance={snapshot.stars} size="sm" /></div>
       <GlassCard className="mt-4 px-4 pb-6 pt-4" glow>
         <div className="text-center"><p className="font-display text-xs uppercase tracking-[0.16em] text-primary-glow">{seasonTitle}</p></div>
         <CricketBox phase={ui.canSpin ? phase : "disabled"} size="md" className="mt-1" />
         <div className="mt-5 space-y-2.5">
-          <PrimaryButton fullWidth size="lg" loading={busy && !reward} disabled={!ui.canSpin || freeSpins <= 0} onClick={() => void runSpin(false)}>{ui.isFinished ? "Сезон завершён" : busy ? "Открываем" : "Крутить"}</PrimaryButton>
-          {price !== null && !ui.isFinished && <PrimaryButton variant="outline" fullWidth disabled={!ui.canSpin || busy || !canPay} onClick={() => void runSpin(true)}>{canPay ? `Дополнительная прокрутка · ${price} Stars` : `Нужно ещё ${Math.max(0, price - snapshot.stars.amount)} Stars`}</PrimaryButton>}
-          <p className="text-center text-[11px] text-muted-foreground">{ui.isFinished ? "Сезон завершён — попыток больше нет" : freeSpins > 0 ? "Бесплатная попытка сегодня доступна" : "Бесплатная попытка сегодня уже использована"}</p>
+          <PrimaryButton fullWidth size="lg" loading={busy && !reward} disabled={!ui.canSpin || freeSpins <= 0} onClick={() => void runSpin(false)}>{ui.isFinished ? t("draw.seasonFinished") : busy ? t("draw.opening") : t("draw.spin")}</PrimaryButton>
+          {price !== null && !ui.isFinished && <PrimaryButton variant="outline" fullWidth disabled={!ui.canSpin || busy || !canPay} onClick={() => void runSpin(true)}>{t("draw.paidSpin")} · {price} Stars</PrimaryButton>}
+          <p className="text-center text-[11px] text-muted-foreground">{ui.isFinished ? "Сезон завершён — попыток больше нет" : freeSpins > 0 ? t("draw.dailyAvailable") : t("draw.dailyUsed")}</p>
         </div>
       </GlassCard>
 
@@ -145,9 +148,8 @@ function DrawScreen() {
         {!ui.canSpin && !snapshot.user.isSubscribed && <GlassCard className="space-y-2.5 px-4 py-3.5"><p className="text-sm font-semibold">Чтобы участвовать, подпишись на канал</p><p className="text-[11px] leading-relaxed text-muted-foreground">После подписки вернись сюда — приложение автоматически перепроверит доступ.</p>{channel?.url && <a href={channel.url} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary-glow"><span>{channel.username ? `Открыть ${channel.username}` : "Открыть канал"}</span><ExternalLink className="size-4" /></a>}</GlassCard>}
         {!ui.canSpin && snapshot.user.isSubscribed && <NoticeBar tone="warning">{ui.headline}</NoticeBar>}
         {ui.isWaiting && <NoticeBar>{ui.headline}. Прокрутки откроются после старта сезона.</NoticeBar>}
-        {ui.canSpin && freeSpins <= 0 && !canPay && price !== null && <NoticeBar tone="danger">Бесплатная попытка сегодня уже использована. Нужно ещё {price - snapshot.stars.amount} Stars для платной прокрутки.</NoticeBar>}
-        {ui.canSpin && freeSpins <= 0 && canPay && !ui.isFinished && <NoticeBar>Следующая бесплатная попытка будет доступна завтра. Ты можешь использовать платную прокрутку.</NoticeBar>}
-        {starsFull && <NoticeBar tone="warning">Баланс Stars заполнен ({snapshot.stars.max}/{snapshot.stars.max}). Потрать Stars на дополнительные прокрутки, чтобы снова получать награды Stars.</NoticeBar>}
+        {ui.canSpin && freeSpins <= 0 && price !== null && <NoticeBar tone="warning">{t("draw.dailyUsed")}. Ты можешь использовать платную прокрутку за {price} Stars через Telegram.</NoticeBar>}
+        {starsFull && <NoticeBar tone="warning">Баланс Stars заполнен ({snapshot.stars.max}/{snapshot.stars.max}). Следующие Stars-награды будут ограничены при выдаче до освобождения места.</NoticeBar>}
         <GlassCard className="px-4 py-3.5">
           {ui.isFinished ? <div className="text-center"><p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">{ui.headline}</p><p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p><div className="mt-3 space-y-2"><Link to="/prizes" className="block"><PrimaryButton fullWidth>Мои призы</PrimaryButton></Link>{ui.canWithdraw && <Link to="/withdraw" className="block"><PrimaryButton variant="outline" fullWidth>Вывести Stars</PrimaryButton></Link>}</div></div> : ui.countdownTarget ? <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} /> : <div className="text-center"><p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">{ui.headline}</p><p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p></div>}
         </GlassCard>
