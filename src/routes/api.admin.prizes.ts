@@ -41,7 +41,9 @@ export const Route = createFileRoute("/api/admin/prizes")({
             economicOverrideReason?: string;
           };
           const admin = await authenticateAdmin(body.initData ?? "");
-          if (!body.seasonId || !body.title?.trim()) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+          const seasonId = body.seasonId;
+          const title = body.title?.trim();
+          if (!seasonId || !title) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
           const quantityTotalNumber = Number(body.quantityTotal ?? 0);
           const quantityRemainingNumber = body.quantityRemaining == null ? quantityTotalNumber : Number(body.quantityRemaining);
           const amount = Number(body.amount ?? 0);
@@ -57,9 +59,9 @@ export const Route = createFileRoute("/api/admin/prizes")({
           const prize = await withTransaction(async (client) => {
             const nextPrize = await upsertPrize({
               id: body.id,
-              seasonId: body.seasonId,
+              seasonId,
               kind: body.kind ?? "CUSTOM",
-              title: body.title,
+              title,
               subtitle: body.subtitle,
               amount,
               unitCost,
