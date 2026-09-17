@@ -125,6 +125,34 @@ try {
     [first.rows[0].id],
   );
 
+  // A second Telegram charge for an already-settled invoice must be represented by its own
+  // refund obligation. It must not mutate the original SUCCESS/REFUNDED transaction.
+  const duplicateChargeId = `security-duplicate-refund-${suffix}`;
+  const duplicateRefund = await db.query(
+    `INSERT INTO star_transactions(user_id,amount,status,telegram_charge_id,payload)
+     VALUES($1,100,'REFUND_PENDING',$2,$3::jsonb)
+     RETURNING id::text,status,telegram_charge_id`,
+    [user, duplicateChargeId, JSON.stringify({
+      payload,
+      userId: user,
+      seasonId: season,
+      type: "DUPLICATE_CHARGE_REFUND",
+      refundReason: "DUPLICATE_PAYMENT_CHARGE",
+      refundPending: true,
+    })],
+  );
+  assert(duplicateRefund.rows[0]?.status === "REFUND_PENDING", "duplicate successful charge creates an independent refund obligation");
+  assert(duplicateRefund.rows[0]?.telegram_charge_id === duplicateChargeId, "duplicate charge keeps its own Telegram charge id");
+  const recoveryCandidates = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM star_transactions
+      WHERE status='REFUND_PENDING'
+        AND telegram_charge_id=$1`,
+    [duplicateChargeId],
+  );
+  assert(Number(recoveryCandidates.rows[0]?.count ?? 0) === 1, "duplicate charge refund is visible to recovery reconciliation");
+  await db.query(`UPDATE star_transactions SET status='REFUNDED',processed_at=now() WHERE id=$1::uuid`, [duplicateRefund.rows[0].id]);
+
   await db.query(
     `INSERT INTO star_transactions(user_id,amount,status,payload)
      VALUES($1,100,'PENDING',$2)`,
