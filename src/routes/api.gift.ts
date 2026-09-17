@@ -65,7 +65,7 @@ export const Route = createFileRoute("/api/gift")({
           if (membership !== null && membership !== current?.is_subscribed) await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.rows[0].id, membership]);
           if (!current?.is_participant || !subscribed) throw new Error("GIFT_UNAVAILABLE");
 
-          const season = await client.query<{ id:string; state:string }>(`SELECT id::text,state FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1`, []);
+          const season = await client.query<{ id:string; state:string }>(`SELECT id::text,state FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
           const currentSeason = season.rows[0];
           if (!currentSeason) throw new Error("GIFT_UNAVAILABLE");
           if (current.daily_gift_claimed_at) {
@@ -80,7 +80,7 @@ export const Route = createFileRoute("/api/gift")({
           const overflow = reward.kind === "STARS" ? Math.max(0, reward.amount - starsCredited) : 0;
           const bonusSpinGranted = reward.kind === "FREE_SPIN" ? Math.min(reward.amount, Math.max(0, MAX_BONUS_SPINS - Number(current.bonus_free_spins ?? 0))) : 0;
           const xpGranted = reward.kind === "XP" ? reward.amount : 0;
-          const effectiveKind = reward.kind === "STARS" && starsCredited === 0 || reward.kind === "FREE_SPIN" && bonusSpinGranted === 0 ? "NOTHING" : reward.kind;
+          const effectiveKind: GiftReward["kind"] = reward.kind === "STARS" && starsCredited === 0 || reward.kind === "FREE_SPIN" && bonusSpinGranted === 0 ? "NOTHING" : reward.kind;
           const title = effectiveKind === "NOTHING" && reward.kind !== "NOTHING" ? "Ничего" : reward.title;
           const subtitle = reward.kind === "STARS" && overflow > 0
             ? `Лимит баланса: из ${reward.amount} Stars поместилось только ${starsCredited}.`
@@ -102,11 +102,11 @@ export const Route = createFileRoute("/api/gift")({
 
           if (starsCredited > 0) await appendStarsLedger(client, { userId:user.rows[0].id, seasonId:currentSeason.id, type:"DAILY_GIFT", amount:reward.amount, balanceDelta:starsCredited, referenceId:claim.rows[0].id, idempotencyKey:`daily-gift:${claim.rows[0].id}:reward`, metadata:{ requestedAmount:reward.amount, creditedAmount:starsCredited, overflowAmount:overflow } });
           if (overflow > 0) await appendStarsLedger(client, { userId:user.rows[0].id, seasonId:currentSeason.id, type:"CAPPED_OVERFLOW_BURNED", amount:-overflow, balanceDelta:0, referenceId:claim.rows[0].id, idempotencyKey:`daily-gift:${claim.rows[0].id}:overflow`, metadata:{ requestedAmount:reward.amount, creditedAmount:starsCredited, overflowAmount:overflow } });
-          await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('DAILY_GIFT_CLAIMED','daily_gift',$1,$2::jsonb)`, [claim.rows[0].id, JSON.stringify({ userId:user.rows[0].id, seasonId:currentSeason.id, kind:reward.kind, amount:reward.amount, starsCredited, overflowStars:overflow, bonusSpinGranted, xpGranted })]);
-          return { claimId:claim.rows[0].id, claimedAt:claim.rows[0].created_at, reward, title, subtitle, starsCredited, bonusSpinGranted, xpGranted, overflow };
+          await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('DAILY_GIFT_CLAIMED','daily_gift',$1,$2::jsonb)`, [claim.rows[0].id, JSON.stringify({ userId:user.rows[0].id, seasonId:currentSeason.id, kind:effectiveKind, requestedKind:reward.kind, amount:reward.amount, starsCredited, overflowStars:overflow, bonusSpinGranted, xpGranted })]);
+          return { claimId:claim.rows[0].id, claimedAt:claim.rows[0].created_at, reward, effectiveKind, title, subtitle, starsCredited, bonusSpinGranted, xpGranted, overflow };
         });
 
-        return Response.json({ ok:true, reward:{ id:result.claimId, kind:result.reward.kind, title:result.title, amount:result.starsCredited || result.bonusSpinGranted || result.xpGranted || undefined, wonAt:result.claimedAt, status:"RECEIVED", subtitle:result.subtitle, payoutNote:result.reward.kind === "STARS" && result.starsCredited > 0 ? `${result.starsCredited} Stars зачислены на баланс CRICKET BOX.` : result.reward.kind === "FREE_SPIN" && result.bonusSpinGranted > 0 ? `Бонусных прокруток добавлено: ${result.bonusSpinGranted}.` : result.reward.kind === "XP" && result.xpGranted > 0 ? `Опыт увеличен на ${result.xpGranted} XP.` : "Сегодня без полезного дропа. Попробуй завтра.", creditedAmount:result.starsCredited || undefined, uncreditedAmount:result.overflow }});
+        return Response.json({ ok:true, reward:{ id:result.claimId, kind:result.effectiveKind, title:result.title, amount:result.starsCredited || result.bonusSpinGranted || result.xpGranted || undefined, wonAt:result.claimedAt, status:"RECEIVED", subtitle:result.subtitle, payoutNote:result.effectiveKind === "STARS" && result.starsCredited > 0 ? `${result.starsCredited} Stars зачислены на баланс CRICKET BOX.` : result.effectiveKind === "FREE_SPIN" && result.bonusSpinGranted > 0 ? `Бонусных прокруток добавлено: ${result.bonusSpinGranted}.` : result.effectiveKind === "XP" && result.xpGranted > 0 ? `Опыт увеличен на ${result.xpGranted} XP.` : "Сегодня без полезного дропа. Попробуй завтра.", creditedAmount:result.starsCredited || undefined, uncreditedAmount:result.overflow }});
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok:false, code:"RATE_LIMITED" }, { status:429, headers:{ "Retry-After":String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "GIFT_FAILED";
