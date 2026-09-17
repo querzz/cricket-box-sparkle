@@ -46,7 +46,7 @@ finalWeight = configuredWeight × quantityRemaining
 - `weight = 0` is valid and makes a prize non-selectable.
 - Negative/non-finite weights fail closed as `INVALID_PRIZE_WEIGHT` rather than silently becoming `1`.
 - Exhausted/inactive prizes are excluded.
-- Stars prizes are excluded from a user's eligible pool when that user's Stars balance is already 500.
+- Stars prizes remain selectable even when a user's balance is already 500 ⭐; the 500 ⭐ cap is enforced during manual payout fulfillment, with any overflow explicitly audited rather than added to the balance.
 - Inventory decrement and spin creation occur in one transaction.
 - Selection diagnostics and `algorithmVersion` are written to the audit event.
 - XP is awarded on completed spins.
@@ -87,13 +87,13 @@ finalWeight = configuredWeight × quantityRemaining
 - Payout lifecycle and admin processing exist.
 - Withdrawal requests are restricted by season lifecycle and duplicate pending requests are blocked.
 - Failed/cancelled Stars withdrawals use the Stars ledger to restore reserved balance.
-- Premium, money and NFT fulfillment remains manual.
+- Premium, money and NFT fulfillment remains manual by design for the current MVP.
 
 ### Statistics / admin WebApp
 
 - PostgreSQL-backed statistics exist for current and historical seasons.
 - Funnel, winner, conversion, repeat-user and D1/D7 retention metrics are exposed.
-- Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran and Economics.
+- Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran, Economics and Mechanics.
 - Admin Access supports OWNER/ADMIN management and ownership transfer.
 - Admin payout flow requires fulfillment references for individual PAID actions and keeps payout history immutable.
 
@@ -105,19 +105,19 @@ The repository contains regression suites for database invariants, LiveOps, paym
 
 `npm run check:season-odds` reads the current `ACTIVE`/`ENDING` season and prints configured weight, remaining inventory, effective weight and baseline odds without mutating production data.
 
-The GitHub Actions CI build currently passes build, TypeScript and lint checks on the consolidated economy changes.
+The GitHub Actions CI build passed build, TypeScript and lint checks on the consolidated economy changes before the latest Stars eligibility fix; a fresh run for the latest commit is in progress.
 
 ## Remaining production work
 
-1. Real Premium/money/NFT fulfillment providers and external reconciliation are not implemented.
-2. Full live HTTP replay/double-click/payment-recovery testing still needs runtime execution against the deployed app.
-3. Browser/Telegram Mini App QA and real payout/refund verification still need to be performed.
-4. A deployed app URL plus `LIVEOPS_CRON_SECRET` must be configured before automated production scheduler ticks can run.
-5. Paid-payment inventory is not reserved at invoice creation; the current safety model resolves an inventory race at settlement with a compensating Telegram refund. Failed refunds remain a production reconciliation concern.
-6. External acquisition attribution and impression/session-level funnel data are not persisted historically.
-7. Exact numeric probability display in user-facing paid-spin flows needs final product/legal review.
-8. Economic Planner supports non-USD cost separation, but an approved FX/accounting model is still needed if those costs must be included in USD margin.
-9. Admin global Settings is still not a dedicated route; season-specific configuration lives in the Seasons area and separate mechanics configuration remains outside the core Settings page.
+1. Full live HTTP replay/double-click/payment-recovery testing still needs runtime execution against the deployed app.
+2. Browser/Telegram Mini App QA and real payout/refund verification still need to be performed.
+3. A deployed app URL plus `LIVEOPS_CRON_SECRET` must be configured before automated production scheduler ticks can run.
+4. Paid-payment inventory is not reserved at invoice creation; the current safety model resolves an inventory race at settlement with a compensating Telegram refund. Failed refunds remain a production reconciliation concern.
+5. External acquisition attribution and impression/session-level funnel data are not persisted historically.
+6. Exact numeric probability display in user-facing paid-spin flows needs final product/legal review.
+7. Economic Planner supports non-USD cost separation, but an approved FX/accounting model is still needed if those costs must be included in USD margin.
+8. Admin global Settings is still not a dedicated route; season-specific configuration lives in the Seasons area and separate mechanics configuration remains outside the core Settings page.
+9. Russian i18n infrastructure exists (`src/lib/i18n.ts` + `src/locales/ru.json`), but most UI copy is still hardcoded and has not been migrated to translation keys.
 
 ## Documentation policy
 
@@ -137,3 +137,4 @@ The GitHub Actions CI build currently passes build, TypeScript and lint checks o
 - Advanced Veteran economy
 - Referral system
 - Streaks / missions unless separately approved
+- Automated Premium/money/NFT fulfillment providers
