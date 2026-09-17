@@ -198,20 +198,13 @@ export const Route = createFileRoute("/api/payment/invoice")({
         }
 
         const invoiceUrl = await createTelegramInvoice(current.code, context.payload, context.price);
-        let canonicalInvoiceUrl: string;
-        try {
-          canonicalInvoiceUrl = await persistInvoiceUrl(context.id, invoiceUrl);
-        } catch (error) {
-          console.error("Failed to persist Telegram invoice URL:", error instanceof Error ? error.message : error);
-          if (error instanceof Error && error.message === "PAYMENT_REFUND_PENDING") throw error;
-          canonicalInvoiceUrl = invoiceUrl;
-        }
+        const canonicalInvoiceUrl = await persistInvoiceUrl(context.id, invoiceUrl);
 
         return Response.json({ ok: true, invoiceUrl: canonicalInvoiceUrl, price: context.price, payload: context.payload, recovery: context.recovery });
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok: false, code: "RATE_LIMITED" }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
-        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" ? 502 : 400;
+        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
         return Response.json({ ok: false, code }, { status });
       }
