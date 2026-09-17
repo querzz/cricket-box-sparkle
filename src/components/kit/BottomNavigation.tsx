@@ -1,11 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { Home, Zap, Gift, User } from "lucide-react";
 
+import { t } from "@/lib/i18n";
+
 const items = [
-  { to: "/", label: "Главная", icon: Home, exact: true },
-  { to: "/draw", label: "Розыгрыш", icon: Zap, exact: false },
-  { to: "/prizes", label: "Мои призы", icon: Gift, exact: false },
-  { to: "/profile", label: "Профиль", icon: User, exact: false },
+  { to: "/", label: "navigation.home", icon: Home, exact: true },
+  { to: "/draw", label: "navigation.draw", icon: Zap, exact: false },
+  { to: "/prizes", label: "navigation.prizes", icon: Gift, exact: false },
+  { to: "/profile", label: "navigation.profile", icon: User, exact: false },
 ] as const;
 
 export function BottomNavigation() {
@@ -20,7 +22,7 @@ export function BottomNavigation() {
               className="press group flex flex-col items-center gap-1 rounded-xl py-2 text-muted-foreground data-[status=active]:text-primary"
             >
               <Icon className="size-5 transition-transform group-data-[status=active]:scale-110 group-data-[status=active]:drop-shadow-[0_0_8px_oklch(0.7_0.18_350_/_70%)]" />
-              <span className="text-[10px] font-medium tracking-wide">{label}</span>
+              <span className="text-[10px] font-medium tracking-wide">{t(label)}</span>
             </Link>
           </li>
         ))}
