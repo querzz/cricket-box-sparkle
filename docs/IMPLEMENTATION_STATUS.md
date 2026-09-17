@@ -143,7 +143,7 @@ Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Pay
 - [`docs/MASTER_PLAN.md`](MASTER_PLAN.md) is a roadmap and may contain historical phase descriptions.
 - [`docs/MASTER_SPECIFICATION.md`](MASTER_SPECIFICATION.md) is the requirements baseline.
 - [`docs/SEASON-DYNAMIC-ECONOMY.md`](SEASON-DYNAMIC-ECONOMY.md) describes future/advanced adaptive-economy concepts; those hidden adaptive modifiers are not active in the current MVP selector.
-- [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md) is historical Phase 1 QA material; production readiness is defined by the remaining runtime checks above.
+- [`docs/QA_CHECKLIST.md`](QA_CHECKLIST.md) is historical Phase 1 QA material; production readiness is defined by the remaining runtime checks above.
 
 ## Deliberately not implementing now
 
