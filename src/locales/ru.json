@@ -3,7 +3,19 @@
     "home": "Главная",
     "draw": "Розыгрыш",
     "prizes": "Мои призы",
-    "profile": "Профиль"
+    "profile": "Профиль",
+    "admin": {
+      "overview": "Обзор",
+      "prizes": "Призы",
+      "payouts": "Выплаты",
+      "participants": "Участники",
+      "spins": "Прокрутки",
+      "statistics": "Статистика",
+      "economics": "Экономика",
+      "settings": "Настройки",
+      "access": "Админы",
+      "audit": "Логи"
+    }
   },
   "common": {
     "back": "Назад",
