@@ -7,7 +7,7 @@ const MAX_BATCH = 25;
 type Candidate = {
   id: string;
   userId: string;
-  telegramId: number;
+  telegramId: string;
   chargeId: string;
   reason: string;
 };
@@ -52,7 +52,7 @@ export async function reconcilePendingPaymentRefunds() {
   const rows = await query<Candidate>(
     `SELECT st.id::text,
             st.user_id::text AS "userId",
-            u.telegram_id::bigint AS "telegramId",
+            u.telegram_id::text AS "telegramId",
             st.telegram_charge_id AS "chargeId",
             COALESCE(st.payload->>'refundReason','UNKNOWN') AS reason
        FROM star_transactions st
