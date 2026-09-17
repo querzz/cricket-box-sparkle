@@ -25,6 +25,7 @@ const ADMIN_NAV = [
   ["Прокрутки", "/admin/spins"],
   ["Статистика", "/admin/statistics"],
   ["Экономика", "/admin/economics"],
+  ["Настройки", "/admin/settings"],
   ["Админы", "/admin/access"],
   ["Логи", "/admin/audit"],
 ] as const;
