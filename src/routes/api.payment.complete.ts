@@ -17,7 +17,7 @@ type SettlementResult =
   | { refundRequired: true; reason:string };
 
 async function refundTelegramStars(telegramId:number, chargeId:string) {
-  const response=await fetch(`https://api.telegram.org/bot${requireBotToken()}/refundStarPayment`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({user_id:telegramId,telegram_payment_charge_id:chargeId})});
+  const response=await fetch(`https://api.telegram.org/bot${requireBotToken()}/refundStarPayment`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({user_id:telegramId,telegram_payment_charge_id:chargeId}),signal:AbortSignal.timeout(10_000)});
   const data=await response.json() as {ok:boolean;description?:string};
   if(data.ok || data.description?.toUpperCase().includes("CHARGE_ALREADY_REFUNDED")) return true;
   throw new Error(`TELEGRAM_REFUND_FAILED:${data.description??"unknown"}`);
@@ -74,7 +74,7 @@ export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{P
 
       const tx=await client.query<{id:string;amount:number;status:string;user_id:string;payload:Record<string,unknown>}>(`SELECT id::text,amount,status,user_id::text,payload FROM star_transactions WHERE payload->>'payload'=$1 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`,[payload]);
       if(!tx.rows[0])throw new Error("PAYMENT_NOT_FOUND"); if(tx.rows[0].user_id!==userId)throw new Error("PAYMENT_USER_MISMATCH"); if(Number(tx.rows[0].amount)!==totalAmount||tx.rows[0].status!=="PENDING")throw new Error(tx.rows[0].status==="REFUND_PENDING"?"PAYMENT_REFUND_PENDING":"PAYMENT_NOT_PENDING");
-      const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid AND telegram_id=$2 FOR UPDATE`,[userId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
+      const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid`,[userId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
       refundState.current={userId,telegramId,chargeId,transactionId:tx.rows[0].id};
 
       await client.query("SAVEPOINT paid_spin_settlement");
