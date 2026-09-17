@@ -138,32 +138,39 @@ try {
 
   await client.query(`INSERT INTO user_state (user_id) SELECT id FROM users ON CONFLICT (user_id) DO NOTHING`);
 
-  // Environment variables are bootstrap-only: they may create an admin record,
-  // but must never reactivate, demote, or otherwise overwrite an existing record.
-  // This keeps OWNER/ADMIN changes made in the admin UI persistent across db:init.
-  const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
-  const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS ?? "6537228449");
-  if (ownerId) {
-    const result = await client.query(
-      `INSERT INTO admins (telegram_id,username,role,is_active)
-       VALUES ($1,NULL,'OWNER',TRUE)
-       ON CONFLICT (telegram_id) DO NOTHING`,
-      [ownerId],
-    );
-    if (result.rowCount > 0) console.log("✅ Owner access seeded from OWNER_TELEGRAM_ID.");
+  // Environment admin IDs are bootstrap-only. Seed them only on a fresh admin table;
+  // after the first successful bootstrap, the Admin WebApp is the source of truth.
+  // This prevents npm run db:init from recreating an admin that was removed in the UI.
+  const adminCountResult = await client.query(`SELECT COUNT(*)::int AS count FROM admins`);
+  const adminBootstrapNeeded = Number(adminCountResult.rows[0]?.count ?? 0) === 0;
+  if (adminBootstrapNeeded) {
+    const ownerId = String(process.env.OWNER_TELEGRAM_ID ?? "").trim();
+    const adminIds = parseTelegramIds(process.env.ADMIN_TELEGRAM_IDS ?? "6537228449");
+    if (ownerId) {
+      await client.query(
+        `INSERT INTO admins (telegram_id,username,role,is_active)
+         VALUES ($1,NULL,'OWNER',TRUE)
+         ON CONFLICT (telegram_id) DO NOTHING`,
+        [ownerId],
+      );
+      console.log("✅ Owner access bootstrapped from OWNER_TELEGRAM_ID.");
+    }
+    let seededAdmins = 0;
+    for (const adminId of adminIds) {
+      if (adminId === ownerId) continue;
+      const result = await client.query(
+        `INSERT INTO admins (telegram_id,username,role,is_active)
+         VALUES ($1,NULL,'ADMIN',TRUE)
+         ON CONFLICT (telegram_id) DO NOTHING`,
+        [adminId],
+      );
+      if (result.rowCount > 0) seededAdmins += 1;
+    }
+    if (seededAdmins > 0) console.log(`✅ Bootstrapped ${seededAdmins} admin access record(s).`);
+  } else {
+    console.log("ℹ️ Admin access already initialized; environment IDs were not applied.");
   }
-  let seededAdmins = 0;
-  for (const adminId of adminIds) {
-    if (adminId === ownerId) continue;
-    const result = await client.query(
-      `INSERT INTO admins (telegram_id,username,role,is_active)
-       VALUES ($1,NULL,'ADMIN',TRUE)
-       ON CONFLICT (telegram_id) DO NOTHING`,
-      [adminId],
-    );
-    if (result.rowCount > 0) seededAdmins += 1;
-  }
-  if (seededAdmins > 0) console.log(`✅ Seeded ${seededAdmins} new admin access record(s).`);
+
   console.log("✅ Database initialization and migrations are ready.");
 } catch (error) {
   console.error("❌ Database initialization failed:", error);
