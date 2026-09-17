@@ -75,7 +75,7 @@ export function calculateEconomyPlan(input: EconomyPlannerInput): EconomyPlanner
   const expectedActiveParticipants = Math.round(participants * activity);
   const expectedFreeSpins = Math.round(expectedActiveParticipants * seasonDays * freeSpinsPerDay);
   const maxFreeSpins = Math.round(maxParticipants * seasonDays * freeSpinsPerDay);
-  const expectedPaidBuyers = input.paidEnabled ? Math.round(expectedActiveParticipants * paidConversion) : 0;
+  const expectedPaidBuyers = input.paidEnabled ? Math.round(participants * paidConversion) : 0;
   const expectedPaidSpins = input.paidEnabled ? Math.round(expectedPaidBuyers * avgPaid) : 0;
   const expectedTotalSpins = expectedFreeSpins + expectedPaidSpins;
   const planningSpins = Math.ceil(expectedTotalSpins * safety);
@@ -117,9 +117,9 @@ export function calculateEconomyPlan(input: EconomyPlannerInput): EconomyPlanner
   const marginRate = estimatedRevenueUsd > 0 ? marginUsd / estimatedRevenueUsd : null;
   const revenuePerPaidSpinUsd = paidPriceStars > 0 ? (paidPriceStars / 1000) * starsUsdPer1000 : 0;
   const breakEvenPaidSpins = revenuePerPaidSpinUsd > 0 ? Math.ceil(knownCostUsd / revenuePerPaidSpinUsd) : null;
-  const denominator = participants * paidConversion * avgPaid;
+  const denominator = participants * avgPaid;
   const breakEvenPaidConversion = denominator > 0 && breakEvenPaidSpins !== null
-    ? clamp(breakEvenPaidSpins / (participants * avgPaid), 0, 1)
+    ? clamp(breakEvenPaidSpins / denominator, 0, 1)
     : null;
   const planningPoolUtilization = totalConfiguredOutcomes > 0 ? planningSpins / totalConfiguredOutcomes : null;
 
@@ -136,9 +136,9 @@ export function calculateEconomyPlan(input: EconomyPlannerInput): EconomyPlanner
   if (freeSpinsPerDay > 1) warnings.push("Текущая базовая продуктовая модель предусматривает 1 free spin в день; дополнительные значения оставлены только для сценарного моделирования.");
 
   let status: EconomyPlannerResult["status"] = "HEALTHY";
-  if (estimatedRevenueUsd <= 0 || marginUsd < 0 || planningPoolUtilization !== null && planningPoolUtilization > 1) {
+  if (estimatedRevenueUsd <= 0 || marginUsd < 0 || (planningPoolUtilization !== null && planningPoolUtilization > 1)) {
     status = "LOSS RISK";
-  } else if (marginRate !== null && marginRate < 0.15 || warnings.length >= 2) {
+  } else if ((marginRate !== null && marginRate < 0.15) || warnings.length >= 2) {
     status = "LOW MARGIN";
   }
 
