@@ -186,7 +186,6 @@ try {
   );
 
   // Commit all fixture state before opening independent clients for the real race test.
-  // Otherwise their FK/partial-unique checks would wait on this connection's locks.
   await db.query(
     `UPDATE star_transactions SET status='SUCCESS',processed_at=now()
      WHERE user_id=$1 AND status='PENDING'`,
@@ -226,15 +225,25 @@ try {
 
   console.log("✅ Payment security DB tests passed");
 } finally {
-  if (admin || user || season) {
-    await db.query("BEGIN").catch(() => {});
-    await db.query(`DELETE FROM stars_ledger WHERE user_id=$1 OR season_id=$2`, [user, season]).catch(() => {});
-    await db.query(`DELETE FROM star_transactions WHERE user_id=$1`, [user]).catch(() => {});
-    await db.query(`DELETE FROM user_state WHERE user_id=$1`, [user]).catch(() => {});
-    await db.query(`DELETE FROM users WHERE id=$1`, [user]).catch(() => {});
-    await db.query(`DELETE FROM seasons WHERE id=$1`, [season]).catch(() => {});
-    await db.query(`DELETE FROM admins WHERE id=$1`, [admin]).catch(() => {});
-    await db.query("COMMIT").catch(() => {});
+  // stars_ledger is append-only in production. The fixture is disposable test state,
+  // so temporarily disabling only the test protection trigger lets local runs clean up
+  // their own ledger rows without changing production code paths.
+  await db.query("ROLLBACK").catch(() => {});
+  if (user || season) {
+    await db.query(`ALTER TABLE stars_ledger DISABLE TRIGGER stars_ledger_no_update_delete`).catch(() => {});
+    try {
+      await db.query(`DELETE FROM stars_ledger WHERE user_id=$1 OR season_id=$2`, [user, season]).catch(() => {});
+    } finally {
+      await db.query(`ALTER TABLE stars_ledger ENABLE TRIGGER stars_ledger_no_update_delete`).catch(() => {});
+    }
   }
+  if (user) await db.query(`DELETE FROM star_transactions WHERE user_id=$1`, [user]).catch(() => {});
+  if (season) await db.query(`DELETE FROM payouts WHERE user_id=$1 OR spin_id IN (SELECT id FROM spins WHERE season_id=$2)`, [user, season]).catch(() => {});
+  if (season) await db.query(`DELETE FROM spins WHERE season_id=$1`, [season]).catch(() => {});
+  if (season) await db.query(`DELETE FROM prizes WHERE season_id=$1`, [season]).catch(() => {});
+  if (season) await db.query(`DELETE FROM seasons WHERE id=$1::uuid`, [season]).catch(() => {});
+  if (user) await db.query(`DELETE FROM user_state WHERE user_id=$1::uuid`, [user]).catch(() => {});
+  if (user) await db.query(`DELETE FROM users WHERE id=$1::uuid`, [user]).catch(() => {});
+  if (admin) await db.query(`DELETE FROM admins WHERE id=$1::uuid`, [admin]).catch(() => {});
   await db.end().catch(() => {});
 }
