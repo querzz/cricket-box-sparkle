@@ -86,6 +86,7 @@ try {
 
   console.log("✅ Admin guard tests passed");
 } finally {
+  if (userId) await db.query(`DELETE FROM stars_ledger WHERE user_id=$1::uuid`, [userId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM spins WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM prizes WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM seasons WHERE id=$1::uuid`, [seasonId]).catch(() => {});
