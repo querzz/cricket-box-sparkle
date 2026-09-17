@@ -4,6 +4,7 @@ import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { withTransaction } from "@/server/db";
 import { appendStarsLedger } from "@/server/stars-ledger";
+import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 const MINIMUM = 50;
 const MAX_STARS = 500;
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/api/withdraw")({
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) return Response.json({ ok: false, code: "TELEGRAM_USER_MISSING" }, { status: 400 });
+        await enforceRateLimit(`withdraw:${telegramId}`, 6);
 
         const result = await withTransaction(async (client) => {
           const user = await client.query<{ id: string }>(`SELECT id::text FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
@@ -38,7 +40,8 @@ export const Route = createFileRoute("/api/withdraw")({
                WHEN state = 'ACTIVE' THEN 0 WHEN state = 'ENDING' THEN 1
                WHEN state = 'PAYOUT' THEN 2 WHEN state = 'CLOSED' THEN 3
                WHEN state = 'ARCHIVED' THEN 4 ELSE 5 END, created_at DESC
-             LIMIT 1`,
+             LIMIT 1
+             FOR UPDATE`,
           );
           const seasonState = season.rows[0]?.state;
           if (!seasonState || LIVE_STATES.includes(seasonState as typeof LIVE_STATES[number]) || !WITHDRAWAL_OPEN_STATES.includes(seasonState as typeof WITHDRAWAL_OPEN_STATES[number])) {
@@ -91,6 +94,7 @@ export const Route = createFileRoute("/api/withdraw")({
 
         return Response.json({ ok: true, withdrawal: { id: result.id, amount: Number(result.amount), requestedAt: result.created_at, status: "PENDING" }, reused: result.reused });
       } catch (error) {
+        if (error instanceof RateLimitError) return Response.json({ ok: false, code: "RATE_LIMITED" }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "WITHDRAW_FAILED";
         const status = code === "INSUFFICIENT_STARS" || code === "WITHDRAWAL_PENDING" || code === "WITHDRAW_NOT_OPEN" ? 409 : code === "USER_NOT_FOUND" ? 404 : 400;
         return Response.json({ ok: false, code }, { status });
