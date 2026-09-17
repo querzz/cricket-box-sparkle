@@ -8,7 +8,7 @@
     "bot": "node scripts/telegram-bot-entry.mjs",
     "db:init": "node scripts/init-db.mjs",
     "db:seed:demo": "node scripts/seed-demo.mjs",
-    "test:db": "node scripts/test-db-integration.mjs && node scripts/test-admin-read-models.mjs && node scripts/test-payout-lifecycle.mjs && node scripts/test-admin-guards.mjs",
+    "test:db": "node scripts/test-db-integration.mjs && node scripts/test-admin-read-models.mjs && node scripts/test-payout-lifecycle.mjs && node scripts/test-admin-guards.mjs && node scripts/test-stars-ledger.mjs",
     "test:stars-ledger": "node scripts/test-stars-ledger.mjs",
     "test:liveops": "node scripts/test-liveops.mjs",
     "test:payment-security": "node scripts/test-payment-security.mjs && node scripts/test-rate-limit.mjs",
@@ -87,6 +87,7 @@
     "globals": "^15.15.0",
     "nitro": "3.0.260603-beta",
     "prettier": "^3.7.3",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.56.1"
   }
 }
