@@ -33,7 +33,12 @@ export async function authenticateAdmin(initData: string): Promise<Authenticated
   );
 
   const result = await query<{ id: string; role: AdminRole }>(
-    `SELECT id::text, role FROM admins WHERE telegram_id = $1 AND is_active = TRUE LIMIT 1`,
+    `SELECT id::text, role
+       FROM admins
+      WHERE telegram_id = $1
+        AND is_active = TRUE
+        AND is_test = FALSE
+      LIMIT 1`,
     [user.id],
   );
 
@@ -41,7 +46,7 @@ export async function authenticateAdmin(initData: string): Promise<Authenticated
   if (!row) throw new Error("ADMIN_ACCESS_DENIED");
 
   await query(
-    `UPDATE admins SET username = $2, updated_at = now() WHERE telegram_id = $1`,
+    `UPDATE admins SET username = $2, updated_at = now() WHERE telegram_id = $1 AND is_test = FALSE`,
     [user.id, user.username ?? null],
   );
 
