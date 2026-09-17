@@ -25,17 +25,21 @@ async function refundTelegramStars(candidate: Candidate) {
 }
 
 async function markRefunded(candidate: Candidate) {
-  await query(
+  const updated = await query<{ id: string }>(
     `UPDATE star_transactions
         SET status='REFUNDED',processed_at=now(),payload=payload||$2::jsonb
-      WHERE id=$1::uuid AND status='REFUND_PENDING'`,
+      WHERE id=$1::uuid AND status='REFUND_PENDING'
+      RETURNING id::text`,
     [candidate.id, JSON.stringify({ refundRecoveredAt: new Date().toISOString() })],
   );
+  if (!updated.rows[0]) return false;
+
   await query(
     `INSERT INTO audit_logs(action,entity_type,entity_id,after_data)
      VALUES('PAID_SPIN_REFUND_RECOVERED','star_transaction',$1,$2::jsonb)`,
     [candidate.id, JSON.stringify({ userId: candidate.userId, telegramId: candidate.telegramId, chargeId: candidate.chargeId, reason: candidate.reason })],
   );
+  return true;
 }
 
 async function recordRefundFailure(candidate: Candidate, error: unknown) {
@@ -71,9 +75,10 @@ export async function reconcilePendingPaymentRefunds() {
   let pending = 0;
   const results = await Promise.allSettled(rows.rows.map(async candidate => {
     try {
-      await refundTelegramStars(candidate);
-      await markRefunded(candidate);
-      return "REFUNDED" as const;
+      const refundAccepted = await refundTelegramStars(candidate);
+      if (!refundAccepted) return "PENDING" as const;
+      const marked = await markRefunded(candidate);
+      return marked ? "REFUNDED" as const : "PENDING" as const;
     } catch (error) {
       await recordRefundFailure(candidate, error);
       return "PENDING" as const;
