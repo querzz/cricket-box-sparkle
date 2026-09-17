@@ -32,17 +32,43 @@ export const Route = createFileRoute("/api/admin/access")({server:{handlers:{
     }
     const role=body.role==="OWNER"?"OWNER":"ADMIN";if(role==="OWNER")return jsonError("OWNER_TRANSFER_REQUIRED",400);
     const username=typeof body.username==="string"&&body.username.trim()?body.username.trim():null;
-    await query(`INSERT INTO admins(telegram_id,username,role,is_active,is_test) VALUES($1,$2,'ADMIN',TRUE,FALSE) ON CONFLICT(telegram_id) DO UPDATE SET username=EXCLUDED.username,role='ADMIN',is_active=TRUE,is_test=FALSE,updated_at=now()`,[telegramId,username]);
+    await withTransaction(async(client)=>{
+      const before=await client.query<{id:string;telegram_id:string;username:string|null;role:"OWNER"|"ADMIN";is_active:boolean}>(`SELECT id::text,telegram_id::text,username,role,is_active FROM admins WHERE telegram_id=$1 AND is_test=FALSE FOR UPDATE`,[telegramId]);
+      const existing=before.rows[0];
+      if(existing?.role==="OWNER") throw new Error("OWNER_CANNOT_BE_REPLACED");
+      let adminId:string;
+      if(existing){
+        await client.query(`UPDATE admins SET username=$2,role='ADMIN',is_active=TRUE,is_test=FALSE,updated_at=now() WHERE id=$1::uuid`,[existing.id,username]);
+        adminId=existing.id;
+      }else{
+        const inserted=await client.query<{id:string}>(`INSERT INTO admins(telegram_id,username,role,is_active,is_test) VALUES($1,$2,'ADMIN',TRUE,FALSE) RETURNING id::text`,[telegramId,username]);
+        adminId=inserted.rows[0].id;
+      }
+      await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,before_data,after_data) VALUES($1::uuid,$2,'admin',$3,$4::jsonb,$5::jsonb)`,[actor.id,existing?"ADMIN_REACTIVATED":"ADMIN_ADDED",adminId,JSON.stringify(existing??null),JSON.stringify({telegramId,username,role:"ADMIN",is_active:true})]);
+    });
     return Response.json({ok:true});
-  }catch(error){const code=error instanceof Error?error.message:"AUTH_FAILED";const status=["OWNER_ONLY"].includes(code)?403:["ADMIN_NOT_FOUND"].includes(code)?404:400;return jsonError(code,status);}},
+  }catch(error){const code=error instanceof Error?error.message:"AUTH_FAILED";const status=["OWNER_ONLY"].includes(code)?403:["ADMIN_NOT_FOUND"].includes(code)?404:["OWNER_CANNOT_BE_REPLACED"].includes(code)?409:400;return jsonError(code,status);}},
   PATCH:async({request})=>{try{
     const body=await request.json() as Body;const actor=await authenticateAdmin(String(body.initData??""));if(actor.role!=="OWNER")return jsonError("OWNER_ONLY",403);
     const telegramId=String(body.telegramId??"").trim();const active=body.role!=="REVOKE";if(!/^\d+$/.test(telegramId))return jsonError("INVALID_TELEGRAM_ID",400);if(telegramId===String(actor.telegramId))return jsonError("CANNOT_CHANGE_SELF",400);if(body.role==="OWNER")return jsonError("OWNER_TRANSFER_REQUIRED",400);
-    await query(`UPDATE admins SET is_active=$2,updated_at=now() WHERE telegram_id=$1 AND is_test=FALSE`,[telegramId,active]);return Response.json({ok:true});
-  }catch(error){const code=error instanceof Error?error.message:"REQUEST_FAILED";return jsonError(code==="OWNER_ONLY"?code:"REQUEST_FAILED",code==="OWNER_ONLY"?403:400);}},
+    await withTransaction(async(client)=>{
+      const before=await client.query<{id:string;telegram_id:string;username:string|null;role:"OWNER"|"ADMIN";is_active:boolean}>(`SELECT id::text,telegram_id::text,username,role,is_active FROM admins WHERE telegram_id=$1 AND is_test=FALSE FOR UPDATE`,[telegramId]);
+      const row=before.rows[0];if(!row)throw new Error("ADMIN_NOT_FOUND");if(row.role!=="ADMIN")throw new Error("OWNER_ONLY");
+      if(row.is_active===active)return;
+      await client.query(`UPDATE admins SET is_active=$2,updated_at=now() WHERE id=$1::uuid`,[row.id,active]);
+      await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,before_data,after_data) VALUES($1::uuid,$2,'admin',$3,$4::jsonb,$5::jsonb)`,[actor.id,active?"ADMIN_ACTIVATED":"ADMIN_REVOKED",row.id,JSON.stringify(row),JSON.stringify({...row,is_active:active})]);
+    });
+    return Response.json({ok:true});
+  }catch(error){const code=error instanceof Error?error.message:"REQUEST_FAILED";const status=code==="OWNER_ONLY"?403:code==="ADMIN_NOT_FOUND"?404:400;return jsonError(code,status);}},
   DELETE:async({request})=>{try{
     const body=await request.json() as Body;const actor=await authenticateAdmin(String(body.initData??""));if(actor.role!=="OWNER")return jsonError("OWNER_ONLY",403);
     const telegramId=String(body.telegramId??"").trim();if(!/^\d+$/.test(telegramId))return jsonError("INVALID_TELEGRAM_ID",400);if(telegramId===String(actor.telegramId))return jsonError("CANNOT_REMOVE_SELF",400);
-    await query(`DELETE FROM admins WHERE telegram_id=$1 AND role='ADMIN' AND is_test=FALSE`,[telegramId]);return Response.json({ok:true});
-  }catch(error){const code=error instanceof Error?error.message:"REQUEST_FAILED";return jsonError(code==="OWNER_ONLY"?code:"REQUEST_FAILED",code==="OWNER_ONLY"?403:400);}},
+    await withTransaction(async(client)=>{
+      const before=await client.query<{id:string;telegram_id:string;username:string|null;role:"OWNER"|"ADMIN";is_active:boolean}>(`SELECT id::text,telegram_id::text,username,role,is_active FROM admins WHERE telegram_id=$1 AND is_test=FALSE FOR UPDATE`,[telegramId]);
+      const row=before.rows[0];if(!row)throw new Error("ADMIN_NOT_FOUND");if(row.role!=="ADMIN")throw new Error("OWNER_ONLY");
+      await client.query(`DELETE FROM admins WHERE id=$1::uuid`,[row.id]);
+      await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,before_data,after_data) VALUES($1::uuid,'ADMIN_REMOVED','admin',$2,$3::jsonb,NULL)`,[actor.id,row.id,JSON.stringify(row)]);
+    });
+    return Response.json({ok:true});
+  }catch(error){const code=error instanceof Error?error.message:"REQUEST_FAILED";const status=["OWNER_ONLY"].includes(code)?403:code==="ADMIN_NOT_FOUND"?404:400;return jsonError(code,status);}},
 }}});
