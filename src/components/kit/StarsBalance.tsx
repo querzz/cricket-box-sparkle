@@ -1,5 +1,6 @@
 import { assets } from "@/components/assets";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 import type { StarsBalance as StarsBalanceModel } from "@/lib/types";
 
 interface Props {
@@ -25,7 +26,7 @@ export function StarsBalance({ balance, size = "md", showMax = true, showProgres
         <div className="space-y-1.5">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full transition-[width] duration-500", full ? "bg-warning" : "[background-image:var(--gradient-primary)]")} style={{ width: `${pct}%` }} /></div>
           <p className="text-[11px] text-muted-foreground">
-            {full ? "Баланс Stars заполнен. Пока магазина нет, Stars нельзя потратить на прокрутки. Вывод доступен после завершения сезона." : "Stars внутри Cricket Box. Максимум — 500."}
+            {full ? t("stars.full") : t("stars.description")}
           </p>
         </div>
       )}
