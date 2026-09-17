@@ -46,34 +46,64 @@ export async function appendStarsLedger(client: PoolClient, input: StarsLedgerIn
   );
   const currentBalance = Number(state.rows[0]?.stars_balance ?? 0);
   const balanceDelta = input.balanceDelta ?? input.amount;
+  const seasonId = input.seasonId ?? null;
+  const spinId = input.spinId ?? null;
+  const referenceId = input.referenceId ?? null;
 
-  const existing = await client.query<{ id: string }>(
-    `SELECT id::text
-       FROM stars_ledger
-      WHERE idempotency_key = $1
-      LIMIT 1`,
-    [input.idempotencyKey],
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO stars_ledger
+      (user_id, season_id, spin_id, type, amount, reference_id, idempotency_key, metadata)
+     VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING id::text`,
+    [
+      input.userId,
+      seasonId,
+      spinId,
+      input.type,
+      input.amount,
+      referenceId,
+      input.idempotencyKey,
+      JSON.stringify({ ...(input.metadata ?? {}), balanceDelta }),
+    ],
   );
-  if (existing.rows[0]) return { inserted: false, balance: currentBalance };
+
+  if (!inserted.rows[0]) {
+    const existing = await client.query<{
+      user_id: string;
+      season_id: string | null;
+      spin_id: string | null;
+      type: StarsLedgerEntryType;
+      amount: number;
+      reference_id: string | null;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `SELECT user_id::text,season_id::text,spin_id::text,type,amount,reference_id,metadata
+         FROM stars_ledger
+        WHERE idempotency_key=$1
+        LIMIT 1`,
+      [input.idempotencyKey],
+    );
+    const row = existing.rows[0];
+    if (!row) throw new Error("STARS_LEDGER_IDEMPOTENCY_RACE");
+
+    const existingDelta = Number(row.metadata?.balanceDelta ?? row.amount);
+    if (
+      row.user_id !== input.userId ||
+      row.season_id !== seasonId ||
+      row.spin_id !== spinId ||
+      row.type !== input.type ||
+      Number(row.amount) !== input.amount ||
+      existingDelta !== balanceDelta ||
+      row.reference_id !== referenceId
+    ) {
+      throw new Error("STARS_LEDGER_IDEMPOTENCY_MISMATCH");
+    }
+    return { inserted: false, balance: currentBalance };
+  }
 
   const nextBalance = currentBalance + balanceDelta;
   if (nextBalance < 0 || nextBalance > STARS_MAX_BALANCE) throw new Error("STARS_BALANCE_LIMIT");
-
-  await client.query(
-    `INSERT INTO stars_ledger
-      (user_id, season_id, spin_id, type, amount, reference_id, idempotency_key, metadata)
-     VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb)`,
-    [
-      input.userId,
-      input.seasonId ?? null,
-      input.spinId ?? null,
-      input.type,
-      input.amount,
-      input.referenceId ?? null,
-      input.idempotencyKey,
-      JSON.stringify(input.metadata ?? {}),
-    ],
-  );
 
   if (balanceDelta !== 0) {
     await client.query(
