@@ -5,7 +5,6 @@ import { requireBotToken } from "@/server/config";
 import { query } from "@/server/db";
 
 type AuthBody = { initData?: unknown };
-
 type AdminRow = { role: "OWNER" | "ADMIN" };
 
 export const Route = createFileRoute("/api/auth/telegram")({
@@ -37,7 +36,7 @@ export const Route = createFileRoute("/api/auth/telegram")({
           );
 
           const adminResult = await query<AdminRow>(
-            `SELECT role FROM admins WHERE telegram_id = $1 AND is_active = TRUE LIMIT 1`,
+            `SELECT role FROM admins WHERE telegram_id = $1 AND is_active = TRUE AND is_test = FALSE LIMIT 1`,
             [user.id],
           );
           const role = adminResult.rows[0]?.role;
