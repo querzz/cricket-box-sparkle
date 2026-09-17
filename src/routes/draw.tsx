@@ -82,7 +82,10 @@ function DrawScreen() {
           return;
         }
         console.log("[CRICKET BOX] paid-spin:success", { rewardId: paidResult.reward.id });
-        await refresh();
+        // The payment result already contains the authoritative reward. Do not
+        // block the reveal on a secondary session refresh: a transient refresh
+        // failure must never make a successful paid spin look like it failed.
+        void refresh().catch((refreshError) => console.warn("[CRICKET BOX] paid-spin:refresh-failed", refreshError));
         setPhase("opening");
         animationOwnsBusy = true;
         window.setTimeout(() => {
