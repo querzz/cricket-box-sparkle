@@ -107,7 +107,15 @@ export const Route = createFileRoute("/api/admin/prizes")({
             const live = ["ACTIVE","ENDING"].includes(season.rows[0].state);
             if (live) {
               const remaining = await client.query<{ playable:string }>(
-                `SELECT COUNT(*) FILTER (WHERE is_active=TRUE AND quantity_remaining>0 AND COALESCE(NULLIF(metadata->>'weight','')::numeric,1)>0)::text AS playable
+                `SELECT COUNT(*) FILTER (
+                   WHERE is_active=TRUE
+                     AND quantity_remaining>0
+                     AND CASE
+                       WHEN COALESCE(metadata->>'weight','') = '' THEN 1::numeric
+                       WHEN metadata->>'weight' ~ '^([0-9]+(\\.[0-9]+)?)$' THEN (metadata->>'weight')::numeric
+                       ELSE 0::numeric
+                     END > 0
+                 )::text AS playable
                    FROM prizes WHERE season_id=$1::uuid AND id<>$2::uuid`,
                 [seasonId, id],
               );
