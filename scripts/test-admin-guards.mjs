@@ -40,9 +40,9 @@ try {
   await db.connect();
   await db.query(await fs.readFile(path.resolve(process.cwd(), "db/schema.sql"), "utf8"));
 
-  const admin = await db.query(`INSERT INTO admins(telegram_id,username,role,is_active) VALUES($1,$2,'OWNER',TRUE) RETURNING id::text`, [970000000 + Number(String(Date.now()).slice(-7)), `guard_${suffix}`]);
+  const admin = await db.query(`INSERT INTO admins(telegram_id,username,role,is_active,is_test) VALUES($1,$2,'OWNER',TRUE,TRUE) RETURNING id::text`, [970000000 + Number(String(Date.now()).slice(-7)), `guard_${suffix}`]);
   adminId = admin.rows[0].id;
-  const user = await db.query(`INSERT INTO users(telegram_id,username,first_name) VALUES($1,$2,'Guard') RETURNING id::text`, [960000000 + Number(String(Date.now()).slice(-7)), `guard_user_${suffix}`]);
+  const user = await db.query(`INSERT INTO users(telegram_id,username,first_name,is_test) VALUES($1,$2,'Guard',TRUE) RETURNING id::text`, [960000000 + Number(String(Date.now()).slice(-7)), `guard_user_${suffix}`]);
   userId = user.rows[0].id;
   const season = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,paid_spin_enabled,daily_free_spin,created_by) VALUES($1,'Guard Season','DRAFT',NULL,NULL,100,TRUE,TRUE,$2) RETURNING id::text`, [`GUARD-${suffix}`, adminId]);
   seasonId = season.rows[0].id;
@@ -82,6 +82,36 @@ try {
     () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 10, quantityRemaining: 9, metadata: { weight: 2 } }, { query: (text, values) => db.query(text, values) }),
     "PRIZE_ECONOMICS_LOCKED",
     "prize weight is locked by default after season start",
+  );
+
+  const overridden = await upsertPrize({
+    id: prizeId,
+    seasonId,
+    kind: "STARS",
+    title: "Guard Stars Updated",
+    amount: 20,
+    unitCost: 1,
+    currency: "XTR",
+    quantityTotal: 12,
+    quantityRemaining: 11,
+    metadata: { weight: 2 },
+    economicOverride: true,
+    economicOverrideRole: "OWNER",
+    economicOverrideReason: "Adjust supply after an operator correction",
+  }, { query: (text, values) => db.query(text, values) });
+  assert(overridden.quantity_total === 12 && overridden.quantity_remaining === 11, "owner can explicitly change quantity with a reason");
+  assert(Number(overridden.metadata?.weight) === 2, "owner can explicitly change weight with a reason");
+
+  await expectError(
+    () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 25, unitCost: 1, currency: "XTR", quantityTotal: 12, quantityRemaining: 11, metadata: { weight: 2 }, economicOverride: true, economicOverrideRole: "OWNER", economicOverrideReason: "Attempt to change the payout amount" }, { query: (text, values) => db.query(text, values) }),
+    "PRIZE_ECONOMICS_LOCKED",
+    "owner override cannot change payout economics such as amount",
+  );
+
+  await expectError(
+    () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 12, quantityRemaining: 11, metadata: { weight: 3 }, economicOverride: true, economicOverrideReason: "short" }, { query: (text, values) => db.query(text, values) }),
+    "INVALID_OVERRIDE_REASON",
+    "owner override requires a sufficiently descriptive reason",
   );
 
   console.log("✅ Admin guard tests passed");
