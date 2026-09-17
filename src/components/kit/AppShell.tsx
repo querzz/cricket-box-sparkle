@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Bot, Calculator, ChevronLeft, Gift, ShieldCheck, Sparkles } from "lucide-react";
+import { Bot, ChevronLeft, Gift, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { AdminAuthGate } from "@/components/kit/AdminAuthGate";
@@ -25,7 +25,6 @@ const ADMIN_NAV = [
   ["Прокрутки", "/admin/spins"],
   ["Статистика", "/admin/statistics"],
   ["Экономика", "/admin/economics"],
-  ["Планировщик", "/admin/economic-planner"],
   ["Админы", "/admin/access"],
   ["Логи", "/admin/audit"],
 ] as const;
@@ -91,13 +90,6 @@ function AdminExtraActions() {
         <Sparkles className="size-4 text-primary-glow" />
         <p className="mt-2 text-sm font-semibold">Развлекательные механики</p>
         <p className="mt-0.5 text-[10px] text-muted-foreground">Передача подарков и мини-игры</p>
-      </div>
-    </Link>
-    <Link to="/admin/economic-planner" className="press relative z-20 isolate block h-full w-full text-left" aria-label="Планировщик экономики">
-      <div className="h-full rounded-2xl border border-primary/25 bg-primary/5 px-3 py-3.5">
-        <Calculator className="size-4 text-primary-glow" />
-        <p className="mt-2 text-sm font-semibold">Планировщик экономики</p>
-        <p className="mt-0.5 text-[10px] text-muted-foreground">Сценарии, маржа и безубыточность</p>
       </div>
     </Link>
   </div>;
