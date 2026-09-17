@@ -1,4 +1,4 @@
-import type { PrizeKind } from "@/server/prize-types";
+export type PrizeKind = "STARS" | "PREMIUM" | "MONEY" | "NFT" | "PHYSICAL" | "CUSTOM" | "FREE_SPIN" | "EMPTY";
 
 export type SpinEligiblePrize = {
   kind: PrizeKind;
