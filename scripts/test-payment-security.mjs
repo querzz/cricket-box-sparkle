@@ -110,7 +110,18 @@ try {
   assert(stale.rows[0]?.payload === payload, "stale payment keeps the same recovery payload");
 
   await db.query(
-    `UPDATE star_transactions SET status='SUCCESS',processed_at=now(),spin_id=NULL WHERE id=$1`,
+    `UPDATE star_transactions SET status='REFUND_PENDING',processed_at=NULL,payload=payload||'{"refundPending":true}'::jsonb WHERE id=$1`,
+    [first.rows[0].id],
+  );
+  const refundPending = await db.query(
+    `SELECT status,payload->>'refundPending' AS refund_pending FROM star_transactions WHERE id=$1::uuid`,
+    [first.rows[0].id],
+  );
+  assert(refundPending.rows[0]?.status === "REFUND_PENDING", "failed settlement persists a refund-pending state");
+  assert(refundPending.rows[0]?.refund_pending === "true", "refund-pending marker is persisted for reconciliation");
+
+  await db.query(
+    `UPDATE star_transactions SET status='REFUNDED',processed_at=now() WHERE id=$1`,
     [first.rows[0].id],
   );
 
