@@ -107,8 +107,18 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   if (parsedStart && parsedEnd && parsedStart >= parsedEnd) throw new Error("INVALID_SEASON_DATES");
 
   const spinCountResult = await db.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id=$1::uuid`, [id]);
+  const paidTransactionResult = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM star_transactions
+      WHERE payload->>'type'='PAID_SPIN'
+        AND payload->>'seasonId'=$1
+        AND status IN ('PENDING','REFUND_PENDING','SUCCESS','REFUNDED')`,
+    [id],
+  );
   const hasSpins = Number(spinCountResult.rows[0]?.count ?? 0) > 0;
-  const hasStarted = current.state !== "DRAFT" && current.state !== "SCHEDULED" || Boolean(currentStart && currentStart <= now) || hasSpins;
+  const hasPaidTransactions = Number(paidTransactionResult.rows[0]?.count ?? 0) > 0;
+  const hasUsage = hasSpins || hasPaidTransactions;
+  const hasStarted = current.state !== "DRAFT" && current.state !== "SCHEDULED" || Boolean(currentStart && currentStart <= now) || hasUsage;
   const startChanged = parsedStart && currentStart
     ? parsedStart.getTime() !== currentStart.getTime()
     : parsedStart !== currentStart;
@@ -123,7 +133,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
-  if (hasSpins && requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) throw new Error("PAID_SPIN_PRICE_LOCKED");
+  if (hasUsage && requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) throw new Error("PAID_SPIN_PRICE_LOCKED");
   if (hasSpins && patch.dailyFreeSpin !== undefined && patch.dailyFreeSpin !== current.daily_free_spin) throw new Error("FREE_ATTEMPTS_LOCKED");
   if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) throw new Error("PAID_SPIN_REENABLE_LOCKED");
 
