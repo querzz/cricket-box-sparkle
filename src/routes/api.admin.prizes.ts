@@ -37,6 +37,8 @@ export const Route = createFileRoute("/api/admin/prizes")({
             active?: boolean;
             imageUrl?: string | null;
             metadata?: Record<string, unknown>;
+            economicOverride?: boolean;
+            economicOverrideReason?: string;
           };
           const admin = await authenticateAdmin(body.initData ?? "");
           if (!body.seasonId || !body.title?.trim()) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
@@ -47,6 +49,11 @@ export const Route = createFileRoute("/api/admin/prizes")({
           if (!Number.isFinite(amount) || !Number.isFinite(unitCost) || !Number.isFinite(quantityTotalNumber) || !Number.isFinite(quantityRemainingNumber)) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
           const quantityTotal = Math.max(0, Math.floor(quantityTotalNumber));
           const quantityRemaining = Math.max(0, Math.floor(quantityRemainingNumber));
+          const economicOverride = body.economicOverride === true;
+          if (economicOverride && admin.role !== "OWNER") return Response.json({ ok: false, code: "OWNER_ONLY" }, { status: 403 });
+          const economicOverrideReason = typeof body.economicOverrideReason === "string" ? body.economicOverrideReason.trim() : "";
+          if (economicOverride && (economicOverrideReason.length < 5 || economicOverrideReason.length > 500)) return Response.json({ ok: false, code: "INVALID_OVERRIDE_REASON" }, { status: 400 });
+
           const prize = await withTransaction(async (client) => {
             const nextPrize = await upsertPrize({
               id: body.id,
@@ -62,30 +69,36 @@ export const Route = createFileRoute("/api/admin/prizes")({
               active: body.active !== false,
               imageUrl: body.imageUrl,
               metadata: body.metadata,
+              economicOverride,
+              economicOverrideRole: admin.role === "OWNER" ? "OWNER" : undefined,
+              economicOverrideReason,
             }, client);
+            const action = economicOverride ? "PRIZE_ECONOMIC_OVERRIDE" : "PRIZE_UPDATED";
             await client.query(
               `INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data)
-               VALUES($1::uuid,'PRIZE_UPDATED','prize',$2,$3::jsonb)`,
-              [admin.id, nextPrize.id, JSON.stringify(nextPrize)],
+               VALUES($1::uuid,$2,'prize',$3,$4::jsonb)`,
+              [admin.id, action, nextPrize.id, JSON.stringify({ ...nextPrize, economicOverride, economicOverrideReason: economicOverride ? economicOverrideReason : undefined })],
             );
             return nextPrize;
           });
           return Response.json({ ok: true, prize });
         } catch (error) {
           const code = error instanceof Error ? error.message : "REQUEST_FAILED";
-          const status = ["INVALID_PRIZE_KIND","INVALID_PRIZE_TITLE","INVALID_PRIZE_AMOUNT","INVALID_PRIZE_COST","INVALID_PRIZE_QUANTITY","INVALID_PRIZE_WEIGHT","INVALID_INPUT","INVALID_SEASON"].includes(code)
+          const status = ["INVALID_PRIZE_KIND","INVALID_PRIZE_TITLE","INVALID_PRIZE_AMOUNT","INVALID_PRIZE_COST","INVALID_PRIZE_QUANTITY","INVALID_PRIZE_WEIGHT","INVALID_INPUT","INVALID_SEASON","INVALID_OVERRIDE_REASON"].includes(code)
             ? 400
             : ["PRIZE_NOT_FOUND","PRIZE_SEASON_MISMATCH","SEASON_NOT_FOUND"].includes(code)
               ? 404
               : ["PRIZE_ECONOMICS_LOCKED","PRIZE_QUANTITY_BELOW_WON","SEASON_PRIZE_POOL_INVALID"].includes(code)
                 ? 409
-                : 400;
+                : code === "OWNER_ONLY"
+                  ? 403
+                  : 400;
           return Response.json({ ok: false, code }, { status });
         }
       },
       DELETE: async ({ request }) => {
         try {
-          const body = await request.json() as { initData?: unknown; id?: unknown; seasonId?: unknown };
+          const body = await request.json() as { initData?: string; id?: unknown; seasonId?: unknown };
           const actor = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
           const id = typeof body.id === "string" ? body.id : "";
           const seasonId = typeof body.seasonId === "string" ? body.seasonId : "";
