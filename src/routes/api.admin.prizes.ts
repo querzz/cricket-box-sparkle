@@ -38,7 +38,7 @@ export const Route = createFileRoute("/api/admin/prizes")({
             imageUrl?: string | null;
             metadata?: Record<string, unknown>;
           };
-          await authenticateAdmin(body.initData ?? "");
+          const admin = await authenticateAdmin(body.initData ?? "");
           if (!body.seasonId || !body.title?.trim()) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
           const quantityTotalNumber = Number(body.quantityTotal ?? 0);
           const quantityRemainingNumber = body.quantityRemaining == null ? quantityTotalNumber : Number(body.quantityRemaining);
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/api/admin/prizes")({
           if (!Number.isFinite(amount) || !Number.isFinite(unitCost) || !Number.isFinite(quantityTotalNumber) || !Number.isFinite(quantityRemainingNumber)) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
           const quantityTotal = Math.max(0, Math.floor(quantityTotalNumber));
           const quantityRemaining = Math.max(0, Math.floor(quantityRemainingNumber));
-          const prize = await upsertPrize({
+          const prize = await withTransaction((client) => upsertPrize({
             id: body.id,
             seasonId: body.seasonId,
             kind: body.kind ?? "CUSTOM",
@@ -61,13 +61,18 @@ export const Route = createFileRoute("/api/admin/prizes")({
             active: body.active !== false,
             imageUrl: body.imageUrl,
             metadata: body.metadata,
-          });
+          }, client));
+          await query(
+            `INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data)
+             VALUES($1::uuid,'PRIZE_UPDATED','prize',$2,$3::jsonb)`,
+            [admin.id, prize.id, JSON.stringify(prize)],
+          );
           return Response.json({ ok: true, prize });
         } catch (error) {
           const code = error instanceof Error ? error.message : "REQUEST_FAILED";
-          const status = ["INVALID_PRIZE_KIND","INVALID_PRIZE_TITLE","INVALID_PRIZE_AMOUNT","INVALID_PRIZE_COST","INVALID_PRIZE_QUANTITY","INVALID_PRIZE_WEIGHT","INVALID_INPUT"].includes(code)
+          const status = ["INVALID_PRIZE_KIND","INVALID_PRIZE_TITLE","INVALID_PRIZE_AMOUNT","INVALID_PRIZE_COST","INVALID_PRIZE_QUANTITY","INVALID_PRIZE_WEIGHT","INVALID_INPUT","INVALID_SEASON"].includes(code)
             ? 400
-            : ["PRIZE_NOT_FOUND","PRIZE_SEASON_MISMATCH"].includes(code)
+            : ["PRIZE_NOT_FOUND","PRIZE_SEASON_MISMATCH","SEASON_NOT_FOUND"].includes(code)
               ? 404
               : ["PRIZE_ECONOMICS_LOCKED","PRIZE_QUANTITY_BELOW_WON","SEASON_PRIZE_POOL_INVALID"].includes(code)
                 ? 409
@@ -118,7 +123,7 @@ export const Route = createFileRoute("/api/admin/prizes")({
           return Response.json({ ok: true, deactivated: result.deactivated });
         } catch (error) {
           const code = error instanceof Error ? error.message : "REQUEST_FAILED";
-          const status = code === "PRIZE_NOT_FOUND" ? 404 : code === "SEASON_PRIZE_POOL_INVALID" ? 409 : 400;
+          const status = ["PRIZE_NOT_FOUND","SEASON_NOT_FOUND"].includes(code) ? 404 : code === "SEASON_PRIZE_POOL_INVALID" ? 409 : 400;
           return Response.json({ ok: false, code }, { status });
         }
       },
