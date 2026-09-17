@@ -23,7 +23,7 @@
 ## 2. Frontend gaps to fix before backend
 
 1. Connect spin selection to actual `Prize.remaining/total`; decrement remaining on a real mock win; exclude exhausted prizes.
-2. When Stars balance is at cap, exclude Stars prizes **before** random selection, not after selection.
+2. When Stars balance is at cap, follow the approved payout-time cap behavior: a Stars prize remains a valid draw result, and only the available balance room is credited during fulfillment; overflow is explicitly audited.
 3. Validate season state transitions instead of allowing arbitrary direct state assignment.
 4. Extract all UI strings into `src/locales/ru.json` and `src/lib/i18n.ts` with a lightweight `t(key, params?)` layer; English/Ukrainian can be future files.
 5. Make Leaderboard backend-driven; Rules/FAQ can later be season-configurable through admin instead of hardcoded constants.
@@ -56,7 +56,7 @@ Example: `⭐ 125 / 500`.
 - Stars can be awarded by the prize system, spent on additional spins, and withdrawn according to season rules.
 - Spending Stars immediately frees capacity.
 - If a reward would exceed the cap, only the available room is credited; the overflow is explicitly recorded/audited and is not converted into a second currency or bonus balance.
-- When balance is full, Stars prizes are excluded from that user's eligible reward selection.
+- At the 500 Stars cap, a Stars prize may still be selected and becomes a normal pending reward; fulfillment credits only available capacity and records any overflow as `CAPPED_OVERFLOW_BURNED`. Spending Stars later frees capacity before a future fulfillment.
 
 ### Daily Gift
 - Available only to active participants.
@@ -83,7 +83,7 @@ For each spin:
 - effective probability is weight divided by the sum of weights for eligible prizes;
 - the selected prize inventory is decremented atomically;
 - exhausted prizes disappear from eligibility;
-- Stars prize is excluded for users already at the Stars cap.
+- Stars at the 500 cap are **not** excluded by balance alone; the cap is handled during fulfillment as described above.
 
 Required guarantees:
 - no negative inventory;
@@ -195,7 +195,7 @@ After first spin, do not change economics retroactively.
 - End date: may only be extended, never shortened below current time.
 - Free attempts: locked after first spin.
 - Paid spins: may be switched OFF for user protection; do not turn ON mid-season if it was OFF from the start.
-- Spin price: locked after first spin.
+- Spin price: locked after first spin or after the first paid-spin transaction exists.
 - Minimum withdrawal: locked after first spin.
 - Stars cap: locked after first spin.
 - Participation conditions: locked after first spin.
@@ -358,7 +358,7 @@ Do not overload MVP.
 ## 16. Roadmap / implementation order
 
 ### Phase 1 — Existing frontend gaps
-Fix prize inventory, Stars-cap exclusion, season transition validation.
+Fix prize inventory, Stars-cap behavior, season transition validation.
 
 ### Phase 2 — Russian/i18n
 Extract strings, add `ru.json`, translation layer, Russian UI.
@@ -397,43 +397,3 @@ Responsive QA at 375/390/412/430px, full regression of all edge states.
 Limited rollout, monitoring, then full launch.
 
 ## 17. MVP scope
-
-- Existing user frontend with Phase 1 + Phase 2 fixes.
-- Complete Russian UI/i18n foundation.
-- Full Admin WebApp with all 9 core sections.
-- FastAPI + PostgreSQL + Redis backend.
-- Server-side weighted sampling without replacement.
-- Stars ledger and 500-cap accounting.
-- Withdrawals and payout administration.
-- Basic Telegram initData validation, real user ID, channel subscription, season deep links.
-- Daily Gift.
-- Reward history.
-- Manual money-prize organizer resolution only.
-
-## 18. V2
-
-- paid Telegram Stars spins if approved;
-- streak;
-- referrals;
-- full leaderboard;
-- missions;
-- restricted alternative payout for money prizes if separately approved.
-
-## 19. Later
-
-- Lucky Hour
-- fragments/collectibles
-- seasonal progression
-- advanced anti-fraud analytics
-- additional languages.
-
-## 20. Rules for future coding work
-
-Before changing code:
-1. Read this file first.
-2. Inspect the current repository implementation.
-3. Preserve implemented functionality unless a requirement explicitly changes it.
-4. Never invent a second currency.
-5. Never treat mock frontend logic as production security.
-6. Keep this specification and the codebase synchronized when product decisions change.
-7. Mark new decisions explicitly as approved product changes before implementation.
