@@ -9,7 +9,7 @@ async function loadEnv() {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const i = trimmed.indexOf("=");
-    if (i > 0 && !(trimmed.slice(0, i) in process.env)) process.env[trimmed.slice(0, i)] = trimmed.slice(i + 1).replace(/^['\"]|['\"]$/g, "");
+    if (i > 0 && !(i <= 0 || trimmed.slice(0, i) in process.env)) process.env[trimmed.slice(0, i)] = trimmed.slice(i + 1).replace(/^['\"]|['\"]$/g, "");
   }
 }
 
@@ -44,7 +44,7 @@ try {
   adminId = admin.rows[0].id;
   const user = await db.query(`INSERT INTO users(telegram_id,username,first_name) VALUES($1,$2,'Guard') RETURNING id::text`, [960000000 + Number(String(Date.now()).slice(-7)), `guard_user_${suffix}`]);
   userId = user.rows[0].id;
-  const season = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,paid_spin_enabled,daily_free_spin,created_by) VALUES($1,'Guard Season','ACTIVE',now()-interval '1 hour',now()+interval '1 day',100,TRUE,TRUE,$2) RETURNING id::text`, [`GUARD-${suffix}`, adminId]);
+  const season = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,paid_spin_enabled,daily_free_spin,created_by) VALUES($1,'Guard Season','DRAFT',NULL,NULL,100,TRUE,TRUE,$2) RETURNING id::text`, [`GUARD-${suffix}`, adminId]);
   seasonId = season.rows[0].id;
 
   const prize = await db.query(`INSERT INTO prizes(season_id,kind,title,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,metadata) VALUES($1,'STARS','Guard Stars',20,1,'XTR',10,10,TRUE,'{"weight":1}'::jsonb) RETURNING id::text`, [seasonId]);
@@ -86,7 +86,6 @@ try {
 
   console.log("✅ Admin guard tests passed");
 } finally {
-  await db.query("ROLLBACK").catch(() => {});
   if (seasonId) await db.query(`DELETE FROM spins WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM prizes WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM seasons WHERE id=$1::uuid`, [seasonId]).catch(() => {});
