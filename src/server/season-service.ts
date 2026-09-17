@@ -144,7 +144,24 @@ export async function listPrizes(seasonId: string) {
   return result.rows;
 }
 
-export async function upsertPrize(input: { id?: string; seasonId: string; kind: string; title: string; subtitle?: string | null; amount: number; unitCost: number; currency?: string | null; quantityTotal: number; quantityRemaining?: number; active?: boolean; imageUrl?: string | null; metadata?: Record<string, unknown> }, executor?: DbExecutor) {
+export async function upsertPrize(input: {
+  id?: string;
+  seasonId: string;
+  kind: string;
+  title: string;
+  subtitle?: string | null;
+  amount: number;
+  unitCost: number;
+  currency?: string | null;
+  quantityTotal: number;
+  quantityRemaining?: number;
+  active?: boolean;
+  imageUrl?: string | null;
+  metadata?: Record<string, unknown>;
+  economicOverride?: boolean;
+  economicOverrideRole?: "OWNER";
+  economicOverrideReason?: string;
+}, executor?: DbExecutor) {
   const db: DbExecutor = executor ?? ({ query: (text: string, values?: unknown[]) => query(text, values) } as DbExecutor);
   if (!PRIZE_KINDS.includes(input.kind as (typeof PRIZE_KINDS)[number])) throw new Error("INVALID_PRIZE_KIND");
   if (!input.title.trim()) throw new Error("INVALID_PRIZE_TITLE");
@@ -152,6 +169,11 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
   if (!Number.isFinite(input.unitCost) || input.unitCost < 0) throw new Error("INVALID_PRIZE_COST");
   if (!Number.isInteger(input.quantityTotal) || input.quantityTotal < 0) throw new Error("INVALID_PRIZE_QUANTITY");
   validatePrizeWeight(input.metadata);
+
+  const economicOverride = input.economicOverride === true;
+  if (economicOverride && input.economicOverrideRole !== "OWNER") throw new Error("OWNER_ONLY");
+  const overrideReason = input.economicOverrideReason?.trim() ?? "";
+  if (economicOverride && (overrideReason.length < 5 || overrideReason.length > 500)) throw new Error("INVALID_OVERRIDE_REASON");
 
   const seasonResult = await db.query<{ id: string; state: SeasonState }>(`SELECT id::text, state FROM seasons WHERE id=$1::uuid FOR UPDATE`, [input.seasonId]);
   if (!seasonResult.rows[0]) throw new Error("SEASON_NOT_FOUND");
@@ -170,7 +192,11 @@ export async function upsertPrize(input: { id?: string; seasonId: string; kind: 
     const newUnitCost = input.unitCost;
     const oldCurrency = old.currency ?? null;
     const newCurrency = input.currency ?? null;
-    if (hasStarted && (old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency || old.quantity_total !== input.quantityTotal || oldWeight !== newWeight)) throw new Error("PRIZE_ECONOMICS_LOCKED");
+    const economicChanged = old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency || old.quantity_total !== input.quantityTotal || oldWeight !== newWeight;
+    const immutableChange = old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency;
+    if (hasStarted && economicChanged && !economicOverride) throw new Error("PRIZE_ECONOMICS_LOCKED");
+    if (hasStarted && immutableChange) throw new Error("PRIZE_ECONOMICS_LOCKED");
+    if (hasStarted && economicOverride && economicChanged && overrideReason.length < 5) throw new Error("INVALID_OVERRIDE_REASON");
 
     const won = old.quantity_total - old.quantity_remaining;
     if (input.quantityTotal < won) throw new Error("PRIZE_QUANTITY_BELOW_WON");
