@@ -5,7 +5,7 @@ import { requireBotToken } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
-type PendingPayment = { id: string; payload: string; amount: string; created_at: string; metadata: Record<string, unknown> };
+type PendingPayment = { id: string; payload: string; amount: string; status: "PENDING" | "REFUND_PENDING"; created_at: string; metadata: Record<string, unknown> };
 
 export const Route = createFileRoute("/api/payment/invoice")({
   server: { handlers: {
@@ -41,13 +41,16 @@ export const Route = createFileRoute("/api/payment/invoice")({
           if (!Number.isSafeInteger(price) || price <= 0) throw new Error("PAID_SPIN_DISABLED");
 
           const existingResult = await client.query<PendingPayment>(
-            `SELECT id::text,payload->>'payload' AS payload,amount::text,created_at::text,payload AS metadata
+            `SELECT id::text,payload->>'payload' AS payload,amount::text,status,created_at::text,payload AS metadata
                FROM star_transactions
-              WHERE user_id=$1::uuid AND status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$2
-              ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`,
+              WHERE user_id=$1::uuid AND status IN ('PENDING','REFUND_PENDING') AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$2
+              ORDER BY CASE WHEN status='REFUND_PENDING' THEN 0 ELSE 1 END,created_at DESC,id DESC
+              LIMIT 1 FOR UPDATE`,
             [userId, seasonId],
           );
           pending = existingResult.rows[0] ?? null;
+
+          if (pending?.status === "REFUND_PENDING") throw new Error("PAYMENT_REFUND_PENDING");
 
           if (pending && Number(pending.amount) !== price) {
             await client.query(
@@ -76,7 +79,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
               const inserted = await client.query<PendingPayment>(
                 `INSERT INTO star_transactions(user_id,amount,status,payload)
                  VALUES($1::uuid,$2,'PENDING',$3::jsonb)
-                 RETURNING id::text,payload->>'payload' AS payload,amount::text,created_at::text,payload AS metadata`,
+                 RETURNING id::text,payload->>'payload' AS payload,amount::text,status,created_at::text,payload AS metadata`,
                 [userId, price, JSON.stringify({ payload, userId, seasonId, type:"PAID_SPIN" })],
               );
               pending = inserted.rows[0] ?? null;
@@ -86,7 +89,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
               if (!(message.includes("ux_pending_paid_spin_user_season") || message.toLowerCase().includes("duplicate key"))) throw error;
               await client.query("ROLLBACK TO SAVEPOINT create_pending_payment");
               const raced = await client.query<PendingPayment>(
-                `SELECT id::text,payload->>'payload' AS payload,amount::text,created_at::text,payload AS metadata
+                `SELECT id::text,payload->>'payload' AS payload,amount::text,status,created_at::text,payload AS metadata
                    FROM star_transactions
                   WHERE user_id=$1::uuid AND status='PENDING' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$2
                   ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`,
@@ -124,7 +127,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok:false, code:"RATE_LIMITED" }, { status:429, headers:{ "Retry-After":String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
-        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" ? 502 : 400;
+        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
         return Response.json({ ok:false, code }, { status });
       }
