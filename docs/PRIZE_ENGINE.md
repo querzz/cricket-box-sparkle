@@ -36,9 +36,13 @@ When an admin marks a payout as `PAID`, a fulfillment reference is required (for
 
 The future automation layer should replace this manual fulfillment path with provider integrations while keeping the same payout lifecycle and audit trail.
 
-## Per-user Stars eligibility
+## Per-user Stars cap behavior
 
-The pool odds are global to the configured eligible inventory. A user whose Stars balance is already at the 500 maximum does not receive Stars prize entries in their personal eligible pool until their balance has room again. This is a user-level eligibility filter, not a global probability adjustment.
+The 500 ⭐ limit is enforced at fulfillment, not during prize selection.
+
+A user whose Stars balance is already `500 / 500` may still win a Stars prize in the MVP. The spin creates a `PENDING` payout, and an administrator fulfills it manually. At fulfillment time, only the available capacity is credited to the user balance; any overflow is explicitly written to the append-only Stars ledger as capped overflow and is not added to the balance. Spending Stars later frees capacity for future fulfillment.
+
+This is a user-level payout-cap rule, not a probability modifier. The Stars balance must not change the configured pool odds.
 
 ## Verification
 
