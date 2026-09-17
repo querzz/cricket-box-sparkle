@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { authenticateAdmin } from "@/server/auth/access";
-import { query } from "@/server/db";
+import { query, withTransaction } from "@/server/db";
 
 const DEFAULTS = {
   enabled: { "gift-or-pass": true, "good-or-bad": false, "owner-special": true },
@@ -10,6 +10,32 @@ const DEFAULTS = {
 };
 
 type Settings = typeof DEFAULTS;
+const ENABLED_KEYS = Object.keys(DEFAULTS.enabled) as Array<keyof Settings["enabled"]>;
+
+function parseSettings(input: Partial<Settings>): Settings {
+  if (!input || typeof input !== "object") throw new Error("INVALID_SETTINGS");
+
+  const passCount = Number(input.passCount ?? DEFAULTS.passCount);
+  if (!Number.isSafeInteger(passCount) || passCount < 1 || passCount > 20) throw new Error("INVALID_PASS_COUNT");
+
+  const failureText = String(input.failureText ?? DEFAULTS.failureText).trim().slice(0, 500);
+  if (!failureText) throw new Error("INVALID_FAILURE_TEXT");
+
+  const rawEnabled = input.enabled && typeof input.enabled === "object" ? input.enabled as Partial<Record<keyof Settings["enabled"], unknown>> : {};
+  const enabled = {} as Settings["enabled"];
+  for (const key of ENABLED_KEYS) {
+    const value = rawEnabled[key];
+    if (value !== undefined && typeof value !== "boolean") throw new Error("INVALID_ENABLED_VALUE");
+    enabled[key] = value === undefined ? DEFAULTS.enabled[key] : value;
+  }
+
+  return {
+    enabled,
+    passCount,
+    failureText,
+    confirm: input.confirm === undefined ? DEFAULTS.confirm : Boolean(input.confirm),
+  };
+}
 
 export const Route = createFileRoute("/api/admin/mechanics")({ server:{ handlers:{
   GET: async ({request}) => {
@@ -17,23 +43,23 @@ export const Route = createFileRoute("/api/admin/mechanics")({ server:{ handlers
       await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
       const result = await query<{value: Settings}>(`SELECT value FROM app_settings WHERE key='mechanics' LIMIT 1`);
       const value = result.rows[0]?.value ?? DEFAULTS;
-      return Response.json({ok:true,settings:{...DEFAULTS,...value,enabled:{...DEFAULTS.enabled,...value.enabled}}});
+      return Response.json({ok:true,settings:parseSettings(value)});
     } catch { return Response.json({ok:false,code:"MECHANICS_FAILED"},{status:401}); }
   },
   PATCH: async ({request}) => {
     try {
       const body = await request.json() as {initData?:unknown;settings?:Partial<Settings>};
       const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
-      if (!body.settings || typeof body.settings !== "object") return Response.json({ok:false,code:"INVALID_SETTINGS"},{status:400});
-      const settings: Settings = {
-        enabled: {...DEFAULTS.enabled,...(body.settings.enabled ?? {})},
-        passCount: Math.min(20,Math.max(1,Math.floor(Number(body.settings.passCount ?? DEFAULTS.passCount)))),
-        failureText: String(body.settings.failureText ?? DEFAULTS.failureText).trim().slice(0,500),
-        confirm: body.settings.confirm !== false,
-      };
-      await query(`INSERT INTO app_settings(key,value) VALUES('mechanics',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,[JSON.stringify(settings)]);
-      await query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'MECHANICS_UPDATED','setting','mechanics',$2::jsonb)`,[admin.id,JSON.stringify(settings)]);
+      const settings = parseSettings(body.settings ?? {});
+      await withTransaction(async(client) => {
+        await client.query(`INSERT INTO app_settings(key,value) VALUES('mechanics',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,[JSON.stringify(settings)]);
+        await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'MECHANICS_UPDATED','setting','mechanics',$2::jsonb)`,[admin.id,JSON.stringify(settings)]);
+      });
       return Response.json({ok:true,settings});
-    } catch { return Response.json({ok:false,code:"MECHANICS_UPDATE_FAILED"},{status:400}); }
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "MECHANICS_UPDATE_FAILED";
+      const status = ["INVALID_SETTINGS","INVALID_PASS_COUNT","INVALID_FAILURE_TEXT","INVALID_ENABLED_VALUE"].includes(code) ? 400 : 400;
+      return Response.json({ok:false,code},{status});
+    }
   },
 }}});
