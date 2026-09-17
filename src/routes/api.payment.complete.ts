@@ -27,7 +27,7 @@ async function markPaymentRefundPending(context:RefundContext, reason:string) {
   await withTransaction(async client=>{
     const row=await client.query<{status:string;user_id:string;amount:string}>(`SELECT status,user_id::text,amount::text FROM star_transactions WHERE id=$1::uuid FOR UPDATE`,[context.transactionId]);
     if(!row.rows[0]) throw new Error("PAYMENT_NOT_FOUND");
-    if(row.rows[0].user_id!==context.userId) throw new Error("PAYMENT_USER_MISMATCH");
+    if(row.rows[0].user_id!==context.userId)throw new Error("PAYMENT_USER_MISMATCH");
     if(["SUCCESS","REFUNDED"].includes(row.rows[0].status)) return;
     if(!["PENDING","REFUND_PENDING"].includes(row.rows[0].status)) return;
     await client.query(`UPDATE star_transactions SET status='REFUND_PENDING',telegram_charge_id=COALESCE(telegram_charge_id,$2),processed_at=NULL,payload=payload||$3::jsonb WHERE id=$1::uuid`,[context.transactionId,context.chargeId,JSON.stringify({refundReason:reason,refundPending:true})]);
@@ -39,7 +39,7 @@ async function markPaymentRefunded(context:RefundContext, reason:string) {
   await withTransaction(async client=>{
     const row=await client.query<{status:string;user_id:string;amount:string}>(`SELECT status,user_id::text,amount::text FROM star_transactions WHERE id=$1::uuid FOR UPDATE`,[context.transactionId]);
     if(!row.rows[0]) throw new Error("PAYMENT_NOT_FOUND");
-    if(row.rows[0].user_id!==context.userId) throw new Error("PAYMENT_USER_MISMATCH");
+    if(row.rows[0].user_id!==context.userId)throw new Error("PAYMENT_USER_MISMATCH");
     if(row.rows[0].status==="REFUNDED") return;
     if(row.rows[0].status==="SUCCESS") return;
     if(!["PENDING","REFUND_PENDING"].includes(row.rows[0].status)) return;
@@ -74,7 +74,7 @@ export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{P
 
       const tx=await client.query<{id:string;amount:number;status:string;user_id:string;payload:Record<string,unknown>}>(`SELECT id::text,amount,status,user_id::text,payload FROM star_transactions WHERE payload->>'payload'=$1 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`,[payload]);
       if(!tx.rows[0])throw new Error("PAYMENT_NOT_FOUND"); if(tx.rows[0].user_id!==userId)throw new Error("PAYMENT_USER_MISMATCH"); if(Number(tx.rows[0].amount)!==totalAmount||tx.rows[0].status!=="PENDING")throw new Error(tx.rows[0].status==="REFUND_PENDING"?"PAYMENT_REFUND_PENDING":"PAYMENT_NOT_PENDING");
-      const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid`,[userId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
+      const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid FOR UPDATE`,[userId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
       refundState.current={userId,telegramId,chargeId,transactionId:tx.rows[0].id};
 
       await client.query("SAVEPOINT paid_spin_settlement");
