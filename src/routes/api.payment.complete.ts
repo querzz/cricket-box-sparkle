@@ -74,7 +74,7 @@ export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{P
 
       const tx=await client.query<{id:string;amount:number;status:string;user_id:string;payload:Record<string,unknown>}>(`SELECT id::text,amount,status,user_id::text,payload FROM star_transactions WHERE payload->>'payload'=$1 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`,[payload]);
       if(!tx.rows[0])throw new Error("PAYMENT_NOT_FOUND"); if(tx.rows[0].user_id!==userId)throw new Error("PAYMENT_USER_MISMATCH"); if(Number(tx.rows[0].amount)!==totalAmount||tx.rows[0].status!=="PENDING")throw new Error(tx.rows[0].status==="REFUND_PENDING"?"PAYMENT_REFUND_PENDING":"PAYMENT_NOT_PENDING");
-      const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid AND telegram_id=$2 FOR UPDATE`,[userId,telegramId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
+      const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid AND telegram_id=$2 FOR UPDATE`,[userId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
       refundState.current={userId,telegramId,chargeId,transactionId:tx.rows[0].id};
 
       await client.query("SAVEPOINT paid_spin_settlement");
@@ -110,13 +110,14 @@ export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{P
     if("refundRequired" in result){
       const context=refundState.current;
       if(!context)return Response.json({ok:false,code:"PAYMENT_REFUND_PENDING"},{status:502});
+      const refundReason = "reason" in result && typeof result.reason === "string" ? result.reason : "PAYMENT_REFUND_PENDING";
       try{
         await refundTelegramStars(context.telegramId,context.chargeId);
-        await markPaymentRefunded(context,result.reason);
-        return Response.json({ok:false,code:"PAYMENT_REFUNDED",reason:result.reason},{status:409});
+        await markPaymentRefunded(context,refundReason);
+        return Response.json({ok:false,code:"PAYMENT_REFUNDED",reason:refundReason},{status:409});
       }catch(refundError){
         const refundCode=refundError instanceof Error?refundError.message:"TELEGRAM_REFUND_FAILED";
-        console.error("[CRICKET BOX] paid spin refund failed",{code:result.reason,refundCode,chargeId:context.chargeId});
+        console.error("[CRICKET BOX] paid spin refund failed",{code:refundReason,refundCode,chargeId:context.chargeId});
         return Response.json({ok:false,code:"PAYMENT_REFUND_PENDING"},{status:502});
       }
     }
