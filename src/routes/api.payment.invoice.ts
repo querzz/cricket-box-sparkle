@@ -113,7 +113,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
               FOR UPDATE`,
             [userId, seasonId],
           );
-          let pending = existingResult.rows[0] ?? null;
+          let pending: PendingPayment | null = existingResult.rows[0] ?? null;
           let created = false;
 
           if (pending?.status === "REFUND_PENDING") throw new Error("PAYMENT_REFUND_PENDING");
@@ -204,8 +204,6 @@ export const Route = createFileRoute("/api/payment/invoice")({
         } catch (error) {
           console.error("Failed to persist Telegram invoice URL:", error instanceof Error ? error.message : error);
           if (error instanceof Error && error.message === "PAYMENT_REFUND_PENDING") throw error;
-          // The invoice was created by Telegram but not persisted. Return the live link once,
-          // and leave the pending transaction untouched so the next recovery request can retry persistence.
           canonicalInvoiceUrl = invoiceUrl;
         }
 
