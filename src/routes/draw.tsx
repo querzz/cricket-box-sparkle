@@ -60,6 +60,7 @@ function DrawScreen() {
     setBusy(true);
     setReward(null);
     setPhase("charging");
+    let animationOwnsBusy = false;
     try {
       if (!snapshot) throw new Error("SESSION_NOT_READY");
       console.log("[CRICKET BOX] spin:start", {
@@ -82,6 +83,7 @@ function DrawScreen() {
         console.log("[CRICKET BOX] paid-spin:success", { rewardId: paidResult.reward.id });
         await refresh();
         setPhase("opening");
+        animationOwnsBusy = true;
         window.setTimeout(() => {
           setReward(paidResult.reward);
           setPhase("idle");
@@ -100,6 +102,7 @@ function DrawScreen() {
       }
       console.log("[CRICKET BOX] spin:success", { rewardId: result.id, paid });
       setPhase("opening");
+      animationOwnsBusy = true;
       window.setTimeout(() => {
         setReward(result);
         setPhase("idle");
@@ -108,9 +111,10 @@ function DrawScreen() {
       return;
     } catch (caught) {
       console.error("[CRICKET BOX] spin:exception", caught instanceof Error ? caught.message : caught);
+      setPhase("idle");
       toast.error("Не удалось выполнить прокрутку. Попробуй ещё раз.");
     } finally {
-      setBusy(false);
+      if (!animationOwnsBusy) setBusy(false);
     }
   }, [busy, refresh, snapshot, spin]);
 
