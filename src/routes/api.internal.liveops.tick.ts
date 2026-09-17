@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { withTransaction } from "@/server/db";
 import { activateDueDrops, finalizeSeasonStates, reconcileSeasonStates } from "@/server/liveops";
+import { reconcilePendingPaymentRefunds } from "@/server/payment-recovery";
 
 function isAuthorized(request: Request) {
   const secret = process.env["LIVEOPS_CRON_SECRET"]?.trim();
@@ -30,7 +31,14 @@ export const Route = createFileRoute("/api/internal/liveops/tick")({
           return { transitions: [...transitions, ...finalizations], activated };
         });
 
-        return Response.json({ ok: true, transitions: result.transitions, seasons: result.activated, activatedCount: result.activated.reduce((sum, item) => sum + item.dropIds.length, 0) });
+        const paymentRefunds = await reconcilePendingPaymentRefunds();
+        return Response.json({
+          ok: true,
+          transitions: result.transitions,
+          seasons: result.activated,
+          activatedCount: result.activated.reduce((sum, item) => sum + item.dropIds.length, 0),
+          paymentRefunds,
+        });
       } catch (error) {
         const code = error instanceof Error ? error.message : "REQUEST_FAILED";
         return Response.json({ ok: false, code }, { status: code === "TICK_IN_PROGRESS" ? 409 : 500 });
