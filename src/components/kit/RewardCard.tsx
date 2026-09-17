@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { rewardArt } from "@/components/assets";
 import { StatusBadge } from "@/components/kit/StatusBadge";
 import { formatDate } from "@/lib/format";
+import { t } from "@/lib/i18n";
 import type { Reward } from "@/lib/types";
 
 export function RewardCard({ reward }: { reward: Reward }) {
@@ -24,7 +25,7 @@ export function RewardCard({ reward }: { reward: Reward }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{reward.title}</p>
         <p className="truncate text-[11px] text-muted-foreground">
-          {reward.subtitle ? `${reward.subtitle} · ` : ""}Выиграно {formatDate(reward.wonAt)}
+          {reward.subtitle ? `${reward.subtitle} · ` : ""}{t("rewards.won")} {formatDate(reward.wonAt)}
         </p>
       </div>
       <StatusBadge status={{ type: "reward", value: reward.status }} />
