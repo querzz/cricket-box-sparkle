@@ -25,7 +25,9 @@ const ADMIN_NAV = [
   ["Прокрутки", "/admin/spins"],
   ["Статистика", "/admin/statistics"],
   ["Экономика", "/admin/economics"],
-  ["Аудит", "/admin/audit"],
+  ["Планировщик", "/admin/economic-planner"],
+  ["Админы", "/admin/access"],
+  ["Логи", "/admin/audit"],
 ] as const;
 
 function telegramMiniAppIsAvailable() {
