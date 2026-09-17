@@ -32,6 +32,7 @@ const expectError = async (fn, expectedCode, message) => {
 };
 
 let adminId;
+let userId;
 let seasonId;
 let prizeId;
 
@@ -41,34 +42,30 @@ try {
 
   const admin = await db.query(`INSERT INTO admins(telegram_id,username,role,is_active) VALUES($1,$2,'OWNER',TRUE) RETURNING id::text`, [970000000 + Number(String(Date.now()).slice(-7)), `guard_${suffix}`]);
   adminId = admin.rows[0].id;
+  const user = await db.query(`INSERT INTO users(telegram_id,username,first_name) VALUES($1,$2,'Guard') RETURNING id::text`, [960000000 + Number(String(Date.now()).slice(-7)), `guard_user_${suffix}`]);
+  userId = user.rows[0].id;
   const season = await db.query(`INSERT INTO seasons(code,name,state,starts_at,ends_at,paid_spin_price,paid_spin_enabled,daily_free_spin,created_by) VALUES($1,'Guard Season','ACTIVE',now()-interval '1 hour',now()+interval '1 day',100,TRUE,TRUE,$2) RETURNING id::text`, [`GUARD-${suffix}`, adminId]);
   seasonId = season.rows[0].id;
 
   const prize = await db.query(`INSERT INTO prizes(season_id,kind,title,amount,unit_cost,currency,quantity_total,quantity_remaining,is_active,metadata) VALUES($1,'STARS','Guard Stars',20,1,'XTR',10,10,TRUE,'{"weight":1}'::jsonb) RETURNING id::text`, [seasonId]);
   prizeId = prize.rows[0].id;
 
-  const freeSpin = await db.query(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status) SELECT gen_random_uuid(),$1,'FREE',0,$2::uuid,'COMPLETED' RETURNING id`, [seasonId, prizeId]);
+  const freeSpin = await db.query(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status) VALUES($1,$2,'FREE',0,$3::uuid,'COMPLETED') RETURNING id`, [userId, seasonId, prizeId]);
   assert(Boolean(freeSpin.rows[0]?.id), "season has a completed spin fixture");
 
   await expectError(
-    () => db.query(`SELECT 1`).then(() => updateSeason(seasonId, { paidSpinPrice: 75 }, {
-      query: (text, values) => db.query(text, values),
-    })),
+    () => updateSeason(seasonId, { paidSpinPrice: 75 }, { query: (text, values) => db.query(text, values) }),
     "PAID_SPIN_PRICE_LOCKED",
     "paid spin price is locked after first spin",
   );
 
   await expectError(
-    () => updateSeason(seasonId, { dailyFreeSpin: false }, {
-      query: (text, values) => db.query(text, values),
-    }),
+    () => updateSeason(seasonId, { dailyFreeSpin: false }, { query: (text, values) => db.query(text, values) }),
     "FREE_ATTEMPTS_LOCKED",
     "free attempt setting is locked after first spin",
   );
 
-  const titleUpdate = await updateSeason(seasonId, { name: "Guard Season Renamed" }, {
-    query: (text, values) => db.query(text, values),
-  });
+  const titleUpdate = await updateSeason(seasonId, { name: "Guard Season Renamed" }, { query: (text, values) => db.query(text, values) });
   assert(titleUpdate?.name === "Guard Season Renamed", "season cosmetic name edit remains allowed");
 
   await expectError(
@@ -90,9 +87,11 @@ try {
   console.log("✅ Admin guard tests passed");
 } finally {
   await db.query("ROLLBACK").catch(() => {});
-  if (seasonId) await db.query(`DELETE FROM prizes WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM spins WHERE season_id=$1`, [seasonId]).catch(() => {});
+  if (seasonId) await db.query(`DELETE FROM prizes WHERE season_id=$1`, [seasonId]).catch(() => {});
   if (seasonId) await db.query(`DELETE FROM seasons WHERE id=$1::uuid`, [seasonId]).catch(() => {});
+  if (userId) await db.query(`DELETE FROM user_state WHERE user_id=$1::uuid`, [userId]).catch(() => {});
+  if (userId) await db.query(`DELETE FROM users WHERE id=$1::uuid`, [userId]).catch(() => {});
   if (adminId) await db.query(`DELETE FROM admins WHERE id=$1::uuid`, [adminId]).catch(() => {});
   await db.end().catch(() => {});
 }
