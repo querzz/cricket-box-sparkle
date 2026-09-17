@@ -24,7 +24,7 @@ export const Route = createFileRoute("/api/payment/status")({
         if (!user.rows[0]) return Response.json({ ok: false, code: "USER_NOT_FOUND" }, { status: 404 });
 
         const transaction = await query<{
-          status: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
+          status: "PENDING" | "REFUND_PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
           amount: string;
           spin_id: string | null;
           telegram_charge_id: string | null;
