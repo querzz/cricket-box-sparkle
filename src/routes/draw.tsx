@@ -105,6 +105,9 @@ function DrawScreen() {
         return;
       }
       console.log("[CRICKET BOX] spin:success", { rewardId: result.id, paid });
+      // Refresh in the background so the next "Spin again" action sees the
+      // consumed free/bonus spin instead of the pre-spin cached count.
+      void refresh().catch((refreshError) => console.warn("[CRICKET BOX] free-spin:refresh-failed", refreshError));
       setPhase("opening");
       animationOwnsBusy = true;
       window.setTimeout(() => {
