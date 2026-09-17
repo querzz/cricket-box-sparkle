@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { authenticateAdmin } from "@/server/auth/access";
-import { query, withTransaction } from "@/server/db";
+import { withTransaction } from "@/server/db";
 import { listPrizes, upsertPrize } from "@/server/season-service";
 
 export const Route = createFileRoute("/api/admin/prizes")({
@@ -47,26 +47,29 @@ export const Route = createFileRoute("/api/admin/prizes")({
           if (!Number.isFinite(amount) || !Number.isFinite(unitCost) || !Number.isFinite(quantityTotalNumber) || !Number.isFinite(quantityRemainingNumber)) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
           const quantityTotal = Math.max(0, Math.floor(quantityTotalNumber));
           const quantityRemaining = Math.max(0, Math.floor(quantityRemainingNumber));
-          const prize = await withTransaction((client) => upsertPrize({
-            id: body.id,
-            seasonId: body.seasonId,
-            kind: body.kind ?? "CUSTOM",
-            title: body.title,
-            subtitle: body.subtitle,
-            amount,
-            unitCost,
-            currency: body.currency,
-            quantityTotal,
-            quantityRemaining,
-            active: body.active !== false,
-            imageUrl: body.imageUrl,
-            metadata: body.metadata,
-          }, client));
-          await query(
-            `INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data)
-             VALUES($1::uuid,'PRIZE_UPDATED','prize',$2,$3::jsonb)`,
-            [admin.id, prize.id, JSON.stringify(prize)],
-          );
+          const prize = await withTransaction(async (client) => {
+            const nextPrize = await upsertPrize({
+              id: body.id,
+              seasonId: body.seasonId,
+              kind: body.kind ?? "CUSTOM",
+              title: body.title,
+              subtitle: body.subtitle,
+              amount,
+              unitCost,
+              currency: body.currency,
+              quantityTotal,
+              quantityRemaining,
+              active: body.active !== false,
+              imageUrl: body.imageUrl,
+              metadata: body.metadata,
+            }, client);
+            await client.query(
+              `INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data)
+               VALUES($1::uuid,'PRIZE_UPDATED','prize',$2,$3::jsonb)`,
+              [admin.id, nextPrize.id, JSON.stringify(nextPrize)],
+            );
+            return nextPrize;
+          });
           return Response.json({ ok: true, prize });
         } catch (error) {
           const code = error instanceof Error ? error.message : "REQUEST_FAILED";
