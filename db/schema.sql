@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), admin_id UUID REFERENCES admins(id) ON DELETE SET NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, before_data JSONB, after_data JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS star_transactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID REFERENCES users(id) ON DELETE SET NULL, spin_id UUID REFERENCES spins(id) ON DELETE SET NULL, telegram_charge_id TEXT UNIQUE, amount INTEGER NOT NULL CHECK (amount > 0), status TEXT NOT NULL CHECK (status IN ('PENDING','SUCCESS','REFUNDED','FAILED')) DEFAULT 'PENDING', payload JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), processed_at TIMESTAMPTZ
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID REFERENCES users(id) ON DELETE SET NULL, spin_id UUID REFERENCES spins(id) ON DELETE SET NULL, telegram_charge_id TEXT UNIQUE, amount INTEGER NOT NULL CHECK (amount > 0), status TEXT NOT NULL CHECK (status IN ('PENDING','REFUND_PENDING','SUCCESS','REFUNDED','FAILED')) DEFAULT 'PENDING', payload JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), processed_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS stars_ledger (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT, season_id UUID REFERENCES seasons(id) ON DELETE SET NULL, spin_id UUID REFERENCES spins(id) ON DELETE SET NULL, type TEXT NOT NULL CHECK (type IN ('OPENING_BALANCE','REWARD','DAILY_GIFT','SPIN_SPEND','WITHDRAWAL','REFUND_REVERSAL','CAPPED_OVERFLOW_BURNED','ADMIN_CORRECTION','ADJUSTMENT')), amount INTEGER NOT NULL, reference_id TEXT, idempotency_key TEXT NOT NULL UNIQUE, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -104,3 +104,6 @@ WITH spin_stats AS (SELECT season_id,user_id,COUNT(*)::int spins_count FROM spin
 win_stats AS (SELECT s.season_id,py.user_id,COUNT(*)::int wins_count,COALESCE(SUM(CASE WHEN py.kind='STARS' THEN py.amount ELSE 0 END),0)::numeric stars_won FROM payouts py JOIN spins s ON s.id=py.spin_id WHERE py.prize_id IS NOT NULL AND py.kind<>'EMPTY' GROUP BY s.season_id,py.user_id),
 base AS (SELECT ss.season_id,ss.user_id,ss.spins_count,COALESCE(ws.wins_count,0)::int wins_count,COALESCE(ws.stars_won,0)::numeric stars_won FROM spin_stats ss LEFT JOIN win_stats ws ON ws.season_id=ss.season_id AND ws.user_id=ss.user_id)
 SELECT season_id,user_id,spins_count,wins_count,stars_won,RANK() OVER(PARTITION BY season_id ORDER BY spins_count DESC,wins_count DESC,stars_won DESC,user_id)::int rank FROM base;
+
+ALTER TABLE star_transactions DROP CONSTRAINT IF EXISTS star_transactions_status_check;
+ALTER TABLE star_transactions ADD CONSTRAINT star_transactions_status_check CHECK (status IN ('PENDING','REFUND_PENDING','SUCCESS','REFUNDED','FAILED'));
