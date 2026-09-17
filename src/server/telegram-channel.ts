@@ -1,4 +1,4 @@
-import { requireBotToken, requireTelegramChannelId } from "@/server/config";
+import { isProductionApp, requireBotToken, requireTelegramChannelId } from "@/server/config";
 
 const MEMBER_STATUSES = new Set(["creator", "administrator", "member"]);
 type TelegramMembershipResponse = {
@@ -25,12 +25,15 @@ export async function getTelegramChannelMembership(telegramId: number): Promise<
         httpStatus: response.status,
         description: data.description ?? "unknown",
       });
-      return null;
+      // In production, never fall back to a previously cached membership flag:
+      // a Telegram outage must fail closed rather than granting participation based
+      // on stale subscription state. Local/dev keeps the stored-state fallback.
+      return isProductionApp() ? false : null;
     }
     return MEMBER_STATUSES.has(data.result.status ?? "")
       || (data.result.status === "restricted" && data.result.is_member === true);
   } catch (error) {
     console.warn("[CRICKET BOX] Telegram membership check unavailable", error instanceof Error ? error.message : error);
-    return null;
+    return isProductionApp() ? false : null;
   }
 }
