@@ -38,13 +38,18 @@ function WithdrawScreen() {
   const pendingWithdrawal = snapshot.withdrawals.find((w) => w.status === "PENDING" || w.status === "PROCESSING");
 
   const submit = async (amount: number) => {
+    if (submitting || pendingWithdrawal) return;
     setSubmitting(true);
     setFormError(null);
-    const result = await requestWithdrawal(amount);
-    setSubmitting(false);
-    if (isServiceError(result)) { setFormError(errorCopy(result.code)); return; }
-    setOpen(false);
-    toast.success("Запрос на вывод отправлен");
+    try {
+      const result = await requestWithdrawal(amount);
+      if (isServiceError(result)) { setFormError(errorCopy(result.code)); return; }
+      setOpen(false);
+      toast.success("Запрос на вывод отправлен");
+      await refresh();
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -52,15 +57,15 @@ function WithdrawScreen() {
       <GlassCard className="px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Баланс CRICKET BOX</p>
         <StarsBalance balance={snapshot.stars} size="lg" showProgress className="mt-2" />
-        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Это внутренние Stars CRICKET BOX для вывода. Они не используются для оплаты дополнительных прокруток — платные прокрутки оплачиваются отдельно через Telegram Stars.</p>
-        <PrimaryButton fullWidth className="mt-4" disabled={!ui.canWithdraw || snapshot.stars.amount < snapshot.withdrawalMinimum || Boolean(pendingWithdrawal)} onClick={() => setOpen(true)}>
-          {pendingWithdrawal ? "Вывод уже на проверке" : "Вывести"}
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Stars начисляются и учитываются реестром CRICKET BOX. Платные прокрутки оплачиваются отдельно через Telegram Stars (XTR).</p>
+        <PrimaryButton fullWidth className="mt-4" disabled={!ui.canWithdraw || snapshot.stars.amount < snapshot.withdrawalMinimum || Boolean(pendingWithdrawal) || submitting} onClick={() => setOpen(true)}>
+          {pendingWithdrawal ? "Вывод уже на проверке" : submitting ? "Отправляем…" : "Вывести"}
         </PrimaryButton>
         {!ui.canWithdraw && <p className="mt-3 text-center text-[11px] text-muted-foreground">Вывод откроется после завершения сезона.</p>}
         {pendingWithdrawal && <NoticeBar tone="warning" className="mt-3">Заявка на {pendingWithdrawal.amount} Stars уже отправлена. Дождись её обработки — повторно списывать баланс не нужно.</NoticeBar>}
       </GlassCard>
 
-      <NoticeBar className="mt-3">Минимальная сумма вывода: {snapshot.withdrawalMinimum} Stars. Выигранные Stars хранятся отдельно от Telegram Stars и предназначены для последующего вывода.</NoticeBar>
+      <NoticeBar className="mt-3">Минимальная сумма вывода: {snapshot.withdrawalMinimum} Stars. Все начисления Stars отражаются в реестре CRICKET BOX и предназначены для последующего вывода.</NoticeBar>
 
       <h2 className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Запросы на вывод</h2>
       <div className="mt-3 space-y-2.5">
@@ -75,7 +80,7 @@ function WithdrawScreen() {
         ))}
       </div>
 
-      <WithdrawalModal open={open} balance={snapshot.stars} minimum={snapshot.withdrawalMinimum} allowed={ui.canWithdraw && !pendingWithdrawal} submitting={submitting} error={formError} onClose={() => setOpen(false)} onSubmit={(amount) => void submit(amount)} />
+      <WithdrawalModal open={open} balance={snapshot.stars} minimum={snapshot.withdrawalMinimum} allowed={ui.canWithdraw && !pendingWithdrawal && !submitting} submitting={submitting} error={formError} onClose={() => { if (!submitting) setOpen(false); }} onSubmit={(amount) => void submit(amount)} />
     </AppShell>
   );
 }
