@@ -133,7 +133,6 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
 
   const requestedPrice = patch.paidSpinPrice;
   if (requestedPrice !== undefined && (!Number.isSafeInteger(requestedPrice) || requestedPrice <= 0)) throw new Error("INVALID_PAID_SPIN_PRICE");
-  if (hasUsage && requestedPrice !== undefined && requestedPrice !== current.paid_spin_price) throw new Error("PAID_SPIN_PRICE_LOCKED");
   if (hasSpins && patch.dailyFreeSpin !== undefined && patch.dailyFreeSpin !== current.daily_free_spin) throw new Error("FREE_ATTEMPTS_LOCKED");
   if (hasStarted && patch.paidSpinEnabled === true && current.paid_spin_enabled === false) throw new Error("PAID_SPIN_REENABLE_LOCKED");
 
