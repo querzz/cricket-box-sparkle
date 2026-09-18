@@ -65,6 +65,10 @@ const session = await read("src/routes/api.session.ts");
 const selector = await read("src/server/dynamic-prize-selection.ts");
 const seasonService = await read("src/server/season-service.ts");
 const bot = await read("scripts/telegram-bot.mjs");
+const seasonUi = await read("src/lib/season.ts");
+const spin = await read("src/routes/api.spin.ts");
+const economics = await read("src/routes/admin.economics.tsx");
+const payouts = await read("src/routes/admin.payouts.tsx");
 const i18n = await read("src/lib/i18n.ts");
 const ru = await read("src/locales/ru.json");
 
@@ -74,6 +78,13 @@ assert(draw.includes("snapshot.user.isSubscribed && freeSpins <= 0"), "used-free
 assert(home.includes("Подпишись на канал, чтобы получить бесплатную попытку и участвовать в сезоне."), "home explains subscription before attempt count");
 assert(session.includes("dailyAvailable = season.daily_free_spin && live && isSubscribed && isParticipant"), "session grants daily free spin only to eligible subscribed participants");
 assert(session.includes("freeSpins = dailyAvailable + bonusFreeSpins"), "session composes available free spins from server state");
+assert(seasonUi.includes("const finished = state === \"CLOSED\" || state === \"PAYOUT\" || state === \"ARCHIVED\""), "finished season states are handled");
+assert(seasonUi.includes("canSpin: live && subscribed"), "spin access is disabled outside live subscribed state");
+assert(spin.includes('throw new Error("NO_ATTEMPTS")'), "server rejects a user with no free/bonus attempts");
+assert(spin.includes('throw new Error("NO_PRIZES")'), "server rejects an exhausted prize pool");
+assert(draw.includes("starsFull"), "draw handles a full 500 Stars balance");
+assert(!economics.includes('label="Revenue"') && !economics.includes('label="Known cost"') && !economics.includes("Paid conversion"), "economics UI no longer exposes obvious English metric labels");
+assert(!payouts.includes("Lifecycle:") && !payouts.includes("method:") && !payouts.includes("ref:"), "payout UI no longer exposes obvious English operational labels");
 assert(selector.includes("quantity_remaining"), "selector uses remaining inventory");
 assert(selector.includes("weight"), "selector uses configured weight");
 assert(seasonService.includes("PRIZE_QUANTITY_BELOW_WON"), "season prize quantity cannot go below already-won inventory");
