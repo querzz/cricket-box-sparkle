@@ -5,7 +5,7 @@ import pg from "pg";
 const { Client } = pg;
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is missing in DATABASE_URL");
+if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
 process.env.TELEGRAM_BOT_TOKEN ??= "payment-recovery-test-token";
 
 const { reconcilePendingPaymentRefunds } = await import("../src/server/payment-recovery.ts");
