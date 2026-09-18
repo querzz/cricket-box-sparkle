@@ -51,8 +51,9 @@ Recommended starting price for Season #001: **100 Telegram Stars per paid spin**
 Why:
 - it gives the first season enough unit revenue headroom for a meaningful prize pool;
 - 75 Stars remains a useful comparison scenario in the Economic Planner;
-- price remains configurable by admin for future seasons;
-- do not change the price mid-season after the first paid transaction.
+- price remains configurable by admin;
+- the paid-spin price may be changed during an ACTIVE/ENDING season;
+- a pending Telegram invoice keeps its transaction amount, while new invoices use the latest configured season price.
 
 This is a product recommendation, not a hardcoded technical constant.
 
