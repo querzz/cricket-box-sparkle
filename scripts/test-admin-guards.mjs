@@ -118,7 +118,7 @@ try {
   );
 
   await expectError(
-    () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 12, quantityRemaining: 11, metadata: { weight: 3 }, economicOverride: true, economicOverrideRole: "OWNER", economicOverrideReason: "short" }, { query: (text, values) => db.query(text, values) }),
+    () => upsertPrize({ id: prizeId, seasonId, kind: "STARS", title: "Guard Stars Updated", amount: 20, unitCost: 1, currency: "XTR", quantityTotal: 12, quantityRemaining: 11, metadata: { weight: 3 }, economicOverride: true, economicOverrideRole: "OWNER", economicOverrideReason: "no" }, { query: (text, values) => db.query(text, values) }),
     "INVALID_OVERRIDE_REASON",
     "owner override requires a sufficiently descriptive reason",
   );
