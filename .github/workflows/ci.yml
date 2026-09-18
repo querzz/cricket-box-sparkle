@@ -35,3 +35,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Product UX/Admin/Bot regression
+        run: npm run test:product-qa
+
+      - name: Telegram bot regression
+        run: npm run test:bot
