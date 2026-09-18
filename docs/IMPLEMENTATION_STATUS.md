@@ -30,7 +30,7 @@ Repository: `querzz/cricket-box-sparkle`
 - State transitions and season-date constraints are validated.
 - Only one `ACTIVE`/`ENDING` season is allowed.
 - Start time cannot be changed after a season has started; the season end cannot be shortened or removed after start.
-- Paid-spin enablement/price are guarded after the season is in use, including after a pending paid transaction is created.
+- Paid-spin enablement is guarded after the season is in use; the paid-spin price remains editable during the season. Pending Telegram invoices retain their stored transaction amount, while newly created invoices use the latest season price.
 - Prize economic fields are guarded after the season is in use; cosmetic edits remain available.
 - Season/prize mutation transactions lock the season before the prize, matching the spin transaction lock order and reducing deadlock/race risk.
 - LiveOps reconciles due scheduled seasons, expiry and payout/archive lifecycle.
