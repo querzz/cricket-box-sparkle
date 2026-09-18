@@ -189,13 +189,13 @@ Immutable log with:
 
 ## 6. Rules for changing seasons/prizes
 
-After first spin, do not change economics retroactively.
+After first spin, do not change prize economics retroactively.
 
 - Start date: immutable after season starts.
 - End date: may only be extended, never shortened below current time.
 - Free attempts: locked after first spin.
 - Paid spins: may be switched OFF for user protection; do not turn ON mid-season if it was OFF from the start.
-- Spin price: locked after first spin or after the first paid-spin transaction exists.
+- Spin price: may be changed during an ACTIVE/ENDING season. Each pending Telegram invoice remains tied to its stored transaction amount; newly created invoices use the current season price.
 - Minimum withdrawal: locked after first spin.
 - Stars cap: locked after first spin.
 - Participation conditions: locked after first spin.
