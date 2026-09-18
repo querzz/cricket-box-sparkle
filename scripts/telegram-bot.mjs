@@ -228,3 +228,135 @@ async function completeOrRefundPayment(message) {
   const refunded = await refundSuccessfulPayment(message);
   return { completed: false, refunded };
 }
+
+async function sendMessage(chatId, text, replyMarkup) {
+  return api("sendMessage", {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+async function handleMessage(message) {
+  const chatId = message?.chat?.id;
+  if (!chatId) return;
+
+  if (message.successful_payment) {
+    const result = await completeOrRefundPayment(message);
+    if (result.completed) {
+      await sendMessage(
+        chatId,
+        "✅ Оплата получена. Прокрутка подтверждена — награда уже зафиксирована.",
+        { inline_keyboard: [[appButton("/draw")]] },
+      );
+    } else if (result.refunded) {
+      await sendMessage(
+        chatId,
+        "⚠️ Не удалось подтвердить прокрутку. Платёж возвращён автоматически.",
+        { inline_keyboard: [[appButton("")]] },
+      );
+    } else {
+      await sendMessage(
+        chatId,
+        "⚠️ Не удалось подтвердить оплату автоматически. Мы сохранили платёж для повторной обработки.",
+        { inline_keyboard: [[appButton("")]] },
+      );
+    }
+    return;
+  }
+
+  const textValue = typeof message.text === "string" ? message.text.trim() : "";
+  if (!textValue) return;
+
+  if (/^\/start(?:\s|$)/i.test(textValue)) {
+    const admin = await isAdmin(message.from?.id);
+    const rows = [[appButton("")]];
+    if (supportUsername) rows.push([{ text: "💬 Поддержка", url: `https://t.me/${supportUsername}` }]);
+    if (admin && /^\/start(?:\s|$)/i.test(textValue)) {
+      rows.push([{ text: "🛠 Админ-панель", ...appButton("/admin") }]);
+    }
+    await sendMessage(
+      chatId,
+      "🎁 CRICKET BOX\n\nОткрывай сезон, забирай бесплатные прокрутки и участвуй в розыгрыше призов.",
+      { inline_keyboard: rows },
+    );
+    return;
+  }
+
+  if (/^\/help(?:\s|$)/i.test(textValue)) {
+    await sendMessage(
+      chatId,
+      "Команды:\n/start — открыть CRICKET BOX\n/help — помощь",
+      { inline_keyboard: [[appButton("")]] },
+    );
+  }
+}
+
+async function handlePreCheckoutQuery(query) {
+  if (!query?.id) return;
+  try {
+    const result = await validatePreCheckout(query);
+    await api("answerPreCheckoutQuery", {
+      pre_checkout_query_id: query.id,
+      ok: result.ok,
+      ...(result.ok ? {} : { error_message: result.error }),
+    });
+  } catch (error) {
+    console.error("Pre-checkout validation failed:", error);
+    await api("answerPreCheckoutQuery", {
+      pre_checkout_query_id: query.id,
+      ok: false,
+      error_message: "Не удалось проверить заказ. Попробуйте ещё раз.",
+    }).catch(() => {});
+  }
+}
+
+async function handleUpdate(update) {
+  if (update?.pre_checkout_query) {
+    await handlePreCheckoutQuery(update.pre_checkout_query);
+  }
+  if (update?.message) {
+    await handleMessage(update.message);
+  }
+}
+
+async function pollTelegramUpdates() {
+  console.log(`🤖 @${botUsername} polling started`);
+  await api("deleteWebhook", { drop_pending_updates: false }).catch((error) => {
+    console.warn(`Telegram webhook cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+
+  await api("setMyCommands", {
+    commands: [
+      { command: "start", description: "Открыть CRICKET BOX" },
+      { command: "help", description: "Помощь" },
+    ],
+  }).catch((error) => {
+    console.warn(`Telegram commands setup failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+
+  let offset = 0;
+  for (;;) {
+    try {
+      const updates = await api("getUpdates", {
+        offset,
+        timeout: 25,
+        allowed_updates: ["message", "pre_checkout_query"],
+      });
+      for (const update of Array.isArray(updates) ? updates : []) {
+        offset = Math.max(offset, Number(update.update_id) + 1);
+        try {
+          await handleUpdate(update);
+        } catch (error) {
+          console.error(`Telegram update ${update.update_id} failed:`, error);
+        }
+      }
+    } catch (error) {
+      console.error("Telegram polling failed:", error);
+      await sleep(3000);
+    }
+  }
+}
+
+await pollTelegramUpdates();
