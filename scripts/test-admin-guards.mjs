@@ -52,21 +52,23 @@ try {
 
   const paidPayload = `paidspin:v1:${userId}:${seasonId}:guard-price-lock`;
   await db.query(`INSERT INTO star_transactions(user_id,amount,status,payload) VALUES($1,100,'PENDING',$2::jsonb)`, [userId, JSON.stringify({ payload: paidPayload, type: "PAID_SPIN", seasonId, userId })]);
-  await expectError(
-    () => updateSeason(seasonId, { paidSpinPrice: 75 }, { query: (text, values) => db.query(text, values) }),
-    "PAID_SPIN_PRICE_LOCKED",
-    "paid spin price is locked after the first payment transaction, even before settlement",
+  const priceAfterPendingPayment = await updateSeason(
+    seasonId,
+    { paidSpinPrice: 75 },
+    { query: (text, values) => db.query(text, values) },
   );
+  assert(priceAfterPendingPayment?.paid_spin_price === 75, "paid spin price can change while a payment is pending");
   await db.query(`UPDATE star_transactions SET status='FAILED',processed_at=now() WHERE user_id=$1::uuid AND payload->>'payload'=$2`, [userId, paidPayload]);
 
   const freeSpin = await db.query(`INSERT INTO spins(user_id,season_id,type,price_stars,prize_id,status) VALUES($1,$2,'FREE',0,$3::uuid,'COMPLETED') RETURNING id`, [userId, seasonId, prizeId]);
   assert(Boolean(freeSpin.rows[0]?.id), "season has a completed spin fixture");
 
-  await expectError(
-    () => updateSeason(seasonId, { paidSpinPrice: 75 }, { query: (text, values) => db.query(text, values) }),
-    "PAID_SPIN_PRICE_LOCKED",
-    "paid spin price is locked after first spin",
+  const priceAfterFirstSpin = await updateSeason(
+    seasonId,
+    { paidSpinPrice: 90 },
+    { query: (text, values) => db.query(text, values) },
   );
+  assert(priceAfterFirstSpin?.paid_spin_price === 90, "paid spin price can change after a spin has completed");
 
   await expectError(
     () => updateSeason(seasonId, { dailyFreeSpin: false }, { query: (text, values) => db.query(text, values) }),
