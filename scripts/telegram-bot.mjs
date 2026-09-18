@@ -284,10 +284,20 @@ async function handleMessage(message) {
     return;
   }
 
+  if (/^\/paysupport(?:\s|$)/i.test(textValue)) {
+    if (supportUsername) {
+      await sendMessage(chatId, `💬 Поддержка: @${supportUsername}`);
+    } else {
+      await sendMessage(chatId, "💬 Поддержка доступна через раздел «Поддержка» в приложении.");
+    }
+    return;
+  }
+
   if (/^\/help(?:\s|$)/i.test(textValue)) {
+    const supportLine = supportUsername ? "\n/paysupport — поддержка по оплате" : "";
     await sendMessage(
       chatId,
-      "Команды:\n/start — открыть CRICKET BOX\n/help — помощь",
+      `Команды:\n/start — открыть CRICKET BOX\n/help — помощь${supportLine}`,
       { inline_keyboard: [[appButton("")]] },
     );
   }
@@ -331,6 +341,7 @@ async function pollTelegramUpdates() {
     commands: [
       { command: "start", description: "Открыть CRICKET BOX" },
       { command: "help", description: "Помощь" },
+      { command: "paysupport", description: "Поддержка по оплате" },
     ],
   }).catch((error) => {
     console.warn(`Telegram commands setup failed: ${error instanceof Error ? error.message : String(error)}`);
