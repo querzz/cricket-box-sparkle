@@ -112,7 +112,7 @@ finalWeight = configuredWeight × quantityRemaining
 
 ## Verification
 
-The repository contains regression suites for database invariants, LiveOps, payment security/rate limits, spin idempotency, prize probabilities, admin season/prize guards and Stars-ledger idempotency.
+The repository contains regression suites for database invariants, LiveOps, payment security/rate limits, spin idempotency, prize probabilities, admin season/prize guards, product UX/admin route coverage, Telegram bot behavior and Stars-ledger idempotency.
 
 `npm run test:prize-probabilities` covers weighted sampling, explicit zero weights, exhausted inventory, sequential finite-pool depletion and invalid-weight rejection.
 
@@ -121,6 +121,10 @@ The repository contains regression suites for database invariants, LiveOps, paym
 `npm run test:stars-ledger` verifies identical replay is a no-op while reusing an idempotency key for a different amount is rejected without changing balance.
 
 `npm run test:payment-security` covers Telegram charge replay, stale pending recovery, refund-pending persistence, duplicate-charge refund obligations, pending-payment uniqueness and concurrent charge races.
+
+`npm run test:product-qa` checks the required user/admin routes, subscription-gated free-spin UX, finished/no-attempt/no-prize states, the 500 ⭐ cap presentation, finite-pool invariants and Russian admin labels.
+
+`npm run test:bot` checks bot polling, /start, /help, /paysupport, pre-checkout, payment settlement, refund handling and the admin button label; when `TELEGRAM_BOT_TOKEN` is present in local `.env`, it also performs a live `getMe` health check.
 
 Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Payment Security green before production readiness is declared.
 
