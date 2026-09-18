@@ -18,9 +18,13 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:product-qa": "node scripts/test-product-qa.mjs",
+    "test:bot": "node scripts/test-bot.mjs"
   },
-  "overrides": { "rolldown": "1.2.1" },
+  "overrides": {
+    "rolldown": "1.2.1"
+  },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
