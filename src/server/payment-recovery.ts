@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { requireBotToken } from "./config";
-import { query, withTransaction } from "./db";
+import { requireBotToken } from "./config.ts";
+import { query, withTransaction } from "./db.ts";
 
 const REFUND_PENDING_MIN_AGE_MS = 60_000;
 const REFUND_CLAIM_TTL_MS = 60_000;
