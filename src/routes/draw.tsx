@@ -146,7 +146,7 @@ function DrawScreen() {
         <div className="mt-5 space-y-2.5">
           <PrimaryButton fullWidth size="lg" loading={busy && !reward} disabled={!ui.canSpin || freeSpins <= 0} onClick={() => void runSpin(false)}>{ui.isFinished ? t("draw.seasonFinished") : busy ? t("draw.opening") : t("draw.spin")}</PrimaryButton>
           {price !== null && !ui.isFinished && <PrimaryButton variant="outline" fullWidth disabled={!ui.canSpin || busy || !canPay} onClick={() => void runSpin(true)}>{t("draw.paidSpin")} · {price} Stars</PrimaryButton>}
-          <p className="text-center text-[11px] text-muted-foreground">{ui.isFinished ? "Сезон завершён — попыток больше нет" : freeSpins > 0 ? t("draw.dailyAvailable") : t("draw.dailyUsed")}</p>
+          <p className="text-center text-[11px] text-muted-foreground">{ui.isFinished ? "Сезон завершён — попыток больше нет" : !snapshot.user.isSubscribed ? "Подпишись на канал, чтобы получить бесплатную попытку" : freeSpins > 0 ? t("draw.dailyAvailable") : t("draw.dailyUsed")}</p>
         </div>
       </GlassCard>
 
@@ -154,7 +154,7 @@ function DrawScreen() {
         {!ui.canSpin && !snapshot.user.isSubscribed && <GlassCard className="space-y-2.5 px-4 py-3.5"><p className="text-sm font-semibold">Чтобы участвовать, подпишись на канал</p><p className="text-[11px] leading-relaxed text-muted-foreground">После подписки вернись сюда — приложение автоматически перепроверит доступ.</p>{channel?.url && <a href={channel.url} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary-glow"><span>{channel.username ? `Открыть ${channel.username}` : "Открыть канал"}</span><ExternalLink className="size-4" /></a>}</GlassCard>}
         {!ui.canSpin && snapshot.user.isSubscribed && <NoticeBar tone="warning">{ui.headline}</NoticeBar>}
         {ui.isWaiting && <NoticeBar>{ui.headline}. Прокрутки откроются после старта сезона.</NoticeBar>}
-        {ui.canSpin && freeSpins <= 0 && price !== null && <NoticeBar tone="warning">{t("draw.dailyUsed")}. Ты можешь использовать платную прокрутку за {price} Stars через Telegram.</NoticeBar>}
+        {ui.canSpin && snapshot.user.isSubscribed && freeSpins <= 0 && price !== null && <NoticeBar tone="warning">{t("draw.dailyUsed")}. Ты можешь использовать платную прокрутку за {price} Stars через Telegram.</NoticeBar>}
         {starsFull && <NoticeBar tone="warning">Баланс Stars заполнен ({snapshot.stars.max}/{snapshot.stars.max}). Следующие Stars-награды будут ограничены при выдаче до освобождения места.</NoticeBar>}
         <GlassCard className="px-4 py-3.5">
           {ui.isFinished ? <div className="text-center"><p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">{ui.headline}</p><p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p><div className="mt-3 space-y-2"><Link to="/prizes" className="block"><PrimaryButton fullWidth>Мои призы</PrimaryButton></Link>{ui.canWithdraw && <Link to="/withdraw" className="block"><PrimaryButton variant="outline" fullWidth>Вывести Stars</PrimaryButton></Link>}</div></div> : ui.countdownTarget ? <Countdown target={ui.countdownTarget} label={ui.countdownLabel ?? undefined} /> : <div className="text-center"><p className="font-display text-base uppercase tracking-[0.14em] text-gradient-primary">{ui.headline}</p><p className="mt-1.5 text-[11px] text-muted-foreground">{ui.note}</p></div>}
