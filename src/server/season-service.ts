@@ -1,5 +1,5 @@
 import { type PoolClient } from "pg";
-import { query } from "@/server/db";
+import { query } from "./db.ts";
 
 export type DbSeason = {
   id: string;
