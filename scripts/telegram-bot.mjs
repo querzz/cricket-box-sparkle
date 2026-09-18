@@ -139,13 +139,13 @@ async function validatePreCheckout(query) {
   if (!userId || !seasonId) return { ok: false, error: "Недействительный заказ." };
 
   const db = await paymentDbQuery(
-    `SELECT st.amount,st.status,st.user_id::text AS user_id,u.telegram_id::text AS telegram_id,s.id::text AS season_id,s.state,s.paid_spin_price,s.paid_spin_enabled
+    `SELECT st.amount,st.status,st.user_id::text AS user_id,u.telegram_id::text AS telegram_id,s.id::text AS season_id,s.state,s.paid_spin_enabled
        FROM star_transactions st JOIN users u ON u.id=st.user_id JOIN seasons s ON s.id::text=$2
       WHERE st.payload->>'payload'=$1 ORDER BY st.created_at DESC LIMIT 1`,
     [payload, seasonId],
   );
   const row = db.rows[0];
-  if (!row || row.status !== "PENDING" || row.user_id !== userId || row.season_id !== seasonId || row.telegram_id !== String(query.from?.id ?? "") || Number(row.amount) !== amount || Number(row.paid_spin_price) !== amount || row.paid_spin_enabled !== true || !["ACTIVE", "ENDING"].includes(row.state)) {
+  if (!row || row.status !== "PENDING" || row.user_id !== userId || row.season_id !== seasonId || row.telegram_id !== String(query.from?.id ?? "") || Number(row.amount) !== amount || row.paid_spin_enabled !== true || !["ACTIVE", "ENDING"].includes(row.state)) {
     return { ok: false, error: "Заказ недействителен или сезон уже недоступен." };
   }
 
