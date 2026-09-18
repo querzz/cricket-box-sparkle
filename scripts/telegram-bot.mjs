@@ -273,8 +273,8 @@ async function handleMessage(message) {
     const admin = await isAdmin(message.from?.id);
     const rows = [[appButton("")]];
     if (supportUsername) rows.push([{ text: "💬 Поддержка", url: `https://t.me/${supportUsername}` }]);
-    if (admin && /^\/start(?:\s|$)/i.test(textValue)) {
-      rows.push([{ text: "🛠 Админ-панель", ...appButton("/admin") }]);
+    if (admin) {
+      rows.push([{ ...appButton("/admin"), text: "🛠 Админ-панель" }]);
     }
     await sendMessage(
       chatId,
