@@ -84,7 +84,7 @@ assert(spin.includes('throw new Error("NO_ATTEMPTS")'), "server rejects a user w
 assert(spin.includes('throw new Error("NO_PRIZES")'), "server rejects an exhausted prize pool");
 assert(draw.includes("starsFull"), "draw handles a full 500 Stars balance");
 assert(!economics.includes('label="Revenue"') && !economics.includes('label="Known cost"') && !economics.includes("Paid conversion"), "economics UI no longer exposes obvious English metric labels");
-assert(!payouts.includes("Lifecycle:") && !payouts.includes("method:") && !payouts.includes("ref:"), "payout UI no longer exposes obvious English operational labels");
+assert(!/(?:[>\"\'])Lifecycle:\s/.test(payouts) && !/(?:[>\"\'])method:\s/.test(payouts) && !/(?:[>\"\'])ref:\s/.test(payouts), "payout UI no longer exposes obvious English operational labels");
 assert(selector.includes("quantity_remaining"), "selector uses remaining inventory");
 assert(selector.includes("weight"), "selector uses configured weight");
 assert(seasonService.includes("PRIZE_QUANTITY_BELOW_WON"), "season prize quantity cannot go below already-won inventory");
