@@ -6,6 +6,7 @@ import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { Sparkles } from "@/components/kit/Sparkles";
 import { cn } from "@/lib/utils";
 import type { Reward } from "@/lib/types";
+import { t } from "@/lib/i18n";
 
 interface Props {
   reward: Reward | null;
@@ -34,16 +35,22 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
   const empty = reward.kind === "EMPTY" || reward.kind === "NOTHING";
   const uncredited = reward.uncreditedAmount ?? 0;
   const capped = reward.kind === "STARS" && uncredited > 0;
-  const eyebrow = !revealed ? "Открываем коробку" : empty ? "Не повезло" : reward.kind === "XP" ? "Награда за активность" : "Вы выиграли";
-  const subtitle = !revealed
-    ? "Секунду…"
+  const eyebrow = !revealed
+    ? t("rewards.opening")
     : empty
-      ? "Коробка оказалась пустой. Попробуй снова завтра."
+      ? t("rewards.unlucky")
       : reward.kind === "XP"
-        ? `Опыт +${reward.amount ?? 0} XP. Уровень прокачивается автоматически.`
+        ? t("rewards.activityReward")
+        : t("rewards.wonTitle");
+  const subtitle = !revealed
+    ? t("rewards.moment")
+    : empty
+      ? t("rewards.emptySubtitle")
+      : reward.kind === "XP"
+        ? t("rewards.xpSubtitle", { amount: reward.amount ?? 0 })
         : reward.kind === "FREE_SPIN"
-          ? "Бонусная прокрутка сохранена — её можно использовать после основной ежедневной попытки."
-          : (reward.subtitle ?? "Поздравляем!");
+          ? t("rewards.freeSpinSubtitle")
+          : (reward.subtitle ?? t("rewards.congratulations"));
 
   return (
     <Modal open onClose={onClaim} className="text-center">
@@ -79,19 +86,19 @@ export function RewardModal({ reward, onClaim, onSpinAgain, spinAgainDisabled, c
 
         {revealed && capped && (
           <div className="mt-4 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-left">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-warning">Достигнут лимит баланса</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-warning">{t("rewards.balanceCap")}</p>
             <dl className="mt-2 space-y-1 text-[11px]">
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Награда</dt><dd className="font-semibold">{reward.amount} Stars</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Зачислено</dt><dd className="font-semibold">{reward.creditedAmount ?? 0} Stars</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Не зачислено</dt><dd className="font-semibold text-warning">{uncredited} Stars</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{t("rewards.emptyReward")}</dt><dd className="font-semibold">{reward.amount} Stars</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{t("rewards.credited")}</dt><dd className="font-semibold">{reward.creditedAmount ?? 0} Stars</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{t("rewards.notCredited")}</dt><dd className="font-semibold text-warning">{uncredited} Stars</dd></div>
             </dl>
-            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Потрать Stars, чтобы освободить место для новых наград.</p>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">{t("rewards.spendToFreeSpace")}</p>
           </div>
         )}
 
         <div className="mt-6 space-y-2">
-          <PrimaryButton fullWidth size="lg" loading={claiming} disabled={!revealed} onClick={onClaim}>{empty ? "Закрыть" : "Забрать"}</PrimaryButton>
-          {onSpinAgain && <PrimaryButton variant="ghost" fullWidth disabled={spinAgainDisabled || claiming || !revealed} onClick={onSpinAgain}>Крутить ещё</PrimaryButton>}
+          <PrimaryButton fullWidth size="lg" loading={claiming} disabled={!revealed} onClick={onClaim}>{empty ? t("common.close") : t("common.claim")}</PrimaryButton>
+          {onSpinAgain && <PrimaryButton variant="ghost" fullWidth disabled={spinAgainDisabled || claiming || !revealed} onClick={onSpinAgain}>{t("rewards.spinAgain")}</PrimaryButton>}
         </div>
       </div>
     </Modal>
