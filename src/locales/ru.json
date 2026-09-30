@@ -30,14 +30,46 @@
     "retry": "Повторить",
     "loading": "Загрузка",
     "processing": "Обработка",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "networkError": "Ошибка сети",
+    "networkErrorDescription": "Не удалось связаться с сервером Cricket Box. Проверь соединение и попробуй ещё раз.",
+    "unknownError": "Неизвестная ошибка"
   },
   "stars": {
     "full": "Баланс Stars заполнен. Следующие Stars-награды будут ограничены при выдаче до освобождения места.",
     "description": "Баланс Stars CRICKET BOX. Максимум — 500."
   },
   "rewards": {
-    "won": "Выиграно"
+    "won": "Выиграно",
+    "opening": "Открываем коробку",
+    "unlucky": "Не повезло",
+    "activityReward": "Награда за активность",
+    "wonTitle": "Вы выиграли",
+    "moment": "Секунду…",
+    "congratulations": "Поздравляем!",
+    "emptySubtitle": "Коробка оказалась пустой. Попробуй снова завтра.",
+    "xpSubtitle": "Опыт +{{amount}} XP. Уровень прокачивается автоматически.",
+    "freeSpinSubtitle": "Бонусная прокрутка сохранена — её можно использовать после основной ежедневной попытки.",
+    "balanceCap": "Достигнут лимит баланса",
+    "credited": "Зачислено",
+    "notCredited": "Не зачислено",
+    "emptyReward": "Награда",
+    "spendToFreeSpace": "Потрать Stars, чтобы освободить место для новых наград.",
+    "spinAgain": "Крутить ещё"
+  },
+  "withdrawal": {
+    "title": "Вывод Stars",
+    "balanceNotice": "Stars CRICKET BOX — это не ваши личные Telegram Stars.",
+    "unavailableNotice": "Вывод откроется после перехода сезона в этап выдачи призов.",
+    "amount": "Сумма",
+    "max": "Макс.",
+    "available": "Минимум: {{minimum}} Stars. Доступно: {{balance}} Stars.",
+    "paymentNotice": "Платёжные данные не хранятся в приложении. После проверки выплаты обрабатывает администратор.",
+    "confirmQuestion": "Запросить вывод {{amount}} Stars?",
+    "back": "Назад"
+  },
+  "states": {
+    "errorDescription": "Не удалось связаться с сервером Cricket Box. Проверь соединение и попробуй ещё раз."
   },
   "draw": {
     "seasonFinished": "Сезон завершён",
@@ -51,5 +83,25 @@
   },
   "errors": {
     "network": "Не удалось связаться с сервером. Проверь соединение и попробуй ещё раз."
+  },
+  "rewardStatus": {
+    "pending": "Ожидает",
+    "received": "Получен",
+    "problem": "Проблема"
+  },
+  "withdrawalStatus": {
+    "pending": "Ожидает",
+    "processing": "Обрабатывается",
+    "paid": "Выплачено",
+    "rejected": "Отклонено"
+  },
+  "seasonStatus": {
+    "draft": "Черновик",
+    "scheduled": "Скоро старт",
+    "active": "Активен",
+    "ending": "Скоро конец",
+    "closed": "Сезон завершён",
+    "payout": "Выдача призов",
+    "archived": "В архиве"
   }
 }
