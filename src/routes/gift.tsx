@@ -17,9 +17,9 @@ import { isServiceError, useSession } from "@/store/session";
 export const Route = createFileRoute("/gift")({
   head: () => ({ meta: [
     { title: "Ежедневный подарок — CRICKET BOX" },
-    { name: "description", content: "Открывай случайный ежедневный подарок Cricket Box раз в 24 часа." },
+    { name: "description", content: t("gift.cadence") },
     { property: "og:title", content: "Ежедневный подарок — CRICKET BOX" },
-    { property: "og:description", content: "Случайная награда с разными шансами каждый день." },
+    { property: "og:description", content: t("gift.description") },
     { property: "og:type", content: "website" },
     { name: "twitter:card", content: "summary_large_image" },
   ] }),
@@ -78,7 +78,7 @@ function GiftScreen() {
 
       <div className="mt-7 space-y-3">
         <PrimaryButton fullWidth size="lg" loading={busy} disabled={!available} onClick={() => void open()}>{available ? "Открыть коробку" : snapshot.gift.state === "COOLDOWN" ? "Получено" : "Недоступно"}</PrimaryButton>
-        {!ui.canClaimGift && snapshot.gift.state !== "COOLDOWN" && <NoticeBar tone="warning">Проверь подписку, участие и состояние текущего сезона.</NoticeBar>}
+        {!ui.canClaimGift && snapshot.gift.state !== "COOLDOWN" && <NoticeBar tone="warning">{t("gift.checkAccess")}</NoticeBar>}
         <p className="text-center text-[11px] text-muted-foreground">Раз в 24 часа · внутри могут быть Stars, бесплатные прокрутки, XP или ничего.</p>
       </div>
       <RewardModal reward={reward} onClaim={() => setReward(null)} />
