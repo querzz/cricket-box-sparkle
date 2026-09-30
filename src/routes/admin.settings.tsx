@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/settings")({
   head: () => ({ meta: [{ title: "Настройки — CRICKET BOX" }] }),
@@ -47,7 +48,7 @@ function AdminSettings() {
       setMechanicsEnabledCount(enabled.filter(Boolean).length);
       setMechanicsTotal(enabled.length);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось загрузить настройки.");
+      setError(e instanceof Error ? e.message : t("settingsAdmin.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -66,19 +67,19 @@ function AdminSettings() {
         body: JSON.stringify({ initData: initData(), enabled: !veteranEnabled }),
       });
       setVeteranEnabled(data.enabled === true);
-      setMessage(data.enabled ? "Бонусы ветеранов включены." : "Бонусы ветеранов выключены.");
+      setMessage(data.enabled ? t("settingsAdmin.veteranEnabled") : t("settingsAdmin.veteranDisabled"));
     } catch (e) {
-      setError(e instanceof Error && e.message === "OWNER_ONLY" ? "Только владелец может менять бонусы ветеранов." : "Не удалось изменить настройку.");
+      setError(e instanceof Error && e.message === "OWNER_ONLY" ? t("settingsAdmin.ownerOnly") : t("settingsAdmin.updateFailed"));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <AppShell title="Настройки" nav={false}>
+    <AppShell title={t("settingsAdmin.title")} nav={false}>
       <div className="space-y-4 pb-8">
         <Link to="/admin" className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
-          <ArrowLeft className="size-3.5" /> Админ-панель
+          <ArrowLeft className="size-3.5" /> {t("settingsAdmin.back")}
         </Link>
 
         <GlassCard className="px-4 py-4" glow>
@@ -87,26 +88,26 @@ function AdminSettings() {
               <Settings2 className="size-5 text-primary-glow" />
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Системные настройки</p>
-              <h1 className="mt-1 font-display text-xl uppercase">Настройки CRICKET BOX</h1>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Здесь собраны настройки, которые действуют между сезонами. Сезонная экономика и призы остаются в своих разделах.</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">{t("settingsAdmin.system")}</p>
+              <h1 className="mt-1 font-display text-xl uppercase">{t("settingsAdmin.heading")}</h1>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("settingsAdmin.description")}</p>
             </div>
           </div>
         </GlassCard>
 
         {loading ? (
-          <GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Загрузка настроек…</GlassCard>
+          <GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">{t("settingsAdmin.loading")}</GlassCard>
         ) : (
           <>
             <GlassCard className="px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold">Бонусы ветеранов</p>
-                  <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Отдельная V2-система бонусных попыток для пользователей с историей нескольких завершённых сезонов.</p>
-                  <p className="mt-2 text-[10px] font-semibold">{veteranEnabled ? "Сейчас включены" : "Сейчас выключены"}</p>
+                  <p className="text-sm font-semibold">{t("settingsAdmin.veteran")}</p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t("settingsAdmin.veteranDescription")}</p>
+                  <p className="mt-2 text-[10px] font-semibold">{veteranEnabled ? t("settingsAdmin.enabledNow") : t("settingsAdmin.disabledNow")}</p>
                 </div>
                 <button disabled={saving} type="button" onClick={() => void toggleVeteran()} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[10px] font-semibold">
-                  <Power className="size-3.5" /> {veteranEnabled ? "Выключить" : "Включить"}
+                  <Power className="size-3.5" /> {veteranEnabled ? t("settingsAdmin.disable") : t("settingsAdmin.enable")}
                 </button>
               </div>
             </GlassCard>
@@ -118,8 +119,8 @@ function AdminSettings() {
                     <Sparkles className="size-5 text-primary-glow" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">Развлекательные механики</p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">{mechanicsEnabledCount} из {mechanicsTotal} механик включено · передача подарков и мини-игры</p>
+                    <p className="text-sm font-semibold">{t("settingsAdmin.mechanics")}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">{t("settingsAdmin.mechanicsDescription", { enabled: mechanicsEnabledCount, total: mechanicsTotal })}</p>
                   </div>
                   <ChevronRight className="size-4 text-muted-foreground" />
                 </div>
@@ -127,7 +128,7 @@ function AdminSettings() {
             </Link>
 
             <GlassCard className="px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">
-              Планировщик экономики, цены платной прокрутки, призовой фонд и сезонные даты намеренно не дублируются здесь, чтобы не создавать два источника правды.
+              {t("settingsAdmin.globalNotice")}
             </GlassCard>
           </>
         )}
