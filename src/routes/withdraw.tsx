@@ -12,6 +12,7 @@ import { WithdrawalModal } from "@/components/kit/WithdrawalModal";
 import { formatDate } from "@/lib/format";
 import { errorCopy, seasonUi } from "@/lib/season";
 import { isServiceError, useSession } from "@/store/session";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/withdraw")({
   head: () => ({ meta: [
@@ -31,8 +32,8 @@ function WithdrawScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  if (loading && !snapshot) return <AppShell title="Вывод" back="/profile" nav={false}><LoadingState label="Загрузка" /></AppShell>;
-  if (!snapshot) return <AppShell title="Вывод" back="/profile" nav={false}><ErrorState title="Ошибка сети" description={error?.message ?? "Не удалось подключиться к серверу. Попробуйте ещё раз."} onRetry={() => void refresh()} /></AppShell>;
+  if (loading && !snapshot) return <AppShell title={t("withdrawal.title").replace(" Stars","")} back="/profile" nav={false}><LoadingState label={t("common.loading")} /></AppShell>;
+  if (!snapshot) return <AppShell title="Вывод" back="/profile" nav={false}><ErrorState title={t("common.networkError")} description={error?.message ?? t("withdrawal.networkError")} onRetry={() => void refresh()} /></AppShell>;
 
   const ui = seasonUi(snapshot);
   const pendingWithdrawal = snapshot.withdrawals.find((w) => w.status === "PENDING" || w.status === "PROCESSING");
@@ -45,7 +46,7 @@ function WithdrawScreen() {
       const result = await requestWithdrawal(amount);
       if (isServiceError(result)) { setFormError(errorCopy(result.code)); return; }
       setOpen(false);
-      toast.success("Запрос на вывод отправлен");
+      toast.success(t("withdrawal.sent"));
       await refresh();
     } finally {
       setSubmitting(false);
@@ -55,21 +56,21 @@ function WithdrawScreen() {
   return (
     <AppShell title="Вывод" back="/profile" nav={false}>
       <GlassCard className="px-4 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Баланс CRICKET BOX</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{t("withdrawal.balanceTitle")}</p>
         <StarsBalance balance={snapshot.stars} size="lg" showProgress className="mt-2" />
-        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Stars начисляются и учитываются реестром CRICKET BOX. Платные прокрутки оплачиваются отдельно через Telegram Stars (XTR).</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{t("withdrawal.balanceDescription")}</p>
         <PrimaryButton fullWidth className="mt-4" disabled={!ui.canWithdraw || snapshot.stars.amount < snapshot.withdrawalMinimum || Boolean(pendingWithdrawal) || submitting} onClick={() => setOpen(true)}>
           {pendingWithdrawal ? "Вывод уже на проверке" : submitting ? "Отправляем…" : "Вывести"}
         </PrimaryButton>
-        {!ui.canWithdraw && <p className="mt-3 text-center text-[11px] text-muted-foreground">Вывод откроется после завершения сезона.</p>}
-        {pendingWithdrawal && <NoticeBar tone="warning" className="mt-3">Заявка на {pendingWithdrawal.amount} Stars уже отправлена. Дождись её обработки — повторно списывать баланс не нужно.</NoticeBar>}
+        {!ui.canWithdraw && <p className="mt-3 text-center text-[11px] text-muted-foreground">{t("withdrawal.unavailableShort")}</p>}
+        {pendingWithdrawal && <NoticeBar tone="warning" className="mt-3">{t("withdrawal.pendingNotice", { amount: pendingWithdrawal.amount })}</NoticeBar>}
       </GlassCard>
 
-      <NoticeBar className="mt-3">Минимальная сумма вывода: {snapshot.withdrawalMinimum} Stars. Все начисления Stars отражаются в реестре CRICKET BOX и предназначены для последующего вывода.</NoticeBar>
+      <NoticeBar className="mt-3">{t("withdrawal.minimumNotice", { minimum: snapshot.withdrawalMinimum })}</NoticeBar>
 
-      <h2 className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Запросы на вывод</h2>
+      <h2 className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t("withdrawal.requestsTitle")}</h2>
       <div className="mt-3 space-y-2.5">
-        {snapshot.withdrawals.length === 0 ? <EmptyState title="Запросов пока нет" description="Здесь появятся ваши запросы на вывод." /> : snapshot.withdrawals.map((w) => (
+        {snapshot.withdrawals.length === 0 ? <EmptyState title={t("withdrawal.emptyTitle")} description={t("withdrawal.emptyDescription")} /> : snapshot.withdrawals.map((w) => (
           <GlassCard key={w.id} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{w.amount} Stars</p>
