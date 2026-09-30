@@ -4,6 +4,21 @@ import pg from "pg";
 
 const { Client } = pg;
 
+async function loadEnv() {
+  const envPath = path.resolve(process.cwd(), ".env");
+  const text = await fs.readFile(envPath, "utf8").catch(() => "");
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const index = trimmed.indexOf("=");
+    if (index <= 0) continue;
+    const key = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim().replace(/^['\"]|['\"]$/g, "");
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+await loadEnv();
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
 process.env.TELEGRAM_BOT_TOKEN ??= "payment-recovery-test-token";
