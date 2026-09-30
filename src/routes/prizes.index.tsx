@@ -6,11 +6,12 @@ import { RewardCard } from "@/components/kit/RewardCard";
 import { EmptyState, ErrorState, LoadingState } from "@/components/kit/States";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/store/session";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/prizes/")({
   head: () => ({ meta: [
-    { title: "Мои призы — CRICKET BOX" },
-    { name: "description", content: "История всех призов, выигранных в текущем сезоне Cricket Box." },
+    { title: t("prizes.title") + " — CRICKET BOX" },
+    { name: "description", content: t("prizes.description") },
     { property: "og:title", content: "Мои призы — CRICKET BOX" },
     { property: "og:description", content: "Ожидающие и полученные призы Cricket Box." },
     { property: "og:type", content: "website" },
@@ -20,9 +21,9 @@ export const Route = createFileRoute("/prizes/")({
 });
 
 const tabs = [
-  { id: "ALL", label: "Все" },
-  { id: "PENDING", label: "Ожидают" },
-  { id: "RECEIVED", label: "Получены" },
+  { id: "ALL", label: t("prizes.all") },
+  { id: "PENDING", label: t("prizes.pending") },
+  { id: "RECEIVED", label: t("prizes.received") },
 ] as const;
 
 function PrizesScreen() {
@@ -34,7 +35,7 @@ function PrizesScreen() {
     [snapshot, tab],
   );
 
-  if (loading && !snapshot) return <AppShell title="Мои призы"><LoadingState /></AppShell>;
+  if (loading && !snapshot) return <AppShell title={t("prizes.title")}><LoadingState /></AppShell>;
   if (!snapshot) return <AppShell title="Мои призы"><ErrorState onRetry={() => void refresh()} description={error?.message} /></AppShell>;
 
   return (
@@ -43,9 +44,9 @@ function PrizesScreen() {
         {tabs.map((t) => <button key={t.id} type="button" onClick={() => setTab(t.id)} className={cn("press rounded-full py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors", tab === t.id ? "text-primary-foreground [background-image:var(--gradient-primary)]" : "text-muted-foreground")}>{t.label}</button>)}
       </div>
       <div className="mt-4 space-y-2.5">
-        {rewards.length === 0 ? <EmptyState title="Здесь пока пусто" description="Крути Cricket Box, чтобы выиграть свой первый приз в этом сезоне." /> : rewards.map((reward) => <RewardCard key={reward.id} reward={reward} />)}
+        {rewards.length === 0 ? <EmptyState title={t("prizes.emptyTitle")} description={t("prizes.emptyDescription")} /> : rewards.map((reward) => <RewardCard key={reward.id} reward={reward} />)}
       </div>
-      <h2 className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Призовой фонд сезона</h2>
+      <h2 className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t("prizes.seasonPool")}</h2>
       <PrizePool prizes={snapshot.prizes} className="mt-3" />
     </AppShell>
   );
