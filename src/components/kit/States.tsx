@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 import { GlassCard } from "@/components/kit/GlassCard";
 import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
-export function LoadingState({ label = "Загрузка", className }: { label?: string; className?: string }) {
+export function LoadingState({ label = t("common.loading"), className }: { label?: string; className?: string }) {
   return (
     <div className={cn("flex flex-col items-center justify-center gap-3 py-16", className)}>
       <Loader2 className="size-7 animate-spin text-primary" />
@@ -32,8 +33,8 @@ export function EmptyState({ title, description, icon, action }: { title: string
 }
 
 export function ErrorState({
-  title = "Ошибка сети",
-  description = "Не удалось связаться с сервером Cricket Box. Проверь соединение и попробуй ещё раз.",
+  title = t("common.networkError"),
+  description = t("common.networkErrorDescription"),
   onRetry,
 }: { title?: string; description?: string; onRetry?: () => void }) {
   return (
@@ -43,7 +44,7 @@ export function ErrorState({
         <h3 className="font-display text-sm uppercase tracking-[0.16em]">{title}</h3>
         <p className="mt-1.5 text-xs text-muted-foreground">{description}</p>
       </div>
-      {onRetry && <PrimaryButton variant="outline" onClick={onRetry}>Повторить</PrimaryButton>}
+      {onRetry && <PrimaryButton variant="outline" onClick={onRetry}>{t("common.retry")}</PrimaryButton>}
     </GlassCard>
   );
 }
