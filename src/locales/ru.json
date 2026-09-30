@@ -66,7 +66,20 @@
     "available": "Минимум: {{minimum}} Stars. Доступно: {{balance}} Stars.",
     "paymentNotice": "Платёжные данные не хранятся в приложении. После проверки выплаты обрабатывает администратор.",
     "confirmQuestion": "Запросить вывод {{amount}} Stars?",
-    "back": "Назад"
+    "back": "Назад",
+    "sent": "Запрос на вывод отправлен",
+    "networkError": "Не удалось подключиться к серверу. Попробуйте ещё раз.",
+    "balanceTitle": "Баланс CRICKET BOX",
+    "balanceDescription": "Stars начисляются и учитываются реестром CRICKET BOX. Платные прокрутки оплачиваются отдельно через Telegram Stars (XTR).",
+    "pendingButton": "Вывод уже на проверке",
+    "sendingButton": "Отправляем…",
+    "withdrawButton": "Вывести",
+    "unavailableShort": "Вывод откроется после завершения сезона.",
+    "pendingNotice": "Заявка на {{amount}} Stars уже отправлена. Дождись её обработки — повторно списывать баланс не нужно.",
+    "minimumNotice": "Минимальная сумма вывода: {{minimum}} Stars. Все начисления Stars отражаются в реестре CRICKET BOX и предназначены для последующего вывода.",
+    "requestsTitle": "Запросы на вывод",
+    "emptyTitle": "Запросов пока нет",
+    "emptyDescription": "Здесь появятся ваши запросы на вывод."
   },
   "states": {
     "errorDescription": "Не удалось связаться с сервером Cricket Box. Проверь соединение и попробуй ещё раз."
