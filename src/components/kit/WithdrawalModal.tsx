@@ -5,6 +5,7 @@ import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { NoticeBar } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
 import type { StarsBalance as StarsBalanceModel } from "@/lib/types";
+import { t } from "@/lib/i18n";
 
 interface Props {
   open: boolean;
@@ -36,9 +37,9 @@ export function WithdrawalModal({
     <Modal open={open} onClose={submitting ? undefined : onClose} dismissible={!submitting}>
       <div className="space-y-5">
         <div className="text-center">
-          <h2 className="font-display text-base uppercase tracking-[0.18em]">Вывод Stars</h2>
+          <h2 className="font-display text-base uppercase tracking-[0.18em]">{t("withdrawal.title")}</h2>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
-            Stars CRICKET BOX — это не ваши личные Telegram Stars.
+            {t("withdrawal.balanceNotice")}
           </p>
         </div>
 
@@ -46,7 +47,7 @@ export function WithdrawalModal({
 
         {!allowed ? (
           <NoticeBar tone="warning">
-            Вывод откроется после перехода сезона в этап выдачи призов.
+            {t("withdrawal.unavailableNotice")}
           </NoticeBar>
         ) : (
           <>
@@ -55,7 +56,7 @@ export function WithdrawalModal({
                 htmlFor="withdraw-amount"
                 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >
-                Сумма
+                {t("withdrawal.amount")}
               </label>
               <input
                 id="withdraw-amount"
@@ -75,28 +76,28 @@ export function WithdrawalModal({
                     onClick={() => setAmount(preset)}
                     className="press rounded-full border border-glass-border bg-muted/40 px-3 py-1.5 text-[11px]"
                   >
-                    {i === 2 ? "Макс." : preset}
+                    {i === 2 ? t("withdrawal.max") : preset}
                   </button>
                 ))}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Минимум: {minimum} Stars. Доступно: {balance.amount} Stars.
+                {t("withdrawal.available", { minimum, balance: balance.amount })}
               </p>
             </div>
 
             {error && <NoticeBar tone="danger">{error}</NoticeBar>}
 
             <NoticeBar>
-              Платёжные данные не хранятся в приложении. После проверки выплаты обрабатывает администратор.
+              {t("withdrawal.paymentNotice")}
             </NoticeBar>
 
             {confirming ? (
               <div className="space-y-2">
                 <p className="text-center text-xs text-muted-foreground">
-                  Запросить вывод {amount} Stars?
+                  {t("withdrawal.confirmQuestion", { amount })}
                 </p>
                 <PrimaryButton fullWidth loading={submitting} onClick={() => onSubmit(amount)}>
-                  {submitting ? "Обработка" : "Подтвердить"}
+                  {submitting ? t("common.processing") : t("common.confirm")}
                 </PrimaryButton>
                 <PrimaryButton
                   variant="ghost"
@@ -104,12 +105,12 @@ export function WithdrawalModal({
                   disabled={submitting}
                   onClick={() => setConfirming(false)}
                 >
-                  Назад
+                  {t("withdrawal.back")}
                 </PrimaryButton>
               </div>
             ) : (
               <PrimaryButton fullWidth disabled={!valid} onClick={() => setConfirming(true)}>
-                Продолжить
+                {t("common.continue")}
               </PrimaryButton>
             )}
           </>
