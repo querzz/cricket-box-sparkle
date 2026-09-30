@@ -72,10 +72,10 @@ const payouts = await read("src/routes/admin.payouts.tsx");
 const i18n = await read("src/lib/i18n.ts");
 const ru = await read("src/locales/ru.json");
 
-assert(draw.includes("Подпишись на канал, чтобы получить бесплатную попытку"), "draw explains subscription before free spin");
+assert(draw.includes('t("draw.subscriptionPrompt")'), "draw uses the translated subscription prompt");
 assert(draw.includes("!snapshot.user.isSubscribed"), "draw checks subscription before showing free-spin availability");
 assert(draw.includes("snapshot.user.isSubscribed && freeSpins <= 0"), "used-free-spin warning is only shown to subscribed users");
-assert(home.includes("Подпишись на канал, чтобы получить бесплатную попытку и участвовать в сезоне."), "home explains subscription before attempt count");
+assert(home.includes('t("home.unsubscribedNote")'), "home uses the translated subscription requirement");
 assert(session.includes("dailyAvailable = season.daily_free_spin && live && isSubscribed && isParticipant"), "session grants daily free spin only to eligible subscribed participants");
 assert(session.includes("freeSpins = dailyAvailable + bonusFreeSpins"), "session composes available free spins from server state");
 assert(seasonUi.includes("const finished = state === \"CLOSED\" || state === \"PAYOUT\" || state === \"ARCHIVED\""), "finished season states are handled");
@@ -90,6 +90,15 @@ assert(selector.includes("weight"), "selector uses configured weight");
 assert(seasonService.includes("PRIZE_QUANTITY_BELOW_WON"), "season prize quantity cannot go below already-won inventory");
 assert(seasonService.includes("paidSpinEnabled === true"), "paid-spin re-enable guard remains explicit");
 assert(!seasonService.includes("PAID_SPIN_PRICE_LOCKED"), "paid-spin price is no longer locked by season usage");
+const translationPaths = [...userRoutes, "src/components/kit/RewardModal.tsx", "src/components/kit/WithdrawalModal.tsx", "src/components/kit/States.tsx", "src/components/kit/StatusBadge.tsx"];
+const translations = JSON.parse(ru);
+const getTranslation = (path) => path.split(".").reduce((value, key) => value && typeof value === "object" ? value[key] : undefined, translations);
+for (const file of translationPaths) {
+  const source = await read(file);
+  for (const match of source.matchAll(/\bt\(\s*["']([^"']+)["']/g)) {
+    assert(typeof getTranslation(match[1]) === "string", `Russian translation key exists: ${file} → ${match[1]}`);
+  }
+}
 assert(ru.includes('"draw"'), "Russian draw translations exist");
 assert(i18n.includes("export function t"), "translation helper exists");
 assert(bot.includes("getUpdates"), "bot polling exists");
