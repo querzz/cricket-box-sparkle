@@ -149,5 +149,20 @@ for (const label of requiredAdminLabels) {
   assert(adminDashboard.includes(label) || adminSettings.includes(label), `admin UI exposes ${label}`);
 }
 
+assert(veteranUi.includes('placeholder="Telegram ID"') && veteranUi.includes('value={manualTier}'), "veteran UI exposes direct Telegram ID + rank assignment control");
+assert(veteranUi.includes("rankError(") && veteranUi.includes("Проверь Telegram ID и выбранный ранг."), "veteran UI surfaces actionable rank errors");
+const adminSettings = await read("src/routes/admin.settings.tsx");
+assert(adminSettings.includes('role?: "OWNER" | "ADMIN"') && adminSettings.includes('veteranRole !== "OWNER"'), "admin settings keeps veteran system toggle owner-only");
+assert(selector.includes("getAntiStreakMultiplier") && selector.includes("1 / pityMultiplier"), "EMPTY anti-streak multiplier counteracts long EMPTY streaks");
+const prizeAdmin = await read("src/routes/admin.prizes.tsx");
+assert(prizeAdmin.includes('[5,10,15,20].map'), "prize editor exposes 5/10/15/20 chance presets");
+assert(prizeAdmin.includes('draft.kind === "EMPTY"') && prizeAdmin.includes("desiredEmptyMass"), "chance presets adjust EMPTY mass while preserving reward weights");
+assert(prizeAdmin.includes('label="NFT"') && prizeAdmin.includes('draft.kind === "NFT"'), "prize editor exposes dedicated NFT configuration");
+assert(!prizeAdmin.includes("Картинка URL"), "prize editor does not expose the legacy image URL field");
+assert(prizeAdmin.includes("Себестоимость") && prizeAdmin.includes("не для определения шанса"), "prize economics field is clearly separated from probability");
+assert(bot.includes("countedComments >= 20") && bot.includes("(countedComments + 1) % 2 === 0"), "channel activity enforces 20 counted comments/day and 2 comments per point");
+assert(session.includes("const activityEnabled") && session.indexOf("grantActiveFreeSpinCampaigns") < session.indexOf("if (activityEnabled)"), "global free-spin campaign grant stays independent of activity accrual");
+assert(dailyGiftApi.includes("rewardChanceByTier") && adminSettings.includes("Шанс получить награду в Daily Gift"), "Daily Gift exposes one configurable chance per rank");
+
 console.log("✅ Product UX/Admin/Bot static QA passed");
 console.log(`Checked user routes: ${userRoutes.length}, admin views: ${adminRoutes.length}, admin APIs: ${adminApis.length}`);
