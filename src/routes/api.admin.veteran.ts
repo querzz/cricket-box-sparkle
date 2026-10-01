@@ -64,8 +64,8 @@ export const Route = createFileRoute("/api/admin/veteran")({
 
         if (typeof body.enabled !== "boolean") return Response.json({ok:false,code:"INVALID_ENABLED"},{status:400});
         await withTransaction(async(client)=>{
-          await client.query(\`INSERT INTO app_settings(key,value) VALUES('veteran_bonus',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()\`,[JSON.stringify({enabled:body.enabled})]);
-          await client.query(\`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'VETERAN_SYSTEM_UPDATED','setting','veteran_bonus',$2::jsonb)\`,[admin.id,JSON.stringify({enabled:body.enabled})]);
+          await client.query("INSERT INTO app_settings(key,value) VALUES('veteran_bonus',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()",[JSON.stringify({enabled:body.enabled})]);
+          await client.query("INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'VETERAN_SYSTEM_UPDATED','setting','veteran_bonus',$2::jsonb)",[admin.id,JSON.stringify({enabled:body.enabled})]);
         });
         return Response.json({ok:true,enabled:body.enabled});
       } catch (error) {
