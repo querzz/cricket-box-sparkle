@@ -28,9 +28,34 @@ const supportUsername = (process.env.TELEGRAM_SUPPORT_USERNAME || "").replace(/^
 const appUrl = process.env.APP_URL || "http://localhost:8081";
 const channelId = process.env.TELEGRAM_CHANNEL_ID || "";
 const databaseUrl = process.env.DATABASE_URL;
+if (!token) {
+  console.error("TELEGRAM_BOT_TOKEN is missing in .env");
+  process.exit(1);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { Client } = pg;
 
 let botLockClient = null;
+
+async function acquireBotLock() {
+  if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
+  botLockClient = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
+  await botLockClient.connect();
+  const result = await botLockClient.query("SELECT pg_try_advisory_lock(hashtext('cricket_box:telegram_bot')) AS locked");
+  if (!result.rows[0]?.locked) {
+    await botLockClient.end().catch(() => {});
+    botLockClient = null;
+    throw new Error("TELEGRAM_BOT_ALREADY_RUNNING");
+  }
+}
+
+async function releaseBotLock() {
+  if (!botLockClient) return;
+  await botLockClient.query("SELECT pg_advisory_unlock(hashtext('cricket_box:telegram_bot'))").catch(() => {});
+  await botLockClient.end().catch(() => {});
+  botLockClient = null;
+}
 async function api(method, body = {}, retries = 5) {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
