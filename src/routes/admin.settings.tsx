@@ -12,6 +12,7 @@ export const Route = createFileRoute("/admin/settings")({
 });
 
 type VeteranApi = { ok: boolean; enabled?: boolean; code?: string };
+type DailyGiftApi = { ok: boolean; config?: { rewardChanceByTier: { ROOKIE: number; VETERAN: number; ELITE: number } }; code?: string };
 type MechanicsApi = { ok: boolean; settings?: { enabled: Record<string, boolean>; passCount: number; failureText: string; confirm: boolean }; code?: string };
 
 function initData() {
@@ -30,6 +31,7 @@ function AdminSettings() {
   const [veteranEnabled, setVeteranEnabled] = useState(false);
   const [mechanicsEnabledCount, setMechanicsEnabledCount] = useState(0);
   const [mechanicsTotal, setMechanicsTotal] = useState(0);
+  const [giftChance, setGiftChance] = useState({ ROOKIE: 60, VETERAN: 70, ELITE: 80 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -42,11 +44,13 @@ function AdminSettings() {
       const [veteran, mechanics] = await Promise.all([
         request<VeteranApi>(`/api/admin/veteran?initData=${encodeURIComponent(initData())}`),
         request<MechanicsApi>(`/api/admin/mechanics?initData=${encodeURIComponent(initData())}`),
+        request<DailyGiftApi>(`/api/admin/daily-gift?initData=${encodeURIComponent(initData())}`),
       ]);
       setVeteranEnabled(veteran.enabled === true);
       const enabled = Object.values(mechanics.settings?.enabled ?? {});
       setMechanicsEnabledCount(enabled.filter(Boolean).length);
       setMechanicsTotal(enabled.length);
+      if (dailyGift.config?.rewardChanceByTier) setGiftChance(dailyGift.config.rewardChanceByTier);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("settingsAdmin.loadFailed"));
     } finally {
@@ -55,6 +59,25 @@ function AdminSettings() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function saveDailyGift() {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await request<DailyGiftApi>("/api/admin/daily-gift", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ initData: initData(), config: { rewardChanceByTier: giftChance } }),
+      });
+      if (response.config?.rewardChanceByTier) setGiftChance(response.config.rewardChanceByTier);
+      setMessage("Шансы Daily Gift сохранены.");
+    } catch (e) {
+      setError(e instanceof Error && e.message === "INVALID_DAILY_GIFT_CHANCE" ? "Шанс должен быть от 0% до 100%." : "Не удалось сохранить шансы Daily Gift.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function toggleVeteran() {
     setSaving(true);
@@ -99,6 +122,25 @@ function AdminSettings() {
           <GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">{t("settingsAdmin.loading")}</GlassCard>
         ) : (
           <>
+            <GlassCard className="px-4 py-4">
+              <div>
+                <p className="text-sm font-semibold">Шанс получить награду в Daily Gift</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Один общий шанс получить что-нибудь, а не отдельный вес для каждого подарка. После успеха конкретная награда выбирается из общего пула.</p>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {(["ROOKIE","VETERAN","ELITE"] as const).map((tier) => (
+                  <label key={tier} className="block">
+                    <span className="field-label">{tier === "ROOKIE" ? "Новичок" : tier === "VETERAN" ? "Ветеран" : "Элита"}</span>
+                    <div className="relative mt-1">
+                      <input type="number" min={0} max={100} step="1" value={giftChance[tier]} onChange={(e) => setGiftChance((current) => ({ ...current, [tier]: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }))} className="admin-input pr-8 text-center" />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">%</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <button disabled={saving} type="button" onClick={() => void saveDailyGift()} className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-primary/25 bg-primary/10 px-3 py-2.5 text-[10px] font-semibold">Сохранить шанс</button>
+            </GlassCard>
+
             <GlassCard className="px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
