@@ -563,6 +563,159 @@ Do not claim zero downtime without a real runtime/load test.
 
 ---
 
+## 11A. NEW DYNAMIC PRIZE BEHAVIOR (2026-10-01)
+
+The season selector now has the dynamic balancing that was discussed for the test season.
+
+### Player pity / anti-EMPTY
+
+The selector tracks a user's recent completed prize kinds.
+
+- First 0–2 consecutive EMPTY results: no pity boost.
+- From the 3rd consecutive EMPTY result onward, non-EMPTY prizes receive a pity multiplier.
+- The multiplier grows by 15% per additional EMPTY result, capped at 2.5×.
+- EMPTY receives the inverse anti-streak multiplier, so a long EMPTY streak shifts probability toward receiving something.
+
+The mechanic is applied server-side and is the same for free and paid spins.
+
+### Season inventory pacing
+
+The existing economy multiplier is now active inside the real selector.
+
+The multiplier compares how much of a prize has been consumed with how far the season has progressed:
+
+- a prize disappearing faster than the season pace is down-weighted;
+- a prize lagging behind the season pace is up-weighted;
+- exhausted inventory remains unavailable.
+
+This provides the intended dynamic balancing without using an online-user-count multiplier.
+
+The diagnostics written to the spin audit include the dynamic multipliers.
+
+Latest selector commit:
+```
+be7f71dca — feat: restore dynamic pity and economy prize balancing
+```
+
+## 11B. DAILY GIFT — SIMPLIFIED TIER CHANCE
+
+Daily Gift no longer treats the "chance of getting anything" as a separate weight for every reward.
+
+The model is now two-stage:
+
+1. Determine whether the user receives any non-EMPTY reward.
+2. If yes, select the concrete reward from the existing non-EMPTY reward pool.
+
+Configurable server-side values are stored in `app_settings.daily_gift`:
+
+```
+ROOKIE   60%
+VETERAN  70%
+ELITE    80%
+```
+
+These are defaults and can be changed from **Admin → System settings → Daily Gift**.
+
+The reward types inside the successful pool remain:
+
+- Stars: 10 / 15 / 25 / 50 / 100
+- FREE_SPIN: 1
+- XP: 25 / 50
+
+This keeps the admin UI simple: one percentage per tier instead of a large table of reward weights.
+
+A user's Daily Gift tier is normally taken from veteran history:
+
+- 0 completed previous seasons → ROOKIE
+- 2+ → VETERAN
+- 4+ → ELITE
+
+The current season is excluded when calculating historical veteran status.
+
+The owner can manually override the Daily Gift tier for an individual user to ROOKIE/VETERAN/ELITE from the Veteran admin screen. This is intended for test accounts and controlled product cases and is audited.
+
+Relevant commits:
+```
+b22c501f — feat: add tier-based daily gift odds
+ed7fd933 — fix: keep current season out of gift tier history
+771526df — feat: add per-user Daily Gift tier override
+6799983d — fix: repair veteran admin route syntax
+4c4c1854 — feat: add Daily Gift tier override control
+```
+
+## 11C. GLOBAL EXTRA FREE-SPIN CAMPAIGNS
+
+A separate LiveOps mechanism now exists for "today everyone gets an extra free spin" style campaigns.
+
+Admin route:
+```
+/admin/bonuses
+```
+
+A campaign has:
+
+- name
+- season
+- start time
+- end time
+- free spins per participant (1–20)
+- enabled/disabled state
+
+A participant receives the campaign reward at most once per campaign, enforced by a database unique constraint.
+
+Multiple campaigns can exist in one season, so the operator can schedule separate bonuses for the beginning, middle and end of the season.
+
+The bonus is lazily granted on an eligible session/spin while the campaign is active and is persisted in `bonus_free_spins`.
+
+Relevant implementation:
+```
+free_spin_campaigns
+free_spin_campaign_claims
+src/server/free-spin-campaigns.ts
+```
+
+## 11D. CHANNEL ACTIVITY RULES / SWITCH
+
+Channel Activity now has a server-side enable/disable setting.
+
+The intended MVP rule is:
+
+- 2 comments = 1 activity point.
+- Maximum 20 counted comments per user per day.
+- Therefore up to 10 activity points/day from comments.
+- 10 activity points = 1 automatic bonus spin.
+- Maximum 20 automatic activity bonus spins per season remains.
+
+The bot now attempts to record text messages from the channel's linked discussion chat as COMMENT activity. Comment processing is limited to the first 20 counted comments per day for each user, and the point is awarded on every second counted comment.
+
+The bot intentionally does not try to judge whether a comment is "meaningful" using AI. The product rule is communicated to users and moderation is manual.
+
+There is also an admin switch to pause new activity-point accrual. Existing bonus spins are not silently deleted.
+
+Telegram-specific operational prerequisite: the bot must actually receive discussion-group messages. Telegram's Bot API privacy rules mean a bot should be an administrator in the discussion group (or otherwise configured to receive the required messages). Reactions have a separate update path and are not currently used for point calculation.
+
+Relevant implementation:
+```
+src/routes/api.admin.channel-activity.ts
+src/routes/admin.channel-activity.tsx
+scripts/telegram-bot.mjs
+```
+
+## 11E. PRIZE EDITOR UX
+
+The admin prize editor was simplified:
+
+- dedicated NFT button
+- NFT value is displayed as estimated Stars value
+- "Weight" is now "Вес выпадения" with an explanation
+- image URL input removed from the visible form to reduce clutter (backend fields remain)
+- "Себестоимость" is explicitly described as an economics-only value and not part of selection probability
+
+Relevant commit:
+```
+1d5bed892 — feat: simplify prize editor and add NFT controls
+```
+
 ## 12. SECURITY / RELIABILITY NOTES
 
 Current protections include:
