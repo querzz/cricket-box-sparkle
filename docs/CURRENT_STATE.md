@@ -847,6 +847,10 @@ The first implementation pass introduced two JSX build errors in the new admin p
 - `admin.channel-activity.tsx`: repaired malformed nested JSX in the header.
 The web service should not be restarted from a failed build; deploy only after `npm run build` succeeds.
 
+A manual-rank bug was then found during the first real admin test: the override endpoint tried to update a non-existent `users.updated_at` column. That is fixed in `a78e534a`; the endpoint now updates only `veteran_tier_override`. The admin list also excludes the currently ACTIVE/ENDING season when calculating historical veteran rank, so current-season activity cannot promote a user prematurely.
+
+CI was strengthened after this audit: the PostgreSQL workflow now runs both `npm run build` and `npm run test:product-qa` before database integration tests.
+
 
 
 The latest feature work directly addresses the product feedback from testing:
@@ -877,6 +881,9 @@ c8e6af7af  repair veteran admin route delimiter
 6799983d  repair veteran admin route syntax
 c284718f7  load Daily Gift settings correctly
 4cd26d23a  update this handoff documentation
+a78e534a2  fix manual veteran rank assignment + historical rank query
+cd2a9a94c  test rank/Daily Gift/campaign admin coverage
+c4033131a  CI verifies production build + product QA
 ```
 
 The current Daily Gift defaults are intentionally conservative for the first test:
@@ -893,7 +900,8 @@ At the time this handoff was written:
 - npm 10.9.9: working
 - PostgreSQL: working
 - fresh database schema: initialized
-- production build: successful
+- last locally reported production build: successful
+- CI workflow now verifies the production build and static product QA
 - Nitro preset: `node-server`
 - web systemd service: active
 - bot systemd service: active
