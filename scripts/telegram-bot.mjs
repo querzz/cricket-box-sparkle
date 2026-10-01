@@ -30,6 +30,49 @@ const channelId = process.env.TELEGRAM_CHANNEL_ID || "";
 const databaseUrl = process.env.DATABASE_URL;
 const { Client } = pg;
 
+let botLockClient = null;
+const MAX_MESSAGE_HANDLERS = 10;
+const messageQueue = [];
+let activeMessageHandlers = 0;
+
+async function acquireBotLock() {
+  if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
+  botLockClient = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
+  await botLockClient.connect();
+  const result = await botLockClient.query("SELECT pg_try_advisory_lock(hashtext('cricket_box:telegram_bot')) AS locked");
+  if (!result.rows[0]?.locked) {
+    await botLockClient.end().catch(() => {});
+    botLockClient = null;
+    throw new Error("TELEGRAM_BOT_ALREADY_RUNNING");
+  }
+}
+
+async function releaseBotLock() {
+  if (!botLockClient) return;
+  await botLockClient.query("SELECT pg_advisory_unlock(hashtext('cricket_box:telegram_bot'))").catch(() => {});
+  await botLockClient.end().catch(() => {});
+  botLockClient = null;
+}
+
+function enqueueMessage(message) {
+  messageQueue.push(message);
+  drainMessageQueue();
+}
+
+function drainMessageQueue() {
+  while (activeMessageHandlers < MAX_MESSAGE_HANDLERS && messageQueue.length) {
+    const message = messageQueue.shift();
+    if (!message) break;
+    activeMessageHandlers += 1;
+    void handleMessage(message)
+      .catch((error) => console.error("Telegram message failed:", error))
+      .finally(() => {
+        activeMessageHandlers -= 1;
+        drainMessageQueue();
+      });
+  }
+}
+
 if (!token) {
   console.error("TELEGRAM_BOT_TOKEN is missing in .env");
   process.exit(1);
@@ -326,12 +369,16 @@ async function handleUpdate(update) {
   if (update?.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
   }
-  if (update?.message) {
-    await handleMessage(update.message);
-  }
 }
 
 async function pollTelegramUpdates() {
+  await acquireBotLock();
+  const shutdown = async () => {
+    await releaseBotLock();
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
   console.log(`🤖 @${botUsername} polling started`);
   await api("deleteWebhook", { drop_pending_updates: false }).catch((error) => {
     console.warn(`Telegram webhook cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -357,11 +404,11 @@ async function pollTelegramUpdates() {
       });
       for (const update of Array.isArray(updates) ? updates : []) {
         offset = Math.max(offset, Number(update.update_id) + 1);
-        try {
-          await handleUpdate(update);
-        } catch (error) {
-          console.error(`Telegram update ${update.update_id} failed:`, error);
+        if (update?.pre_checkout_query) {
+          void handleUpdate({ pre_checkout_query: update.pre_checkout_query })
+            .catch((error) => console.error(`Telegram pre-checkout ${update.update_id} failed:`, error));
         }
+        if (update?.message) enqueueMessage(update.message);
       }
     } catch (error) {
       console.error("Telegram polling failed:", error);
