@@ -1,6 +1,6 @@
 # CRICKET BOX — IMPLEMENTATION STATUS
 
-Updated: 2026-10-01
+Updated: 2026-10-01 (post-rank/QA fixes)
 Repository: `querzz/cricket-box-sparkle`
 
 ## Verified implemented
@@ -106,6 +106,7 @@ finalWeight = configuredWeight × quantityRemaining
 - Funnel, winner, conversion, repeat-user and D1/D7 retention metrics are exposed.
 - Admin routes exist for Dashboard, Seasons, Prizes, Participants, Spins, Payouts, Statistics, Access, Audit, Channel Activity, Veteran, Economics, Mechanics and Settings.
 - Admin Access supports OWNER/ADMIN management and ownership transfer.
+- Admin Veteran rank assignment (ROOKIE/VETERAN/ELITE) is available to active ADMIN and OWNER roles; the global veteran-system toggle remains OWNER-only.
 - Admin payout flow requires fulfillment references for individual PAID actions and keeps payout history immutable.
 - Admin prize/access/mechanics mutations are transactionally audited, and season/prize economics guards have regression coverage.
 - Mechanics input is validated server-side, including enum-like enabled keys, integer pass count, bounded text and actual boolean confirmation values.
@@ -126,7 +127,16 @@ The repository contains regression suites for database invariants, LiveOps, paym
 
 `npm run test:bot` checks bot polling, /start, /help, /paysupport, pre-checkout, payment settlement, refund handling and the admin button label; when `TELEGRAM_BOT_TOKEN` is present in local `.env`, it also performs a live `getMe` health check.
 
-Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Payment Security green before production readiness is declared.
+Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Payment Security green before production readiness is declared. The fixes after the 2026-10-01 screenshot review address the latest observed TypeScript errors and the Node module-resolution failure in the prize-probability test; a fresh current-head CI run is the final verification step.
+
+## 2026-10-01 QA fixes
+
+- Manual veteran rank assignment was incorrectly behind the OWNER guard; the per-user rank operation is now available to ADMIN and OWNER.
+- The separate global veteran bonus enable/disable setting remains OWNER-only.
+- /admin/bonuses season API response typing was corrected.
+- Veteran rank dropdown typing was corrected.
+- Prize probability regression test now imports season-economy through a Node-compatible relative path.
+- Product static QA checks the rank permission split.
 
 ## Recently added test-season controls
 
