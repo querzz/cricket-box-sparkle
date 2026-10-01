@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
+import { t } from "@/lib/i18n";
 
 import { assets } from "@/components/assets";
 import { AppShell } from "@/components/kit/AppShell";
