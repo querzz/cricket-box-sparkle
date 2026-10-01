@@ -1,3 +1,5 @@
+import { getEconomyMultiplier } from "@/server/season-economy";
+
 export type DynamicPrize = {
   id: string;
   kind: string;
@@ -39,28 +41,53 @@ function configuredWeight(prize: DynamicPrize) {
   return configured;
 }
 
+function getPityMultiplier(emptyStreak: number, kind: string) {
+  if (kind === "EMPTY") return 1;
+  const streak = Math.max(0, Math.floor(Number(emptyStreak) || 0));
+  if (streak < 3) return 1;
+  return 1 + Math.min(1.5, (streak - 2) * 0.15);
+}
+
 /**
- * Canonical Season MVP selection model.
- * Every remaining inventory unit contributes its configured weight.
- * No hidden pacing, pity, anti-streak or time-based probability changes.
+ * Canonical season selector.
+ *
+ * 1. Base configured weight controls the prize's relative importance.
+ * 2. Remaining inventory controls how much of that prize is currently available.
+ * 3. The economy multiplier keeps inventory pacing near the season timeline:
+ *    prizes disappearing faster than the season pace are down-weighted, while
+ *    prizes that are lagging behind the pace are up-weighted.
+ * 4. A player who has gone through a long EMPTY streak gets a pity boost on
+ *    non-empty prizes. EMPTY receives the inverse anti-streak adjustment.
+ *
+ * Paid and free spins use the same selector. No online-user-count modifier is used.
  */
 export function buildDynamicWeights<T extends DynamicPrize>(
   prizes: T[],
-  _context: DynamicSelectionContext = {},
+  context: DynamicSelectionContext = {},
 ): Array<{ prize: T; diagnostics: DynamicSelectionDiagnostics }> {
+  const elapsedFraction = clamp(Number(context.elapsedFraction) || 0, 0, 1);
+  const emptyStreak = Math.max(0, Math.floor(Number(context.emptyStreak) || 0));
+
   return prizes.map((prize) => {
     const baseWeight = configuredWeight(prize);
     const inventoryPressure = Math.max(0, Number(prize.quantity_remaining) || 0);
-    const finalWeight = baseWeight * inventoryPressure;
+    const globalMultiplier = getEconomyMultiplier({
+      quantityTotal: Number(prize.quantity_total) || 0,
+      quantityRemaining: inventoryPressure,
+      elapsedFraction,
+    });
+    const pityMultiplier = getPityMultiplier(emptyStreak, prize.kind);
+    const antiStreakMultiplier = prize.kind === "EMPTY" ? 1 / pityMultiplier : 1;
+    const finalWeight = baseWeight * inventoryPressure * globalMultiplier * pityMultiplier * antiStreakMultiplier;
 
     return {
       prize,
       diagnostics: {
         baseWeight,
         inventoryPressure,
-        globalMultiplier: 1,
-        pityMultiplier: 1,
-        antiStreakMultiplier: 1,
+        globalMultiplier,
+        pityMultiplier,
+        antiStreakMultiplier,
         finalWeight,
       },
     };
