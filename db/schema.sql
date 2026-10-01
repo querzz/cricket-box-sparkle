@@ -3,6 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), telegram_id BIGINT NOT NULL UNIQUE, username TEXT, first_name TEXT NOT NULL, last_name TEXT, language_code TEXT, is_premium BOOLEAN NOT NULL DEFAULT FALSE, avatar_file_id TEXT, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS veteran_tier_override TEXT CHECK (veteran_tier_override IS NULL OR veteran_tier_override IN ('ROOKIE','VETERAN','ELITE'));
 CREATE TABLE IF NOT EXISTS user_state (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, stars_balance INTEGER NOT NULL DEFAULT 125 CHECK (stars_balance >= 0 AND stars_balance <= 500), is_subscribed BOOLEAN NOT NULL DEFAULT TRUE, is_participant BOOLEAN NOT NULL DEFAULT TRUE, daily_gift_claimed_at TIMESTAMPTZ, bonus_free_spins INTEGER NOT NULL DEFAULT 0 CHECK (bonus_free_spins >= 0 AND bonus_free_spins <= 1000), activity_bonus_season_id UUID, activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0 CHECK (activity_bonus_spins_issued >= 0 AND activity_bonus_spins_issued <= 1000), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -87,7 +88,34 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS free_spin_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  spins_per_user INTEGER NOT NULL DEFAULT 1 CHECK (spins_per_user >= 1 AND spins_per_user <= 20),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at > starts_at)
+);
+CREATE INDEX IF NOT EXISTS idx_free_spin_campaigns_live ON free_spin_campaigns(season_id,enabled,starts_at,ends_at);
+CREATE TABLE IF NOT EXISTS free_spin_campaign_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES free_spin_campaigns(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount INTEGER NOT NULL CHECK (amount >= 1),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (campaign_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_free_spin_campaign_claims_user ON free_spin_campaign_claims(user_id,created_at DESC);
+
 INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
+INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":60,"VETERAN":70,"ELITE":80}}'::jsonb) ON CONFLICT(key) DO NOTHING;
+INSERT INTO app_settings(key,value) VALUES('channel_activity','{"enabled":true}'::jsonb) ON CONFLICT(key) DO NOTHING;
+
 UPDATE users SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
 UPDATE admins SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
