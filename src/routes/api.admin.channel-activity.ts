@@ -43,6 +43,8 @@ export const Route = createFileRoute("/api/admin/channel-activity")({
         const url = new URL(request.url);
         await authenticateAdmin(url.searchParams.get("initData") ?? "");
         if (!CHANNEL_ID) return Response.json({ ok: false, code: "CHANNEL_NOT_CONFIGURED" }, { status: 409 });
+        const setting = await query<{ value: unknown }>("SELECT value FROM app_settings WHERE key='channel_activity' LIMIT 1");
+        const activityEnabled = (setting.rows[0]?.value as { enabled?: unknown } | undefined)?.enabled !== false;
 
         const season = await query<{ id:string; code:string; name:string; starts_at:string|null; ends_at:string|null }>(
           `SELECT id::text,code,name,starts_at::text,ends_at::text
@@ -112,7 +114,7 @@ export const Route = createFileRoute("/api/admin/channel-activity")({
         const totalPoints = users.reduce((sum, row) => sum + row.score, 0);
         const totalActions = result.rows.reduce((sum, row) => sum + Number(row.reactions) + Number(row.comments) + Number(row.joins), 0);
         const bonusReady = users.filter((row) => row.activityBonusRemaining > 0).length;
-        return Response.json({ ok:true, season:{ id:current.id, code:current.code, name:current.name, startsAt:current.starts_at, endsAt:current.ends_at }, stats:{ activeUsers:users.length,totalPoints,totalActions,bonusReady }, users });
+        return Response.json({ ok:true, enabled:activityEnabled, season:{ id:current.id, code:current.code, name:current.name, startsAt:current.starts_at, endsAt:current.ends_at }, stats:{ activeUsers:users.length,totalPoints,totalActions,bonusReady }, users });
       } catch (error) {
         console.error("Channel activity admin API failed:", error instanceof Error ? error.message : error);
         return Response.json({ ok:false, code:"CHANNEL_ACTIVITY_FAILED" }, { status:401 });
@@ -139,6 +141,21 @@ export const Route = createFileRoute("/api/admin/channel-activity")({
         const code = error instanceof Error ? error.message : "CHANNEL_ACTIVITY_GRANT_FAILED";
         const status = code === "USER_NOT_FOUND" ? 404 : code === "BONUS_CAP_REACHED" ? 409 : 400;
         return Response.json({ ok:false, code }, { status });
+      }
+    },
+    PATCH: async ({ request }) => {
+      try {
+        const body = await request.json() as { initData?: unknown; enabled?: unknown };
+        const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
+        if (typeof body.enabled !== "boolean") return Response.json({ ok:false, code:"INVALID_ENABLED" }, { status:400 });
+        await withTransaction(async (client) => {
+          await client.query("INSERT INTO app_settings(key,value) VALUES('channel_activity',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()", [JSON.stringify({ enabled:body.enabled })]);
+          await client.query("INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'CHANNEL_ACTIVITY_SYSTEM_UPDATED','setting','channel_activity',$2::jsonb)", [admin.id,JSON.stringify({ enabled:body.enabled })]);
+        });
+        return Response.json({ ok:true, enabled:body.enabled });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "CHANNEL_ACTIVITY_UPDATE_FAILED";
+        return Response.json({ ok:false, code }, { status: code==="ADMIN_ACCESS_DENIED" ? 401 : 400 });
       }
     },
   }},
