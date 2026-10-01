@@ -632,7 +632,7 @@ A user's Daily Gift tier is normally taken from veteran history:
 
 The current season is excluded when calculating historical veteran status.
 
-The owner can manually override the Daily Gift tier for an individual user to ROOKIE/VETERAN/ELITE from the Veteran admin screen. This is intended for test accounts and controlled product cases and is audited.
+The owner can manually assign an individual user's rank (ROOKIE/VETERAN/ELITE) from the Veteran admin screen. The manual rank overrides automatic season-history calculation and is used for both Daily Gift and veteran bonus eligibility. The change is audited. A search field and direct Telegram-ID assignment form are available, so the owner can promote a specific account even when it is not convenient to find in the list.
 
 Relevant commits:
 ```
