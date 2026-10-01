@@ -53,6 +53,8 @@ const adminApis = [
   "src/routes/api.admin.mechanics.ts",
   "src/routes/api.admin.owner-gifts.ts",
   "src/routes/api.admin.veteran.ts",
+  "src/routes/api.admin.daily-gift.ts",
+  "src/routes/api.admin.free-spin-campaigns.ts",
 ];
 
 for (const file of [...userRoutes, ...adminRoutes, ...adminApis]) {
@@ -63,6 +65,10 @@ const draw = await read("src/routes/draw.tsx");
 const home = await read("src/routes/index.tsx");
 const session = await read("src/routes/api.session.ts");
 const selector = await read("src/server/dynamic-prize-selection.ts");
+const veteranApi = await read("src/routes/api.admin.veteran.ts");
+const dailyGiftApi = await read("src/routes/api.admin.daily-gift.ts");
+const freeSpinCampaignApi = await read("src/routes/api.admin.free-spin-campaigns.ts");
+const veteranUi = await read("src/routes/admin.veteran.tsx");
 const seasonService = await read("src/server/season-service.ts");
 const bot = await read("scripts/telegram-bot.mjs");
 const seasonUi = await read("src/lib/season.ts");
@@ -87,6 +93,13 @@ assert(!economics.includes('label="Revenue"') && !economics.includes('label="Kno
 assert(!/(?:[>\"\'])Lifecycle:\s/.test(payouts) && !/(?:[>\"\'])method:\s/.test(payouts) && !/(?:[>\"\'])ref:\s/.test(payouts), "payout UI no longer exposes obvious English operational labels");
 assert(selector.includes("quantity_remaining"), "selector uses remaining inventory");
 assert(selector.includes("weight"), "selector uses configured weight");
+assert(selector.includes("emptyStreak"), "selector applies player EMPTY-streak balancing");
+assert(selector.includes("globalMultiplier"), "selector applies season inventory pacing");
+assert(veteranApi.includes('UPDATE users SET veteran_tier_override=$2 WHERE id=$1::uuid'), "manual veteran rank assignment updates a real users column");
+assert(veteranApi.includes("tierOverride"), "manual veteran rank override is supported by admin API");
+assert(dailyGiftApi.includes("rewardChanceByTier"), "Daily Gift tier chance settings are persisted");
+assert(freeSpinCampaignApi.includes("free_spin_campaigns"), "global free-spin campaigns are persisted and administered");
+assert(veteranUi.includes("Выдать ранг"), "admin UI exposes manual rank assignment");
 assert(seasonService.includes("PRIZE_QUANTITY_BELOW_WON"), "season prize quantity cannot go below already-won inventory");
 assert(seasonService.includes("paidSpinEnabled === true"), "paid-spin re-enable guard remains explicit");
 assert(!seasonService.includes("PAID_SPIN_PRICE_LOCKED"), "paid-spin price is no longer locked by season usage");
