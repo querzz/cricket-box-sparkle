@@ -445,7 +445,7 @@ async function pollTelegramUpdates() {
       const updates = await api("getUpdates", {
         offset,
         timeout: 25,
-        allowed_updates: ["message", "pre_checkout_query", "message_reaction"],
+        allowed_updates: ["message", "pre_checkout_query"],
       });
       const batch = Array.isArray(updates) ? updates : [];
       const messageUpdates = batch.filter((update) => update?.message).map((update) => update.message);
