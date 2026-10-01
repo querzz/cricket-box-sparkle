@@ -1,4 +1,4 @@
-import { getEconomyMultiplier } from "@/server/season-economy";
+import { getEconomyMultiplier } from "./season-economy";
 
 export type DynamicPrize = {
   id: string;
