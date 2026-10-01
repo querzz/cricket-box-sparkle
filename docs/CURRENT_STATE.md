@@ -1,6 +1,6 @@
 # CRICKET BOX — CURRENT STATE / HANDOFF
 
-Updated: 2026-10-01 (post-rank/QA fixes)
+Updated: 2026-10-02 (post-rank/bonus QA)
 Repository: `querzz/cricket-box-sparkle`
 Production/test target: Telegram Mini App + Telegram bot + PostgreSQL on Hetzner
 
@@ -748,6 +748,47 @@ Relevant commit:
 ```
 
 ## 11F. LATEST QA / FIXES (2026-10-01)
+## 11G. QA FINDINGS / DEPLOYMENT NOTE (2026-10-02)
+
+A second review found one real integration issue in the global free-spin campaign path: /api/session was granting active global campaigns only inside the Channel Activity switch. That meant pausing Channel Activity could also hide/grant-block the separate global campaign during session refreshes. This was fixed in:
+
+```
+e6087072 — fix: decouple global bonus campaigns from channel activity
+```
+
+The regression QA now explicitly checks both behaviors.
+
+The manual rank feature is already fixed in the repository. The important server-side regression that caused the first failure was an old update query touching a non-existent users.updated_at column. The fix is in:
+
+```
+a78e534a — fix: make manual veteran rank assignment work
+```
+
+Current main contains that fix and the latest CI run before the new QA patch was green. The server does not auto-deploy from GitHub, so the running Hetzner app can still be on an older build.
+
+After pulling the latest main on Hetzner, update the database schema and rebuild/restart the web service (not only the bot):
+
+```
+cd /opt/cricket-box-sparkle
+git pull --ff-only origin main
+npm install
+npm run db:init
+npm run build
+systemctl restart cricket-box-web
+systemctl restart cricket-box-bot
+```
+
+Manual rank flow after deployment:
+
+```
+Admin → Бонусы ветеранов
+→ в поле Telegram ID вводится ID пользователя
+→ выбрать Элита
+→ Выдать ранг
+```
+
+The user must have opened CRICKET BOX at least once so their Telegram ID exists in users. The selected override is then used by Daily Gift and veteran bonus logic.
+
 
 The first live admin screenshots exposed two permission/type issues in the new veteran controls:
 
