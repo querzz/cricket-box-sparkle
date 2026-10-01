@@ -125,7 +125,7 @@ async function recordChannelActivity({ telegramUserId, eventType, eventKey, poin
     ]);
 
     const setting = await client.query("SELECT value FROM app_settings WHERE key='channel_activity' LIMIT 1");
-    const enabled = (setting.rows[0]?.value as { enabled?: unknown } | undefined)?.enabled !== false;
+    const enabled = setting.rows[0]?.value?.enabled !== false;
     if (!enabled) {
       await client.query("COMMIT");
       return;
