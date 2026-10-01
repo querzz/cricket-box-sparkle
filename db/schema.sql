@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS free_spin_campaign_claims (
 CREATE INDEX IF NOT EXISTS idx_free_spin_campaign_claims_user ON free_spin_campaign_claims(user_id,created_at DESC);
 
 INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
-INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":60,"VETERAN":70,"ELITE":80}}'::jsonb) ON CONFLICT(key) DO NOTHING;
+INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":1,"VETERAN":3,"ELITE":5}}'::jsonb) ON CONFLICT(key) DO NOTHING;
 INSERT INTO app_settings(key,value) VALUES('channel_activity','{"enabled":true}'::jsonb) ON CONFLICT(key) DO NOTHING;
 
 UPDATE users SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
