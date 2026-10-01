@@ -112,10 +112,36 @@ function BonusCampaigns() {
       <button disabled={saving||loading||!seasonId} type="button" onClick={()=>void createCampaign()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2.5 text-[10px] font-semibold">{saving?"Создаём…":"Создать акцию"}</button>
     </GlassCard>
 
-    <section><div className="mb-2 flex items-center justify-between"><h2 className="section-label">Акции сезона</h2><span className="text-[10px] text-muted-foreground">{campaigns.length}</span></div>
-      {loading?<GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Загрузка…</GlassCard>:
-      campaigns.map((campaign)=><GlassCard key={campaign.id} className="px-4 py-3.5"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{campaign.name}</p><p className="mt-1 text-[10px] text-muted-foreground">{new Date(campaign.starts_at).toLocaleString()} → {new Date(campaign.ends_at).toLocaleString()}</p><p className="mt-1 text-[10px] text-muted-foreground">{campaign.spins_per_user} бесплатн. прокрут. на участника</p></div><button type="button" onClick={()=>void toggle(campaign.id,!campaign.enabled)} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[10px] font-semibold"><Power className="size-3.5"/>{campaign.enabled?"Выключить":"Включить"}</button></div></GlassCard>))}
-      {!loading&&campaigns.length===0&&<GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Акций пока нет.</GlassCard>}
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="section-label">Акции сезона</h2>
+        <span className="text-[10px] text-muted-foreground">{campaigns.length}</span>
+      </div>
+      {loading ? (
+        <GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Загрузка…</GlassCard>
+      ) : (
+        <div className="space-y-2.5">
+          {campaigns.map((campaign) => (
+            <GlassCard key={campaign.id} className="px-4 py-3.5">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{campaign.name}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{new Date(campaign.starts_at).toLocaleString()} → {new Date(campaign.ends_at).toLocaleString()}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{campaign.spins_per_user} бесплатн. прокрут. на участника</p>
+                </div>
+                <button type="button" onClick={() => void toggle(campaign.id, !campaign.enabled)} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[10px] font-semibold">
+                  <Power className="size-3.5" />
+                  {campaign.enabled ? "Выключить" : "Включить"}
+                </button>
+              </div>
+            </GlassCard>
+          ))}
+          {campaigns.length === 0 && (
+            <GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Акций пока нет.</GlassCard>
+          )}
+        </div>
+      )}
+    </section>
     </section>
   </div></AppShell>;
 }
