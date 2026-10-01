@@ -98,7 +98,7 @@ assert(selector.includes("globalMultiplier"), "selector applies season inventory
 assert(veteranApi.includes('UPDATE users SET veteran_tier_override=$2 WHERE id=$1::uuid'), "manual veteran rank assignment updates a real users column");
 assert(!veteranApi.includes('veteran_tier_override=$2,updated_at=now()'), "manual veteran rank assignment does not touch a non-existent users.updated_at column");
 assert(veteranApi.includes('if (body.telegramId !== undefined) {') && veteranApi.indexOf('if (body.telegramId !== undefined) {') < veteranApi.indexOf('if (admin.role !== "OWNER")'), "manual veteran rank assignment is available to admins; global veteran toggle remains owner-only");
-assert(veteranUi.includes("Недостаточно прав для изменения ранга."), "veteran rank UI distinguishes owner-only permission errors");
+assert(veteranUi.includes("Только владелец может менять системную настройку.") && veteranUi.includes("rankError("), "veteran rank UI distinguishes permission errors");
 assert(veteranApi.includes("tierOverride"), "manual veteran rank override is supported by admin API");
 assert(dailyGiftApi.includes("key='daily_gift'") && dailyGiftApi.includes("ON CONFLICT(key) DO UPDATE"), "Daily Gift tier chance settings are persisted");
 assert(freeSpinCampaignApi.includes("free_spin_campaigns"), "global free-spin campaigns are persisted and administered");
@@ -151,7 +151,6 @@ for (const label of requiredAdminLabels) {
 
 assert(veteranUi.includes('placeholder="Telegram ID"') && veteranUi.includes('value={manualTier}'), "veteran UI exposes direct Telegram ID + rank assignment control");
 assert(veteranUi.includes("rankError(") && veteranUi.includes("Проверь Telegram ID и выбранный ранг."), "veteran UI surfaces actionable rank errors");
-const adminSettings = await read("src/routes/admin.settings.tsx");
 assert(adminSettings.includes('role?: "OWNER" | "ADMIN"') && adminSettings.includes('veteranRole !== "OWNER"'), "admin settings keeps veteran system toggle owner-only");
 assert(selector.includes("getAntiStreakMultiplier") && selector.includes("1 / pityMultiplier"), "EMPTY anti-streak multiplier counteracts long EMPTY streaks");
 const prizeAdmin = await read("src/routes/admin.prizes.tsx");
