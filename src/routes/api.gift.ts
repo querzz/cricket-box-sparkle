@@ -14,18 +14,6 @@ const MAX_STARS = 500;
 const MAX_BONUS_SPINS = 1000;
 const GIFT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
-const GIFT_POOL: GiftReward[] = [
-  { kind: "NOTHING", amount: 0, title: "Ничего", subtitle: "Сегодня коробка решила пошутить 😈", weight: 40 },
-  { kind: "STARS", amount: 10, title: "10 Stars", subtitle: "Stars зачислены на баланс.", weight: 20 },
-  { kind: "STARS", amount: 15, title: "15 Stars", subtitle: "Stars зачислены на баланс.", weight: 15 },
-  { kind: "STARS", amount: 25, title: "25 Stars", subtitle: "Неплохо! Stars зачислены на баланс.", weight: 10 },
-  { kind: "STARS", amount: 50, title: "50 Stars", subtitle: "Редкая находка!", weight: 3 },
-  { kind: "STARS", amount: 100, title: "100 Stars", subtitle: "Очень редкий приз! 🔥", weight: 1 },
-  { kind: "FREE_SPIN", amount: 1, title: "Бесплатная прокрутка", subtitle: "Дополнительная прокрутка сохранена.", weight: 6 },
-  { kind: "XP", amount: 25, title: "+25 XP", subtitle: "Опыт добавлен. Продолжай прокачиваться.", weight: 4 },
-  { kind: "XP", amount: 50, title: "+50 XP", subtitle: "Большой буст опыта!", weight: 1 },
-];
-
 export const Route = createFileRoute("/api/gift")({
   server: { handlers: {
     POST: async ({ request }) => {
@@ -82,12 +70,12 @@ export const Route = createFileRoute("/api/gift")({
 
           const claim = await client.query<{ id:string; created_at:string }>(
             `INSERT INTO daily_gift_claims (user_id,season_id,kind,amount,title,metadata) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6::jsonb) RETURNING id::text,created_at::text`,
-            [user.rows[0].id,currentSeason.id,effectiveKind,effectiveKind === "STARS" ? starsCredited : effectiveKind === "FREE_SPIN" ? bonusSpinGranted : effectiveKind === "XP" ? xpGranted : 0,title,JSON.stringify({ requestedKind:reward.kind, requestedAmount:reward.amount, weight:reward.weight, starsCredited, bonusSpinGranted, xpGranted, overflowStars:overflow })],
+            [user.rows[0].id,currentSeason.id,effectiveKind,effectiveKind === "STARS" ? starsCredited : effectiveKind === "FREE_SPIN" ? bonusSpinGranted : effectiveKind === "XP" ? xpGranted : 0,title,JSON.stringify({ tier:tierInfo.tier, tierSource:tierInfo.source, configuredRewardChance:config.rewardChanceByTier[tierInfo.tier], requestedKind:reward.kind, requestedAmount:reward.amount, weight:reward.weight, starsCredited, bonusSpinGranted, xpGranted, overflowStars:overflow })],
           );
 
           if (starsCredited > 0) await appendStarsLedger(client, { userId:user.rows[0].id, seasonId:currentSeason.id, type:"DAILY_GIFT", amount:reward.amount, balanceDelta:starsCredited, referenceId:claim.rows[0].id, idempotencyKey:`daily-gift:${claim.rows[0].id}:reward`, metadata:{ requestedAmount:reward.amount, creditedAmount:starsCredited, overflowAmount:overflow } });
           if (overflow > 0) await appendStarsLedger(client, { userId:user.rows[0].id, seasonId:currentSeason.id, type:"CAPPED_OVERFLOW_BURNED", amount:-overflow, balanceDelta:0, referenceId:claim.rows[0].id, idempotencyKey:`daily-gift:${claim.rows[0].id}:overflow`, metadata:{ requestedAmount:reward.amount, creditedAmount:starsCredited, overflowAmount:overflow } });
-          await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('DAILY_GIFT_CLAIMED','daily_gift',$1,$2::jsonb)`, [claim.rows[0].id, JSON.stringify({ userId:user.rows[0].id, seasonId:currentSeason.id, kind:effectiveKind, requestedKind:reward.kind, amount:reward.amount, starsCredited, overflowStars:overflow, bonusSpinGranted, xpGranted })]);
+          await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('DAILY_GIFT_CLAIMED','daily_gift',$1,$2::jsonb)`, [claim.rows[0].id, JSON.stringify({ userId:user.rows[0].id, seasonId:currentSeason.id, tier:tierInfo.tier, tierSource:tierInfo.source, configuredRewardChance:config.rewardChanceByTier[tierInfo.tier], kind:effectiveKind, requestedKind:reward.kind, amount:reward.amount, starsCredited, overflowStars:overflow, bonusSpinGranted, xpGranted })]);
           return { claimId:claim.rows[0].id, claimedAt:claim.rows[0].created_at, reward, effectiveKind, title, subtitle, starsCredited, bonusSpinGranted, xpGranted, overflow };
         });
 
