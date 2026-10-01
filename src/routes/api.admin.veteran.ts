@@ -7,8 +7,8 @@ export const Route = createFileRoute("/api/admin/veteran")({
   server: { handlers: {
     GET: async ({ request }) => {
       try {
- = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, FALSE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
         const admin = await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
+        const enabledResult = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, FALSE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
         const enabled = enabledResult.rows[0]?.enabled === true;
         const users = await query<{ id:string;telegram_id:string;username:string|null;first_name:string;last_name:string|null;veteran_tier_override:VeteranTier|null;seasons:string;spins:string;wins:string;tier:VeteranTier;bonus_issued:string;bonus_used:string }>(
           `WITH current_season AS (
