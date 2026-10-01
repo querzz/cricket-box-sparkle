@@ -123,15 +123,20 @@ export const Route = createFileRoute("/api/session")({
             await client.query(`UPDATE user_state SET activity_bonus_season_id=$2::uuid,activity_bonus_spins_issued=0,updated_at=now() WHERE user_id=$1::uuid`, [user.id, season.id]);
           }
 
-          if (activityEnabled && (season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+          if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+            // Global LiveOps free-spin campaigns are independent from channel-activity accrual.
+            // They must still grant even when the operator pauses Channel Activity.
             const campaignGranted = await grantActiveFreeSpinCampaigns(client, user.id, season.id, current.is_participant, isSubscribed);
             bonusFreeSpins += campaignGranted;
-            const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
-            const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
-            if (grant > 0) {
-              await client.query(`UPDATE user_state SET bonus_free_spins=LEAST($2,bonus_free_spins+$3),activity_bonus_spins_issued=LEAST($4,activity_bonus_spins_issued+$3),updated_at=now() WHERE user_id=$1::uuid`, [user.id, MAX_BONUS_SPINS, grant, MAX_ACTIVITY_BONUS_SPINS]);
-              bonusFreeSpins += grant;
-              activityIssued += grant;
+
+            if (activityEnabled) {
+              const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
+              const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
+              if (grant > 0) {
+                await client.query(`UPDATE user_state SET bonus_free_spins=LEAST($2,bonus_free_spins+$3),activity_bonus_spins_issued=LEAST($4,activity_bonus_spins_issued+$3),updated_at=now() WHERE user_id=$1::uuid`, [user.id, MAX_BONUS_SPINS, grant, MAX_ACTIVITY_BONUS_SPINS]);
+                bonusFreeSpins += grant;
+                activityIssued += grant;
+              }
             }
           }
 
