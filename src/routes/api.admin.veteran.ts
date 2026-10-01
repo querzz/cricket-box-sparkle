@@ -21,7 +21,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
            )
            SELECT u.id::text,u.telegram_id::text,u.username,u.first_name,u.last_name,u.veteran_tier_override,
                   COALESCE(h.seasons,'0') AS seasons,COALESCE(h.spins,'0') AS spins,COALESCE(h.wins,'0') AS wins,
-                  CASE WHEN COALESCE(h.seasons::int,0)>=4 THEN 'ELITE'::text WHEN COALESCE(h.seasons::int,0)>=2 THEN 'VETERAN'::text ELSE 'ROOKIE'::text END AS tier,
+                  CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override ELSE CASE WHEN COALESCE(h.seasons::int,0)>=4 THEN 'ELITE'::text WHEN COALESCE(h.seasons::int,0)>=2 THEN 'VETERAN'::text ELSE 'ROOKIE'::text END END AS tier,
                   COALESCE(us.veteran_bonus_spins_issued,0)::text AS bonus_issued,
                   COALESCE((SELECT COUNT(*) FROM spins vb WHERE vb.user_id=u.id AND vb.type='VETERAN_BONUS' AND vb.status='COMPLETED'),0)::text AS bonus_used
              FROM users u
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
         return Response.json({
           ok:true,
           enabled,
-          rules:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label,minSeasons:VETERAN_RULES[tier].minSeasons,bonusSpins:VETERAN_RULES[tier].bonusSpins,description:VETERAN_RULES[tier].description})),
+          rules:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label,minSeasons:VETERAN_RULES[tier].minSeasons,bonusSpins:VETERAN_RULES[tier].bonusSpins,description:VETERAN_RULES[tier].description})), manualRankOptions:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label})),
           players:users.rows.map((row)=>({id:row.id,telegramId:row.telegram_id,tierOverride:row.veteran_tier_override??null,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",name:[row.first_name,row.last_name].filter(Boolean).join(" "),seasons:Number(row.seasons),spins:Number(row.spins),wins:Number(row.wins),tier:row.tier,bonusIssued:Number(row.bonus_issued),bonusUsed:Number(row.bonus_used),bonusRemaining:Math.max(0,Number(row.bonus_issued)-Number(row.bonus_used))})),
         });
       } catch {
