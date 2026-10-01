@@ -47,7 +47,7 @@ export const Route = createFileRoute("/api/gift")({
 
           const balance = Number(current.stars_balance ?? 0);
           const config = await getDailyGiftConfig(client);
-          const tierInfo = await getDailyGiftTier(client, user.rows[0].id, user.rows[0].veteran_tier_override);
+          const tierInfo = await getDailyGiftTier(client, user.rows[0].id, user.rows[0].veteran_tier_override, currentSeason.id);
           const reward = pickDailyGift(tierInfo.tier, config, secureRandomUnit, balance);
           const starsCredited = reward.kind === "STARS" ? Math.min(reward.amount, Math.max(0, MAX_STARS - balance)) : 0;
           const overflow = reward.kind === "STARS" ? Math.max(0, reward.amount - starsCredited) : 0;
