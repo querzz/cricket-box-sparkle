@@ -5,6 +5,7 @@ import { requireBotToken, isProductionApp } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
+import { grantActiveFreeSpinCampaigns } from "@/server/free-spin-campaigns";
 
 const MAX_STARS = 500;
 const MAX_BONUS_SPINS = 1000;
@@ -121,6 +122,7 @@ export const Route = createFileRoute("/api/session")({
           }
 
           if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+            await grantActiveFreeSpinCampaigns(client, user.id, season.id, current.is_participant, isSubscribed);
             const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
             const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
             if (grant > 0) {
