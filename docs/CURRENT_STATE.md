@@ -826,6 +826,13 @@ origin/main
 
 ## 14A. LATEST FEATURE COMMITS (2026-10-01)
 
+The first implementation pass introduced two JSX build errors in the new admin pages; both were corrected before production deployment:
+- `admin.bonuses.tsx`: removed an extra closing `</section>`.
+- `admin.channel-activity.tsx`: repaired malformed nested JSX in the header.
+The web service should not be restarted from a failed build; deploy only after `npm run build` succeeds.
+
+
+
 The latest feature work directly addresses the product feedback from testing:
 
 ```
