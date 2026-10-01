@@ -97,7 +97,7 @@ assert(selector.includes("emptyStreak"), "selector applies player EMPTY-streak b
 assert(selector.includes("globalMultiplier"), "selector applies season inventory pacing");
 assert(veteranApi.includes('UPDATE users SET veteran_tier_override=$2 WHERE id=$1::uuid'), "manual veteran rank assignment updates a real users column");
 assert(veteranApi.includes("tierOverride"), "manual veteran rank override is supported by admin API");
-assert(dailyGiftApi.includes("rewardChanceByTier"), "Daily Gift tier chance settings are persisted");
+assert(dailyGiftApi.includes("key='daily_gift'") && dailyGiftApi.includes("ON CONFLICT(key) DO UPDATE"), "Daily Gift tier chance settings are persisted");
 assert(freeSpinCampaignApi.includes("free_spin_campaigns"), "global free-spin campaigns are persisted and administered");
 assert(veteranUi.includes("Выдать ранг"), "admin UI exposes manual rank assignment");
 assert(seasonService.includes("PRIZE_QUANTITY_BELOW_WON"), "season prize quantity cannot go below already-won inventory");
