@@ -701,6 +701,21 @@ src/routes/admin.channel-activity.tsx
 scripts/telegram-bot.mjs
 ```
 
+## 11E. PRIZE CHANCE QUICK CONTROL
+
+The prize pool editor now has a simple quick-setting block:
+
+- 5%
+- 10%
+- 15%
+- 20%
+
+These buttons target the approximate **base chance of receiving any non-EMPTY result** for the selected season. The helper adjusts the EMPTY weight while preserving the relative weights of actual prizes.
+
+The displayed percentage is calculated from the current active inventory as `weight × remaining quantity`. It is explicitly only a base estimate: live season pacing and player pity can change the final per-spin probability.
+
+The operator can still edit each prize's individual "Вес выпадения" manually when finer control is needed.
+
 ## 11E. PRIZE EDITOR UX
 
 The admin prize editor was simplified:
