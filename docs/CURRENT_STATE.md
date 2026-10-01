@@ -421,6 +421,21 @@ Only one season may be ACTIVE/ENDING at a time.
 
 ---
 
+### Recent UX update (2026-10-01)
+
+The admin prize editor was simplified for easier day-to-day use:
+
+- The prize add menu now has a dedicated **NFT** type.
+- NFT uses the prize value field as an estimated **Stars** value.
+- The technical `Weight` label was changed to **Вес выпадения** with an explanation that it is a relative factor and remaining inventory also affects the final odds.
+- The visible **Картинка URL** field was removed from the editor to reduce clutter; the backend/database image fields remain supported for compatibility.
+- The existing **Себестоимость** field is now explicitly described as an economics-only value and not part of the selection chance.
+
+Latest related commit:
+```
+1d5bed892 — feat: simplify prize editor and add NFT controls
+```
+
 ## 10. TEST PRIZE POOL
 
 Prize pool is configured in:
