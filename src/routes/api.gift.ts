@@ -8,13 +8,7 @@ import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { appendStarsLedger } from "@/server/stars-ledger";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
-type GiftReward = {
-  kind: "NOTHING" | "STARS" | "FREE_SPIN" | "XP";
-  amount: number;
-  title: string;
-  subtitle: string;
-  weight: number;
-};
+import { getDailyGiftConfig, getDailyGiftTier, pickDailyGift } from "@/server/daily-gift";
 
 const MAX_STARS = 500;
 const MAX_BONUS_SPINS = 1000;
@@ -32,16 +26,6 @@ const GIFT_POOL: GiftReward[] = [
   { kind: "XP", amount: 50, title: "+50 XP", subtitle: "Большой буст опыта!", weight: 1 },
 ];
 
-function pickReward(pool: GiftReward[]) {
-  const total = pool.reduce((sum, reward) => sum + reward.weight, 0);
-  let cursor = secureRandomUnit() * total;
-  for (const reward of pool) {
-    cursor -= reward.weight;
-    if (cursor < 0) return reward;
-  }
-  return pool[pool.length - 1]!;
-}
-
 export const Route = createFileRoute("/api/gift")({
   server: { handlers: {
     POST: async ({ request }) => {
@@ -56,7 +40,7 @@ export const Route = createFileRoute("/api/gift")({
         const membership = await getTelegramChannelMembership(telegramId);
 
         const result = await withTransaction(async (client) => {
-          const user = await client.query<{ id: string; xp: number; level: number }>(`SELECT id::text, xp, level FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
+          const user = await client.query<{ id: string; xp: number; level: number; veteran_tier_override: "ROOKIE" | "VETERAN" | "ELITE" | null }>(`SELECT id::text, xp, level, veteran_tier_override FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
           if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
           await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [user.rows[0].id]);
           const state = await client.query<{ is_participant:boolean; is_subscribed:boolean; daily_gift_claimed_at:string|null; stars_balance:number; bonus_free_spins:number }>(`SELECT is_participant,is_subscribed,daily_gift_claimed_at::text,stars_balance,bonus_free_spins FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [user.rows[0].id]);
@@ -74,8 +58,9 @@ export const Route = createFileRoute("/api/gift")({
           }
 
           const balance = Number(current.stars_balance ?? 0);
-          const pool = balance >= MAX_STARS ? GIFT_POOL.filter((reward) => reward.kind !== "STARS") : GIFT_POOL;
-          const reward = pickReward(pool);
+          const config = await getDailyGiftConfig(client);
+          const tierInfo = await getDailyGiftTier(client, user.rows[0].id, user.rows[0].veteran_tier_override);
+          const reward = pickDailyGift(tierInfo.tier, config, secureRandomUnit, balance);
           const starsCredited = reward.kind === "STARS" ? Math.min(reward.amount, Math.max(0, MAX_STARS - balance)) : 0;
           const overflow = reward.kind === "STARS" ? Math.max(0, reward.amount - starsCredited) : 0;
           const bonusSpinGranted = reward.kind === "FREE_SPIN" ? Math.min(reward.amount, Math.max(0, MAX_BONUS_SPINS - Number(current.bonus_free_spins ?? 0))) : 0;
