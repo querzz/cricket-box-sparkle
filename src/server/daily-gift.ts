@@ -16,7 +16,7 @@ export type DailyGiftReward = {
 };
 
 export const DEFAULT_DAILY_GIFT_CONFIG: DailyGiftConfig = {
-  rewardChanceByTier: { ROOKIE: 60, VETERAN: 70, ELITE: 80 },
+  rewardChanceByTier: { ROOKIE: 1, VETERAN: 3, ELITE: 5 },
 };
 
 export const DAILY_GIFT_REWARDS: DailyGiftReward[] = [
