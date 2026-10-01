@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Crown, History, Medal, ShieldCheck, Sparkles, Users, Power } from "lucide-react";
+import { ArrowLeft, Crown, History, Medal, ShieldCheck, Sparkles, Users, Power, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
