@@ -127,6 +127,31 @@ function AdminPrizes() {
   };
   const remaining = (draft: Draft) => Math.max(0, draft.quantity - draft.won);
 
+  const basePrizeChance = useMemo(() => {
+    const eligible = drafts.filter((draft) => draft.active && remaining(draft) > 0 && draft.weight > 0);
+    const totalMass = eligible.reduce((sum, draft) => sum + draft.weight * remaining(draft), 0);
+    const rewardMass = eligible.filter((draft) => draft.kind !== "EMPTY").reduce((sum, draft) => sum + draft.weight * remaining(draft), 0);
+    return totalMass > 0 ? (rewardMass / totalMass) * 100 : 0;
+  }, [drafts]);
+
+  const applyChancePreset = (targetPercent: number) => {
+    const active = drafts.filter((draft) => draft.active && remaining(draft) > 0 && draft.weight > 0);
+    const rewardMass = active.filter((draft) => draft.kind !== "EMPTY").reduce((sum, draft) => sum + draft.weight * remaining(draft), 0);
+    const emptyDrafts = drafts.filter((draft) => draft.kind === "EMPTY" && draft.active && remaining(draft) > 0);
+    if (!(rewardMass > 0) || emptyDrafts.length === 0) {
+      setError("Для быстрой настройки нужен хотя бы один активный приз и один активный EMPTY.");
+      return;
+    }
+    const target = Math.min(95, Math.max(1, targetPercent)) / 100;
+    const currentEmptyMass = emptyDrafts.reduce((sum, draft) => sum + Math.max(draft.weight, 0) * remaining(draft), 0);
+    const desiredEmptyMass = rewardMass * (1 - target) / target;
+    const factor = currentEmptyMass > 0 ? desiredEmptyMass / currentEmptyMass : 1;
+    setDrafts((all) => all.map((draft) => draft.kind === "EMPTY" && draft.active && remaining(draft) > 0
+      ? { ...draft, weight: Math.max(0.01, Math.min(1_000_000, draft.weight > 0 ? draft.weight * factor : desiredEmptyMass / Math.max(1, remaining(draft)))) }
+      : draft));
+    setMessage("Базовый шанс полезного приза выставлен примерно на " + targetPercent + "%. Сохрани фонд, чтобы применить.");
+  };
+
   const totals = useMemo(() => {
     const winning = drafts.reduce((sum, prize) => sum + (prize.kind === "EMPTY" ? 0 : Math.max(0, prize.quantity)), 0);
     const available = drafts.reduce((sum, prize) => sum + remaining(prize), 0);
@@ -189,6 +214,20 @@ function AdminPrizes() {
         </GlassCard>
 
         {error && <GlassCard className="admin-alert admin-alert-error px-4 py-3 text-[11px]">{error}</GlassCard>}
+
+        <GlassCard className="px-3.5 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">Быстрые шансы</p>
+              <p className="mt-1 text-sm font-semibold">Шанс получить не-EMPTY</p>
+              <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Базовая оценка по весам и текущему остатку. Динамический баланс сезона и pity после серий «Ничего» могут менять фактический шанс.</p>
+            </div>
+            <span className="font-display text-lg">{basePrizeChance.toFixed(1)}%</span>
+          </div>
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            {[5,10,15,20].map((value) => <button key={value} type="button" onClick={() => applyChancePreset(value)} className="rounded-xl border border-glass-border bg-muted/10 px-2 py-2.5 text-[10px] font-semibold hover:border-primary/30">{value}%</button>)}
+          </div>
+        </GlassCard>
         {message && <GlassCard className="admin-alert admin-alert-success px-4 py-3 text-[11px]">{message}</GlassCard>}
 
         <section>
