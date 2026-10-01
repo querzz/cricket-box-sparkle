@@ -53,8 +53,6 @@ export const Route = createFileRoute("/api/admin/veteran")({
       try {
         const body = await request.json() as { initData?:unknown; enabled?:unknown; telegramId?:unknown; tierOverride?:unknown };
         const admin = await authenticateAdmin(typeof body.initData === "string" ? body.initData : "");
-        if (admin.role !== "OWNER") return Response.json({ok:false,code:"OWNER_ONLY"},{status:403});
-
         if (body.telegramId !== undefined) {
           const telegramId = String(body.telegramId ?? "").trim();
           const tierOverride = body.tierOverride === null || body.tierOverride === "" ? null : String(body.tierOverride);
@@ -70,6 +68,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
           return Response.json({ok:true,telegramId,tierOverride});
         }
 
+        if (admin.role !== "OWNER") return Response.json({ok:false,code:"OWNER_ONLY"},{status:403});
         if (typeof body.enabled !== "boolean") return Response.json({ok:false,code:"INVALID_ENABLED"},{status:400});
         await withTransaction(async(client)=>{
           await client.query("INSERT INTO app_settings(key,value) VALUES('veteran_bonus',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()",[JSON.stringify({enabled:body.enabled})]);
