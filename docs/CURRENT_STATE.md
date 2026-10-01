@@ -38,13 +38,13 @@ Main stack:
 - LiveOps scheduler
 - Caddy reverse proxy / HTTPS on the production host
 
-The current selector is:
+The current selector starts from:
 
 ```
-finalWeight = configuredWeight × quantityRemaining
+baseWeight = configuredWeight × quantityRemaining
 ```
 
-There is no hidden online-user-count multiplier, pity, anti-streak or time-based probability correction in the current MVP.
+It then applies the active server-side dynamic balancing described below: player pity/anti-EMPTY and season inventory pacing. There is no online-user-count multiplier.
 
 ---
 
