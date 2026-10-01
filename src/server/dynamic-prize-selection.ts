@@ -48,6 +48,14 @@ function getPityMultiplier(emptyStreak: number, kind: string) {
   return 1 + Math.min(1.5, (streak - 2) * 0.15);
 }
 
+function getAntiStreakMultiplier(emptyStreak: number, kind: string) {
+  if (kind !== "EMPTY") return 1;
+  const streak = Math.max(0, Math.floor(Number(emptyStreak) || 0));
+  if (streak < 3) return 1;
+  const pityMultiplier = 1 + Math.min(1.5, (streak - 2) * 0.15);
+  return 1 / pityMultiplier;
+}
+
 /**
  * Canonical season selector.
  *
@@ -77,7 +85,7 @@ export function buildDynamicWeights<T extends DynamicPrize>(
       elapsedFraction,
     });
     const pityMultiplier = getPityMultiplier(emptyStreak, prize.kind);
-    const antiStreakMultiplier = prize.kind === "EMPTY" ? 1 / pityMultiplier : 1;
+    const antiStreakMultiplier = getAntiStreakMultiplier(emptyStreak, prize.kind);
     const finalWeight = baseWeight * inventoryPressure * globalMultiplier * pityMultiplier * antiStreakMultiplier;
 
     return {
