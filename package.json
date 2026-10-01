@@ -20,7 +20,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test:product-qa": "node scripts/test-product-qa.mjs",
-    "test:bot": "node scripts/test-bot.mjs"
+    "test:bot": "node scripts/test-bot.mjs",
+    "start": "node .output/server/index.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"
