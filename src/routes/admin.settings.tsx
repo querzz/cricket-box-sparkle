@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, ChevronRight, Power, Settings2, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronRight, Gift, Power, Settings2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
@@ -153,6 +153,21 @@ function AdminSettings() {
                 </button>
               </div>
             </GlassCard>
+
+            <Link to="/admin/bonuses" className="block">
+              <GlassCard className="px-4 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="grid size-10 place-items-center rounded-2xl border border-glass-border bg-muted/20">
+                    <Gift className="size-5 text-primary-glow" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">Дополнительные попытки</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Акции для всех участников в начале, середине или конце сезона.</p>
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </div>
+              </GlassCard>
+            </Link>
 
             <Link to="/admin/mechanics" className="block">
               <GlassCard className="px-4 py-4">
