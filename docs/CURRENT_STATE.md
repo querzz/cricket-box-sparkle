@@ -769,8 +769,20 @@ Latest implementation commits:
 - b1b3cb29 — fix Node import for prize probability test
 - 657b6a50 — add QA coverage for rank permissions
 - 3244f08e — align Daily Gift admin defaults
+- c5e1e9cc — fix EMPTY anti-streak multiplier so pity really reduces EMPTY weight
 
-The code paths for Dynamic Prize Selection, Daily Gift, global free-spin campaigns, Channel Activity, and veteran rank assignment were re-read after the screenshots. The latest repository-level CI result still needs to be green after these fixes before claiming the full regression suite is clean.
+The code paths for Dynamic Prize Selection, Daily Gift, global free-spin campaigns, Channel Activity, and veteran rank assignment were re-read after the screenshots. Current-head CI is green after the fixes below.
+
+## 11G. CURRENT VERIFICATION (2026-10-01)
+
+Latest repository head: `115bda5899f68f8d4b857a83df9b052c334aedf7`.
+
+GitHub Actions for this head are green:
+- Build, typecheck & lint
+- PostgreSQL invariants, LiveOps & concurrency
+- Payment Security
+
+The PostgreSQL regression suite now passes the Dynamic Prize Selection tests, including long-EMPTY pity/anti-streak and inventory pacing. The bot runtime lint error and the previous Node module-resolution failure are also cleared.
 
 ## 12. SECURITY / RELIABILITY NOTES
 
