@@ -15,7 +15,7 @@ export function getVeteranTier(completedSeasons: number): VeteranTier {
   return "ROOKIE";
 }
 
-export async function getVeteranHistory(db: DbExecutor, userId: string, currentSeasonId?: string) {
+export async function getVeteranHistory(db: DbExecutor, userId: string, currentSeasonId?: string, tierOverride?: VeteranTier | null) {
   const result = await db.query<{ seasons: string; spins: string; wins: string }>(
     `SELECT COUNT(DISTINCT s.season_id)::text AS seasons,
             COUNT(*)::text AS spins,
@@ -29,7 +29,7 @@ export async function getVeteranHistory(db: DbExecutor, userId: string, currentS
   );
   const row = result.rows[0];
   const seasons = Number(row?.seasons ?? 0);
-  const tier = getVeteranTier(seasons);
+  const tier = tierOverride && VETERAN_RULES[tierOverride] ? tierOverride : getVeteranTier(seasons);
   return { seasons, spins: Number(row?.spins ?? 0), wins: Number(row?.wins ?? 0), tier, ...VETERAN_RULES[tier] };
 }
 
@@ -41,7 +41,12 @@ export async function isVeteranBonusEnabled(db: DbExecutor) {
 export async function grantVeteranBonusIfDue(db: DbExecutor, userId: string, seasonId: string) {
   const enabled = await isVeteranBonusEnabled(db);
   if (!enabled) return { enabled: false, granted: 0, tier: "ROOKIE" as VeteranTier, seasons: 0, remaining: 0 };
-  const history = await getVeteranHistory(db, userId, seasonId);
+  const overrideResult = await db.query<{ veteran_tier_override: VeteranTier | null }>(
+    `SELECT veteran_tier_override FROM users WHERE id=$1::uuid`,
+    [userId],
+  );
+  const tierOverride = overrideResult.rows[0]?.veteran_tier_override ?? null;
+  const history = await getVeteranHistory(db, userId, seasonId, tierOverride);
   const current = await db.query<{ bonus_free_spins: number; veteran_bonus_season_id: string | null; veteran_bonus_spins_issued: number }>(
     `SELECT bonus_free_spins,veteran_bonus_season_id::text,veteran_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,
     [userId],
