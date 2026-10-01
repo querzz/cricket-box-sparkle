@@ -809,6 +809,43 @@ origin/main
 
 ---
 
+## 14A. LATEST FEATURE COMMITS (2026-10-01)
+
+The latest feature work directly addresses the product feedback from testing:
+
+```
+be7f71dca  restore dynamic pity + economy prize balancing
+1d5bed892  simplify prize editor + dedicated NFT control
+10c383567  Daily Gift default tier odds → 1% / 3% / 5%
+a35148af7  admin Daily Gift odds API
+16d61c60c  admin Daily Gift odds UI
+771526df9  per-user Daily Gift tier override API
+4c4c18543  Daily Gift tier override UI
+15a5e5aee  global free-spin campaign API
+6a7910201  global free-spin campaign UI
+fa5ac4b09  expose bonus campaigns from system settings
+e50aebacb  channel activity system switch
+755004289  session honors activity switch
+6e4341ac8  channel comment activity tracking
+95b4015cb  channel activity admin UI/rules
+a09c9f22e  user-facing explanation of dynamic balancing
+86d61777a  dynamic pity/economy regression tests
+40e4d951a  migrate old Daily Gift default values
+039ddcde8  reflect campaign grants in session snapshot
+ed7fd9334  keep current season out of Daily Gift history
+01a1e22c3  type-safe Daily Gift effective reward
+ccf13706c  clean Daily Gift integration
+c8e6af7af  repair veteran admin route delimiter
+6799983d  repair veteran admin route syntax
+c284718f7  load Daily Gift settings correctly
+4cd26d23a  update this handoff documentation
+```
+
+The current Daily Gift defaults are intentionally conservative for the first test:
+1% for Rookie, 3% for Veteran, 5% for Elite. They are admin-configurable.
+
+The dynamic season selector is active in production code, but the remaining runtime proof still must be collected during the real one-week test. The test should compare observed prize distribution and inventory depletion against the configured weights and dynamic diagnostics.
+
 ## 15. LAST KNOWN WORKING CHECKPOINT
 
 At the time this handoff was written:
