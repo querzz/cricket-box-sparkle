@@ -99,7 +99,7 @@ export const Route = createFileRoute("/api/session")({
               AND ($3::timestamptz IS NULL OR occurred_at <= $3::timestamptz)`,
           [tgUser.id, season.starts_at, season.ends_at],
         );
-        const activitySetting = await query<{ value: unknown }>("SELECT value FROM app_settings WHERE key=$channel_activity$ LIMIT 1");
+        const activitySetting = await query<{ value: unknown }>("SELECT value FROM app_settings WHERE key='channel_activity' LIMIT 1");
         const activityEnabled = (activitySetting.rows[0]?.value as { enabled?: unknown } | undefined)?.enabled !== false;
         const activityPoints = Math.max(0, Number(activityResult.rows[0]?.points ?? 0));
         const targetActivityBonusSpins = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.floor(activityPoints / ACTIVITY_POINTS_PER_SPIN));
