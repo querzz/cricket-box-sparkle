@@ -1,6 +1,6 @@
 # CRICKET BOX — CURRENT STATE / HANDOFF
 
-Updated: 2026-10-02 (post-rank/bonus QA)
+Updated: 2026-10-02 (post-rank/bonus QA + UI sync)
 Repository: `querzz/cricket-box-sparkle`
 Production/test target: Telegram Mini App + Telegram bot + PostgreSQL on Hetzner
 
@@ -754,6 +754,12 @@ A second review found one real integration issue in the global free-spin campaig
 
 ```
 e6087072 — fix: decouple global bonus campaigns from channel activity
+```
+
+The veteran admin user-row selector was also adjusted so the visible badge changes immediately after a successful manual rank assignment instead of waiting for a page reload:
+
+```
+bf45a6ae — fix: refresh effective rank in veteran admin UI
 ```
 
 The regression QA now explicitly checks both behaviors.
