@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { authenticateAdmin } from "@/server/auth/access";
 import { query, withTransaction } from "@/server/db";
-import { getVeteranTier, VETERAN_RULES, type VeteranTier } from "@/server/veteran";
+import { VETERAN_RULES, type VeteranTier } from "@/server/veteran";
 
 export const Route = createFileRoute("/api/admin/veteran")({
   server: { handlers: {
@@ -46,8 +46,12 @@ export const Route = createFileRoute("/api/admin/veteran")({
           rules:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label,minSeasons:VETERAN_RULES[tier].minSeasons,bonusSpins:VETERAN_RULES[tier].bonusSpins,description:VETERAN_RULES[tier].description})), manualRankOptions:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label})),
           players:users.rows.map((row)=>({id:row.id,telegramId:row.telegram_id,tierOverride:row.veteran_tier_override??null,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",name:[row.first_name,row.last_name].filter(Boolean).join(" "),seasons:Number(row.seasons),spins:Number(row.spins),wins:Number(row.wins),tier:row.tier,bonusIssued:Number(row.bonus_issued),bonusUsed:Number(row.bonus_used),bonusRemaining:Math.max(0,Number(row.bonus_issued)-Number(row.bonus_used))})),
         });
-      } catch {
-        return Response.json({ok:false,code:"VETERAN_FAILED"},{status:401});
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : "VETERAN_FAILED";
+        const safeCode = raw === "INIT_DATA_MISSING" || raw === "TELEGRAM_USER_MISSING" || raw === "ADMIN_ACCESS_DENIED" ? raw : "VETERAN_FAILED";
+        const status = safeCode === "ADMIN_ACCESS_DENIED" ? 403 : safeCode === "VETERAN_FAILED" ? 500 : 400;
+        if (safeCode === "VETERAN_FAILED") console.error("[CRICKET BOX] veteran admin GET failed", { error: raw });
+        return Response.json({ok:false,code:safeCode},{status});
       }
     },
     PATCH: async ({ request }) => {
@@ -78,7 +82,8 @@ export const Route = createFileRoute("/api/admin/veteran")({
         return Response.json({ok:true,enabled:body.enabled});
       } catch (error) {
         const code=error instanceof Error?error.message:"VETERAN_UPDATE_FAILED";
-        const status=code==="OWNER_ONLY"?403:code==="USER_NOT_FOUND"?404:400;
+        const status=code==="OWNER_ONLY"?403:code==="USER_NOT_FOUND"?404:code==="INIT_DATA_MISSING"||code==="TELEGRAM_USER_MISSING"?400:code==="ADMIN_ACCESS_DENIED"?403:500;
+        if (status >= 500) console.error("[CRICKET BOX] veteran admin PATCH failed", { error: code });
         return Response.json({ok:false,code},{status});
       }
     },
