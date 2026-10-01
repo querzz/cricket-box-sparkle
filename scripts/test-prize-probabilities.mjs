@@ -82,6 +82,26 @@ for (const prize of sequential) {
   assert(sequentialWins.get(prize.id) === prize.quantity_total, `${prize.id} must be awarded exactly its configured quantity`);
 }
 
+const pityBase = buildDynamicWeights([
+  { id: "empty", kind: "EMPTY", quantity_remaining: 100, quantity_total: 100, metadata: { weight: 1 } },
+  { id: "reward", kind: "STARS", quantity_remaining: 5, quantity_total: 5, metadata: { weight: 1 } },
+], { emptyStreak: 0 });
+const pityLong = buildDynamicWeights([
+  { id: "empty", kind: "EMPTY", quantity_remaining: 100, quantity_total: 100, metadata: { weight: 1 } },
+  { id: "reward", kind: "STARS", quantity_remaining: 5, quantity_total: 5, metadata: { weight: 1 } },
+], { emptyStreak: 10 });
+assert(pityLong[1].diagnostics.pityMultiplier > pityBase[1].diagnostics.pityMultiplier, "long EMPTY streak must increase non-empty pity multiplier");
+assert(pityLong[0].diagnostics.antiStreakMultiplier < 1, "long EMPTY streak must reduce EMPTY multiplier");
+
+const pacingFast = buildDynamicWeights([
+  { id: "fast", kind: "PREMIUM", quantity_remaining: 20, quantity_total: 100, metadata: { weight: 1 } },
+], { elapsedFraction: 0.5 });
+const pacingSlow = buildDynamicWeights([
+  { id: "slow", kind: "PREMIUM", quantity_remaining: 80, quantity_total: 100, metadata: { weight: 1 } },
+], { elapsedFraction: 0.5 });
+assert(pacingFast[0].diagnostics.globalMultiplier < 1, "fast-depleting prize must be down-weighted");
+assert(pacingSlow[0].diagnostics.globalMultiplier > 1, "lagging prize must be up-weighted");
+
 let invalidWeightRejected = false;
 try {
   buildDynamicWeights([{ id: "bad", kind: "MONEY", quantity_remaining: 1, quantity_total: 1, metadata: { weight: -1 } }]);
