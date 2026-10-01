@@ -45,7 +45,7 @@ function BonusCampaigns() {
     setLoading(true); setError("");
     try {
       const response=await fetch("/api/admin/seasons?initData="+encodeURIComponent(initData()));
-      const data=await response.json() as {ok:boolean;seasons?:Array<{id:string;code:string;state:string;starts_at?:string|null;ends_at?:string|null}>};
+      const data=await response.json() as {ok:boolean;code?:string;seasons?:Array<{id:string;code:string;state:string;starts_at?:string|null;ends_at?:string|null}>};
       if(!response.ok||!data.ok) throw new Error(data.code??"REQUEST_FAILED");
       const seasons=data.seasons??[];
       const live=seasons.find((s)=>s.state==="ACTIVE"||s.state==="SCHEDULED"||s.state==="ENDING")??seasons[0];
