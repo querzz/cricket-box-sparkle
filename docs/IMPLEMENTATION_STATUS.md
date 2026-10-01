@@ -1,6 +1,6 @@
 # CRICKET BOX — IMPLEMENTATION STATUS
 
-Updated: 2026-10-01 (post-rank/QA fixes)
+Updated: 2026-10-01 (verified green)
 Repository: `querzz/cricket-box-sparkle`
 
 ## Verified implemented
@@ -127,7 +127,7 @@ The repository contains regression suites for database invariants, LiveOps, paym
 
 `npm run test:bot` checks bot polling, /start, /help, /paysupport, pre-checkout, payment settlement, refund handling and the admin button label; when `TELEGRAM_BOT_TOKEN` is present in local `.env`, it also performs a live `getMe` health check.
 
-Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Payment Security green before production readiness is declared. The fixes after the 2026-10-01 screenshot review address the latest observed TypeScript errors and the Node module-resolution failure in the prize-probability test; a fresh current-head CI run is the final verification step.
+Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Payment Security green before production readiness is declared. For current head `115bda5899f68d4b857a83df9b052c334aedf7`, all three are green.
 
 ## 2026-10-01 QA fixes
 
@@ -137,6 +137,11 @@ Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Pay
 - Veteran rank dropdown typing was corrected.
 - Prize probability regression test now imports season-economy through a Node-compatible relative path.
 - Product static QA checks the rank permission split.
+- Dynamic Prize Selection regression now verifies that long EMPTY streaks both boost non-empty pity and reduce EMPTY weight.
+
+### Latest verified head
+
+`115bda5899f68f8d4b857a83df9b052c334aedf7` — Build/typecheck/lint ✅, PostgreSQL integration/concurrency ✅, Payment Security ✅.
 
 ## Recently added test-season controls
 
