@@ -73,6 +73,6 @@ export const Route = createFileRoute("/api/admin/veteran")({
         const status=code==="OWNER_ONLY"?403:code==="USER_NOT_FOUND"?404:400;
         return Response.json({ok:false,code},{status});
       }
-    },,
+    },
   }},
 });
