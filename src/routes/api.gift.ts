@@ -53,7 +53,7 @@ export const Route = createFileRoute("/api/gift")({
           const overflow = reward.kind === "STARS" ? Math.max(0, reward.amount - starsCredited) : 0;
           const bonusSpinGranted = reward.kind === "FREE_SPIN" ? Math.min(reward.amount, Math.max(0, MAX_BONUS_SPINS - Number(current.bonus_free_spins ?? 0))) : 0;
           const xpGranted = reward.kind === "XP" ? reward.amount : 0;
-          const effectiveKind: GiftReward["kind"] = reward.kind === "STARS" && starsCredited === 0 || reward.kind === "FREE_SPIN" && bonusSpinGranted === 0 ? "NOTHING" : reward.kind;
+          const effectiveKind: typeof reward.kind = reward.kind === "STARS" && starsCredited === 0 || reward.kind === "FREE_SPIN" && bonusSpinGranted === 0 ? "NOTHING" : reward.kind;
           const title = effectiveKind === "NOTHING" && reward.kind !== "NOTHING" ? "Ничего" : reward.title;
           const subtitle = reward.kind === "STARS" && overflow > 0
             ? `Лимит баланса: из ${reward.amount} Stars поместилось только ${starsCredited}.`
