@@ -37,6 +37,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { Client } = pg;
 
 let botLockClient = null;
+let linkedDiscussionChatId = null;
 
 async function acquireBotLock() {
   if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
@@ -112,11 +113,39 @@ async function paymentDbQuery(text, values = []) {
   }
 }
 
-async function recordChannelActivity({ telegramUserId, eventType, eventKey, points, metadata = {} }) {
+async function recordChannelActivity({ telegramUserId, eventType, eventKey, points = 0, metadata = {} }) {
   if (!databaseUrl || !channelId || !Number.isSafeInteger(Number(telegramUserId))) return;
+  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
   try {
-    await paymentDbQuery(
-      `INSERT INTO channel_activity (user_id,telegram_user_id,channel_id,event_type,event_key,activity_points,occurred_at,metadata)
+    await client.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      \`cricket_box:activity:\${Number(telegramUserId)}:\${Number(channelId)}:\${new Date().toISOString().slice(0,10)}\`,
+    ]);
+
+    const setting = await client.query("SELECT value FROM app_settings WHERE key='channel_activity' LIMIT 1");
+    const enabled = (setting.rows[0]?.value as { enabled?: unknown } | undefined)?.enabled !== false;
+    if (!enabled) {
+      await client.query("COMMIT");
+      return;
+    }
+
+    let activityPoints = Math.max(0, Number(points) || 0);
+    if (eventType === "COMMENT") {
+      const count = await client.query(
+        "SELECT COUNT(*)::int AS n FROM channel_activity WHERE telegram_user_id=$1::bigint AND channel_id=$2::bigint AND event_type='COMMENT' AND occurred_at>=date_trunc('day',now())",
+        [Number(telegramUserId), Number(channelId)],
+      );
+      const countedComments = Number(count.rows[0]?.n ?? 0);
+      if (countedComments >= 20) {
+        await client.query("COMMIT");
+        return;
+      }
+      activityPoints = (countedComments + 1) % 2 === 0 ? 1 : 0;
+    }
+
+    await client.query(
+      \`INSERT INTO channel_activity (user_id,telegram_user_id,channel_id,event_type,event_key,activity_points,occurred_at,metadata)
        SELECT u.id,$1::bigint,$2::bigint,$3,$4,$5,now(),$6::jsonb
          FROM (SELECT 1) seed
          LEFT JOIN users u ON u.telegram_id=$1::bigint
@@ -126,11 +155,15 @@ async function recordChannelActivity({ telegramUserId, eventType, eventKey, poin
              AND ca.channel_id=$2::bigint
              AND ca.event_type=$3
              AND ca.event_key=$4
-        )`,
-      [Number(telegramUserId), Number(channelId), eventType, eventKey, points, JSON.stringify(metadata)],
+        )\`,
+      [Number(telegramUserId), Number(channelId), eventType, eventKey, activityPoints, JSON.stringify(metadata)],
     );
+    await client.query("COMMIT");
   } catch (error) {
-    console.warn(`Channel activity record failed: ${error instanceof Error ? error.message : String(error)}`);
+    await client.query("ROLLBACK").catch(() => {});
+    console.warn(\`Channel activity record failed: \${error instanceof Error ? error.message : String(error)}\`);
+  } finally {
+    await client.end().catch(() => {});
   }
 }
 
@@ -258,6 +291,17 @@ async function sendMessage(chatId, text, replyMarkup) {
 }
 
 async function handleMessage(message) {
+  if (linkedDiscussionChatId && message?.chat?.id === linkedDiscussionChatId && message?.from?.id && typeof message.text === "string" && message.text.trim()) {
+    await recordChannelActivity({
+      telegramUserId: message.from.id,
+      eventType: "COMMENT",
+      eventKey: String(message.message_id),
+      points: 0,
+      metadata: { chatId: message.chat.id, textLength: message.text.trim().length },
+    });
+    return;
+  }
+
   const chatId = message?.chat?.id;
   if (!chatId) return;
 
@@ -379,6 +423,7 @@ async function pollTelegramUpdates() {
     console.warn(`Telegram webhook cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
   });
 
+  linkedDiscussionChatId = await getLinkedDiscussionChatId();
   await api("setMyCommands", {
     commands: [
       { command: "start", description: "Открыть CRICKET BOX" },
@@ -395,7 +440,7 @@ async function pollTelegramUpdates() {
       const updates = await api("getUpdates", {
         offset,
         timeout: 25,
-        allowed_updates: ["message", "pre_checkout_query"],
+        allowed_updates: ["message", "pre_checkout_query", "message_reaction"],
       });
       const batch = Array.isArray(updates) ? updates : [];
       const messageUpdates = batch.filter((update) => update?.message).map((update) => update.message);
