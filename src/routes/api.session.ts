@@ -124,7 +124,8 @@ export const Route = createFileRoute("/api/session")({
           }
 
           if (activityEnabled && (season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
-            await grantActiveFreeSpinCampaigns(client, user.id, season.id, current.is_participant, isSubscribed);
+            const campaignGranted = await grantActiveFreeSpinCampaigns(client, user.id, season.id, current.is_participant, isSubscribed);
+            bonusFreeSpins += campaignGranted;
             const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
             const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
             if (grant > 0) {
