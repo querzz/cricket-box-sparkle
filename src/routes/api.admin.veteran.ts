@@ -7,8 +7,8 @@ export const Route = createFileRoute("/api/admin/veteran")({
   server: { handlers: {
     GET: async ({ request }) => {
       try {
-        await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
-        const enabledResult = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, FALSE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
+ = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, FALSE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
+        const admin = await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
         const enabled = enabledResult.rows[0]?.enabled === true;
         const users = await query<{ id:string;telegram_id:string;username:string|null;first_name:string;last_name:string|null;veteran_tier_override:VeteranTier|null;seasons:string;spins:string;wins:string;tier:VeteranTier;bonus_issued:string;bonus_used:string }>(
           `WITH current_season AS (
@@ -41,6 +41,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
         );
         return Response.json({
           ok:true,
+          role:admin.role,
           enabled,
           rules:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label,minSeasons:VETERAN_RULES[tier].minSeasons,bonusSpins:VETERAN_RULES[tier].bonusSpins,description:VETERAN_RULES[tier].description})), manualRankOptions:(Object.keys(VETERAN_RULES) as VeteranTier[]).map((tier)=>({tier,label:VETERAN_RULES[tier].label})),
           players:users.rows.map((row)=>({id:row.id,telegramId:row.telegram_id,tierOverride:row.veteran_tier_override??null,username:row.username?`@${row.username.replace(/^@/,"")}`:"—",name:[row.first_name,row.last_name].filter(Boolean).join(" "),seasons:Number(row.seasons),spins:Number(row.spins),wins:Number(row.wins),tier:row.tier,bonusIssued:Number(row.bonus_issued),bonusUsed:Number(row.bonus_used),bonusRemaining:Math.max(0,Number(row.bonus_issued)-Number(row.bonus_used))})),
