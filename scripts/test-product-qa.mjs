@@ -96,6 +96,8 @@ assert(selector.includes("weight"), "selector uses configured weight");
 assert(selector.includes("emptyStreak"), "selector applies player EMPTY-streak balancing");
 assert(selector.includes("globalMultiplier"), "selector applies season inventory pacing");
 assert(veteranApi.includes('UPDATE users SET veteran_tier_override=$2 WHERE id=$1::uuid'), "manual veteran rank assignment updates a real users column");
+assert(veteranApi.includes('if (body.telegramId !== undefined) {') && veteranApi.indexOf('if (body.telegramId !== undefined) {') < veteranApi.indexOf('if (admin.role !== "OWNER")'), "manual veteran rank assignment is available to admins; global veteran toggle remains owner-only");
+assert(veteranUi.includes("Недостаточно прав для изменения ранга."), "veteran rank UI distinguishes owner-only permission errors");
 assert(veteranApi.includes("tierOverride"), "manual veteran rank override is supported by admin API");
 assert(dailyGiftApi.includes("key='daily_gift'") && dailyGiftApi.includes("ON CONFLICT(key) DO UPDATE"), "Daily Gift tier chance settings are persisted");
 assert(freeSpinCampaignApi.includes("free_spin_campaigns"), "global free-spin campaigns are persisted and administered");
