@@ -53,9 +53,9 @@ export async function getDailyGiftConfig(db: DbExecutor): Promise<DailyGiftConfi
   return parseDailyGiftConfig(result.rows[0]?.value ?? DEFAULT_DAILY_GIFT_CONFIG);
 }
 
-export async function getDailyGiftTier(db: DbExecutor, userId: string, override?: VeteranTier | null) {
+export async function getDailyGiftTier(db: DbExecutor, userId: string, override?: VeteranTier | null, currentSeasonId?: string) {
   if (override && TIERS.includes(override)) return { tier: override, source: "OVERRIDE" as const };
-  const history = await getVeteranHistory(db, userId);
+  const history = await getVeteranHistory(db, userId, currentSeasonId);
   return { tier: history.tier, source: "HISTORY" as const };
 }
 
