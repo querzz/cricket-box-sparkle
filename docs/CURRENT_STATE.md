@@ -1,6 +1,6 @@
 # CRICKET BOX — CURRENT STATE / HANDOFF
 
-Updated: 2026-10-01
+Updated: 2026-10-01 (post-rank/QA fixes)
 Repository: `querzz/cricket-box-sparkle`
 Production/test target: Telegram Mini App + Telegram bot + PostgreSQL on Hetzner
 
@@ -607,7 +607,7 @@ Admin now has a dedicated **Выдать ранг вручную** panel on `/ad
 
 A manual rank overrides automatic completed-season history for that user. It is used by both Daily Gift and veteran-bonus logic and is recorded in `audit_logs`.
 
-The per-user dropdown remains available in the user list, and the list now supports search by name, username, or Telegram ID.
+The per-user dropdown remains available in the user list, and the list now supports search by name, username, or Telegram ID. Manual rank assignment is available to both ADMIN and OWNER; the separate global veteran-system toggle remains OWNER-only.
 
 To give a test account the highest rank, select **Элита**. The user must have launched CRICKET BOX at least once so the Telegram ID already exists in `users`.
 
@@ -648,7 +648,7 @@ A user's Daily Gift tier is normally taken from veteran history:
 
 The current season is excluded when calculating historical veteran status.
 
-The owner can manually assign an individual user's rank (ROOKIE/VETERAN/ELITE) from the Veteran admin screen. The manual rank overrides automatic season-history calculation and is used for both Daily Gift and veteran bonus eligibility. The change is audited. A search field and direct Telegram-ID assignment form are available, so the owner can promote a specific account even when it is not convenient to find in the list.
+An active admin can manually assign an individual user's rank (ROOKIE/VETERAN/ELITE) from the Veteran admin screen. The manual rank overrides automatic season-history calculation and is used for both Daily Gift and veteran bonus eligibility. The change is audited. A search field and direct Telegram-ID assignment form are available, so the owner can promote a specific account even when it is not convenient to find in the list.
 
 Relevant commits:
 ```
@@ -746,6 +746,31 @@ Relevant commit:
 ```
 1d5bed892 — feat: simplify prize editor and add NFT controls
 ```
+
+## 11F. LATEST QA / FIXES (2026-10-01)
+
+The first live admin screenshots exposed two permission/type issues in the new veteran controls:
+
+- manual rank assignment was incorrectly blocked by the OWNER-only guard; it is now available to both ADMIN and OWNER;
+- the global veteran-system enable/disable switch remains OWNER-only, and the UI now reports that permission explicitly instead of a generic failure.
+
+Two CI-only issues were also fixed:
+
+- /admin/bonuses now types the season API code error field correctly;
+- test:prize-probabilities can import the selector under plain Node because the selector's season-economy dependency uses a relative server-module import;
+- the veteran dropdown now narrows its selected value to the Tier union;
+- product static QA now checks that manual rank assignment is available to admins while the global toggle stays owner-only;
+- Admin Settings now starts with the same Daily Gift defaults as the server: 1% / 3% / 5%.
+
+Latest implementation commits:
+- 0afd6711 — allow admins to assign user veteran ranks
+- a71be09c — fix veteran rank UI typing/error handling
+- f7f9d0e5 — fix bonus season API typing
+- b1b3cb29 — fix Node import for prize probability test
+- 657b6a50 — add QA coverage for rank permissions
+- 3244f08e — align Daily Gift admin defaults
+
+The code paths for Dynamic Prize Selection, Daily Gift, global free-spin campaigns, Channel Activity, and veteran rank assignment were re-read after the screenshots. The latest repository-level CI result still needs to be green after these fixes before claiming the full regression suite is clean.
 
 ## 12. SECURITY / RELIABILITY NOTES
 
