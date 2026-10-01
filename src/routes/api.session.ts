@@ -99,6 +99,8 @@ export const Route = createFileRoute("/api/session")({
               AND ($3::timestamptz IS NULL OR occurred_at <= $3::timestamptz)`,
           [tgUser.id, season.starts_at, season.ends_at],
         );
+        const activitySetting = await query<{ value: unknown }>("SELECT value FROM app_settings WHERE key=$channel_activity$ LIMIT 1");
+        const activityEnabled = (activitySetting.rows[0]?.value as { enabled?: unknown } | undefined)?.enabled !== false;
         const activityPoints = Math.max(0, Number(activityResult.rows[0]?.points ?? 0));
         const targetActivityBonusSpins = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.floor(activityPoints / ACTIVITY_POINTS_PER_SPIN));
 
@@ -121,7 +123,7 @@ export const Route = createFileRoute("/api/session")({
             await client.query(`UPDATE user_state SET activity_bonus_season_id=$2::uuid,activity_bonus_spins_issued=0,updated_at=now() WHERE user_id=$1::uuid`, [user.id, season.id]);
           }
 
-          if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+          if (activityEnabled && (season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
             await grantActiveFreeSpinCampaigns(client, user.id, season.id, current.is_participant, isSubscribed);
             const pendingActivityBonuses = Math.max(0, targetActivityBonusSpins - activityIssued);
             const grant = Math.min(pendingActivityBonuses, Math.max(0, MAX_BONUS_SPINS - bonusFreeSpins));
@@ -181,7 +183,7 @@ export const Route = createFileRoute("/api/session")({
           stars:{amount:Math.max(0,Math.min(MAX_STARS,activityState.starsBalance)),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
           gift:{state:giftedRecently?"COOLDOWN":live&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
-          activity:{points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
+          activity:{enabled:activityEnabled,points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
           rewards,
           leaderboard:leaderboardResult.rows.map((r)=>({rank:r.rank,userId:r.user_id,username:r.username?`@${r.username.replace(/^@/,"")}`:"@username",spins:r.spins_count,wins:r.wins_count,starsWon:Number(r.stars_won??0),level:Number(r.level??1),isCurrentUser:r.user_id===user.id})),
