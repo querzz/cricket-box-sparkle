@@ -597,6 +597,22 @@ Latest selector commit:
 be7f71dca — feat: restore dynamic pity and economy prize balancing
 ```
 
+### Manual rank assignment (added 2026-10-01)
+
+Admin now has a dedicated **Выдать ранг вручную** panel on `/admin/veteran`:
+
+- enter the user's Telegram ID;
+- choose Новичок / Ветеран / Элита;
+- press **Выдать ранг**.
+
+A manual rank overrides automatic completed-season history for that user. It is used by both Daily Gift and veteran-bonus logic and is recorded in `audit_logs`.
+
+The per-user dropdown remains available in the user list, and the list now supports search by name, username, or Telegram ID.
+
+To give a test account the highest rank, select **Элита**. The user must have launched CRICKET BOX at least once so the Telegram ID already exists in `users`.
+
+Manual rank does not retroactively rewrite already-issued bonus history; it controls the effective rank for future Daily Gift checks and the next veteran-bonus grant.
+
 ## 11B. DAILY GIFT — SIMPLIFIED TIER CHANCE
 
 Daily Gift no longer treats the "chance of getting anything" as a separate weight for every reward.
