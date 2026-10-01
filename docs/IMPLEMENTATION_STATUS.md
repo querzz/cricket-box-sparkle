@@ -45,7 +45,7 @@ Repository: `querzz/cricket-box-sparkle`
 finalWeight = configuredWeight × quantityRemaining
 ```
 
-- There is no hidden online-user-count multiplier, time pacing, pity or anti-streak correction in the MVP selector.
+- There is no hidden online-user-count multiplier. The selector now includes server-side player pity/anti-EMPTY balancing and season inventory pacing based on remaining inventory versus elapsed season time.
 - `weight = 0` is valid and makes a prize non-selectable.
 - Negative/non-finite weights fail closed as `INVALID_PRIZE_WEIGHT` rather than silently becoming `1`.
 - Exhausted/inactive prizes are excluded.
@@ -85,12 +85,12 @@ finalWeight = configuredWeight × quantityRemaining
 - `/api/admin/drops` supports scheduled/manual drops and cancellation.
 - Due drops are activated transactionally during settlement.
 - `/api/admin/economy/simulate` provides controlled simulation without mutating production inventory.
-- The simulator uses the same finite-pool selector as production.
+- The simulator uses the same finite-pool selector as production, including the active dynamic balancing rules.
 - `/api/internal/liveops/tick` is secret-protected and advisory-locked.
 - The repository scheduler exits cleanly when its required secrets are not configured.
 - The economic planner is consolidated into `/admin/economics`: scenario presets, expected/max free spins, expected paid spins, planning volume, gross Stars, Stars prize liability, configurable planning rate, Daily Gift budget, operating reserve, break-even calculations, pool utilization and explicit warnings are calculated without mutating season settings.
 - The planner keeps non-USD material costs separate instead of silently converting them with an invented FX rate.
-- A centralized `/admin/settings` page now collects existing cross-season controls without duplicating season economics; Veteran remains owner-controlled and Mechanics remains available as a dedicated configuration screen.
+- A centralized `/admin/settings` page now collects cross-season controls including tier-based Daily Gift reward chance. Veteran remains owner-controlled and Mechanics remains available as a dedicated configuration screen. `/admin/bonuses` supports scheduled global extra free-spin campaigns.
 
 ### Payouts / withdrawals
 
@@ -127,6 +127,14 @@ The repository contains regression suites for database invariants, LiveOps, paym
 `npm run test:bot` checks bot polling, /start, /help, /paysupport, pre-checkout, payment settlement, refund handling and the admin button label; when `TELEGRAM_BOT_TOKEN` is present in local `.env`, it also performs a live `getMe` health check.
 
 Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Payment Security green before production readiness is declared.
+
+## Recently added test-season controls
+
+- Daily Gift has a simple three-tier "chance to get a reward" configuration rather than separate admin weights for each reward.
+- Individual Daily Gift tier overrides are supported for controlled accounts.
+- Scheduled global extra free-spin campaigns can be created multiple times per season.
+- Channel Activity can be enabled/disabled and the MVP comment rule is 2 comments = 1 point, up to 20 counted comments per day.
+- The prize selector now applies pity after a long EMPTY streak and an inventory-pacing multiplier tied to season progress.
 
 ## Remaining production work
 
