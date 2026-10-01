@@ -1,6 +1,6 @@
 # CRICKET BOX — CURRENT STATE / HANDOFF
 
-Updated: 2026-10-02 (post-rank/bonus QA + UI sync)
+Updated: 2026-10-02 (pre-test-season handoff; latest main includes rank + bonus fixes)
 Repository: `querzz/cricket-box-sparkle`
 Production/test target: Telegram Mini App + Telegram bot + PostgreSQL on Hetzner
 
@@ -16,6 +16,133 @@ If the current chat is lost, the next AI should read this file first, then read:
 - `README.md` — project architecture and normal development commands.
 
 Do not invent a new architecture or overwrite existing decisions before checking those documents.
+
+## 0. HANDOFF — WHERE WE ARE RIGHT NOW (2026-10-02)
+
+The code work discussed immediately before the test season is now recorded here so a new AI can continue without guessing.
+
+### Latest repository state
+
+Current `main` head is:
+
+```
+920b036bd442862c27c28c44787d919b70549111
+```
+
+Latest commits in the current chain:
+
+```
+920b036b — docs: record veteran rank UI sync fix
+bf45a6ae — fix: refresh effective rank in veteran admin UI
+a7b6230d — docs: record bonus campaign QA and deployment note
+266fbff2 — test: cover rank and bonus campaign regressions
+e6087072 — fix: decouple global bonus campaigns from channel activity
+```
+
+The manual-rank server fix that matters for deployment is:
+
+```
+a78e534a — fix: make manual veteran rank assignment work
+```
+
+The earlier regression was caused by a query touching a non-existent `users.updated_at` column. That query is fixed in the repository.
+
+### What was just fixed
+
+1. **Manual user rank assignment**: ADMIN and OWNER can set an individual user's effective rank to ROOKIE / VETERAN / ELITE.
+2. **Manual rank UI sync**: after a successful change, the visible tier badge updates immediately without a page reload.
+3. **Global free-spin campaigns**: their granting is independent from the Channel Activity enable/disable switch.
+4. Regression tests were added for the rank and bonus-campaign paths.
+
+### Important deployment reality
+
+GitHub `main` is **not automatically deployed to Hetzner**.
+
+The screenshots that showed **«Не удалось изменить статус»** can therefore be produced by the currently running older server build even though the repository contains the fix.
+
+For the web/rank fix, restarting only the Telegram bot is not sufficient. The web service must be pulled, rebuilt and restarted.
+
+Use:
+
+```
+cd /opt/cricket-box-sparkle
+git pull --ff-only origin main
+npm install
+npm run db:init
+npm run build
+systemctl restart cricket-box-web
+systemctl restart cricket-box-bot
+```
+
+Then verify:
+
+```
+curl https://cricketbox.site/api/health
+```
+
+Expected:
+
+```
+{"ok":true,"database":true}
+```
+
+### Manual rank test account
+
+A test user already seen in the Telegram/admin UI can be assigned the highest rank with:
+
+```
+Telegram ID: 1938585729
+Rank: ELITE
+```
+
+The account must already exist in the `users` table because the user has launched the Mini App.
+
+Test path:
+
+```
+Admin → Бонусы ветеранов → Выдать ранг вручную
+→ Telegram ID 1938585729 → Элита → Выдать ранг
+```
+
+Then refresh the page once and verify the user is shown as **Элита** and that Daily Gift uses the ELITE tier on the next eligible claim.
+
+### What remains before inviting the ~50-person test group
+
+Do not treat the test season as ready just because the code builds. The remaining work is operational/runtime verification:
+
+- pull the latest `main` onto Hetzner;
+- run `npm run db:init` against the fresh database;
+- run `npm run build`;
+- restart **web + bot**;
+- verify external HTTPS and `/api/health`;
+- verify GitHub Actions secrets for LiveOps and run one manual tick;
+- create the 7-day `CRICKET BOX TEST` season and activate it;
+- configure a small finite prize pool and save it;
+- verify the quick non-EMPTY base-chance control;
+- verify Daily Gift tier percentages and manual ELITE override;
+- verify one scheduled global extra-free-spin campaign independently of Channel Activity;
+- verify Channel Activity on/off behavior and the 2-comments = 1-point rule;
+- run real end-to-end tests with 1–2 Telegram accounts: subscription, free spin, Daily Gift, EMPTY/pity behavior, reward inventory decrement, paid Stars, payment completion, admin visibility, and payout/refund handling;
+- only after those pass, open the season to the larger controlled group.
+
+Known production gaps still listed below are not blockers for a small controlled test if handled manually, but they must be tracked: browser/Telegram QA breadth, real payout/refund confirmation, live HTTP replay testing, and the payment external-atomicity/orphan-invoice edge case.
+
+### Do not redo these features unless a new bug is demonstrated
+
+Already implemented and documented:
+
+- dynamic prize pity / anti-EMPTY;
+- season inventory pacing;
+- Daily Gift 1% / 3% / 5% tier defaults with configurable admin settings;
+- manual ROOKIE / VETERAN / ELITE override per user;
+- multiple global free-spin campaigns per season;
+- Channel Activity enable/disable;
+- prize quick chance control;
+- dedicated NFT prize type;
+- simplified prize editor;
+- PostgreSQL-backed spin/payment protections;
+- bot advisory lock and concurrent polling.
+
 
 ---
 
@@ -541,7 +668,7 @@ Save the pool and verify remaining inventory.
 
 ### F. Test with one or two Telegram accounts
 
-Test:
+Test all of the following before inviting more users:
 
 ```
 /start
@@ -549,16 +676,25 @@ Test:
 → subscribe to channel
 → participate
 → free spin
-→ reward appears in profile/prizes
-→ repeat attempt behavior
+→ Daily Gift
+→ manually assign one account ELITE
+→ verify ELITE Daily Gift behavior on its next eligible claim
+→ run a global extra-free-spin campaign
+→ pause Channel Activity and verify the global campaign still works
+→ test Channel Activity comment accrual separately
+→ repeat attempt/idempotency behavior
 → paid Stars spin
 → admin sees spin/payment
+→ payout/refund flow
 ```
+
+For prize behavior, also check that finite inventory decreases correctly and that the dynamic selector records pity/economy diagnostics.
 
 ### G. Only then invite the larger test group
 
 The target is approximately 50 testers for the first controlled season.
 
+Do not invite all 50 immediately. First complete the 1–2 account smoke test above, then expand gradually.
 Do not claim zero downtime without a real runtime/load test.
 
 ---
@@ -749,6 +885,8 @@ Relevant commit:
 
 ## 11F. LATEST QA / FIXES (2026-10-01)
 ## 11G. QA FINDINGS / DEPLOYMENT NOTE (2026-10-02)
+
+The latest exact repository state and deployment/test checklist are summarized in section 0 above. The most important operational point is that the Hetzner server does not auto-deploy from GitHub, so the rank fix must be pulled, built and the `cricket-box-web` service restarted.
 
 A second review found one real integration issue in the global free-spin campaign path: /api/session was granting active global campaigns only inside the Channel Activity switch. That meant pausing Channel Activity could also hide/grant-block the separate global campaign during session refreshes. This was fixed in:
 
