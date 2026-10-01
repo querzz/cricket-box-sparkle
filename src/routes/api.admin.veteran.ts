@@ -11,12 +11,20 @@ export const Route = createFileRoute("/api/admin/veteran")({
         const enabledResult = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, FALSE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
         const enabled = enabledResult.rows[0]?.enabled === true;
         const users = await query<{ id:string;telegram_id:string;username:string|null;first_name:string;last_name:string|null;veteran_tier_override:VeteranTier|null;seasons:string;spins:string;wins:string;tier:VeteranTier;bonus_issued:string;bonus_used:string }>(
-          `WITH history AS (
+          `WITH current_season AS (
+             SELECT id
+               FROM seasons
+              WHERE state IN ('ACTIVE','ENDING')
+              ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC
+              LIMIT 1
+           ),
+           history AS (
              SELECT s.user_id,COUNT(DISTINCT s.season_id)::text AS seasons,COUNT(*)::text AS spins,
                     COUNT(*) FILTER (WHERE p.prize_id IS NOT NULL AND p.kind<>'EMPTY')::text AS wins
                FROM spins s
                LEFT JOIN payouts p ON p.spin_id=s.id AND p.prize_id IS NOT NULL
               WHERE s.status='COMPLETED'
+                AND NOT EXISTS (SELECT 1 FROM current_season cs WHERE cs.id=s.season_id)
               GROUP BY s.user_id
            )
            SELECT u.id::text,u.telegram_id::text,u.username,u.first_name,u.last_name,u.veteran_tier_override,
@@ -56,7 +64,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
           await withTransaction(async (client)=>{
             const user = await client.query<{id:string}>("SELECT id::text FROM users WHERE telegram_id=$1::bigint FOR UPDATE",[telegramId]);
             if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
-            await client.query("UPDATE users SET veteran_tier_override=$2,updated_at=now() WHERE id=$1::uuid",[user.rows[0].id,tierOverride]);
+            await client.query("UPDATE users SET veteran_tier_override=$2 WHERE id=$1::uuid",[user.rows[0].id,tierOverride]);
             await client.query("INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'USER_DAILY_GIFT_TIER_UPDATED','user',$2,$3::jsonb)",[admin.id,user.rows[0].id,JSON.stringify({telegramId,tierOverride})]);
           });
           return Response.json({ok:true,telegramId,tierOverride});
