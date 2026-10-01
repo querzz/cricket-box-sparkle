@@ -142,6 +142,5 @@ function BonusCampaigns() {
         </div>
       )}
     </section>
-    </section>
   </div></AppShell>;
 }
