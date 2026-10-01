@@ -377,25 +377,8 @@ async function handlePreCheckoutQuery(query) {
 }
 
 async function handleUpdate(update) {
-  if (update?.message_reaction) {
-    const reaction = update.message_reaction;
-    const telegramUserId = reaction.user?.id;
-    const chatId = reaction.chat?.id;
-    if (telegramUserId && Number.isSafeInteger(Number(chatId)) && Number(chatId) === Number(channelId)) {
-      await recordChannelActivity({
-        telegramUserId,
-        eventType: "REACTION",
-        eventKey: String(reaction.message_id),
-        points: 0,
-        metadata: { chatId, newReactions: reaction.new_reaction?.length ?? 0 },
-      });
-    }
-  }
   if (update?.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
-  }
-  if (update?.message) {
-    await handleMessage(update.message);
   }
 }
 
