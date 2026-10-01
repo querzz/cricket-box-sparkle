@@ -1,4 +1,4 @@
-import { getEconomyMultiplier } from "./season-economy";
+import { getEconomyMultiplier } from "./season-economy.ts";
 
 export type DynamicPrize = {
   id: string;
