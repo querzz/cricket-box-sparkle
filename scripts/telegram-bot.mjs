@@ -31,55 +31,6 @@ const databaseUrl = process.env.DATABASE_URL;
 const { Client } = pg;
 
 let botLockClient = null;
-const MAX_MESSAGE_HANDLERS = 10;
-const messageQueue = [];
-let activeMessageHandlers = 0;
-
-async function acquireBotLock() {
-  if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
-  botLockClient = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
-  await botLockClient.connect();
-  const result = await botLockClient.query("SELECT pg_try_advisory_lock(hashtext('cricket_box:telegram_bot')) AS locked");
-  if (!result.rows[0]?.locked) {
-    await botLockClient.end().catch(() => {});
-    botLockClient = null;
-    throw new Error("TELEGRAM_BOT_ALREADY_RUNNING");
-  }
-}
-
-async function releaseBotLock() {
-  if (!botLockClient) return;
-  await botLockClient.query("SELECT pg_advisory_unlock(hashtext('cricket_box:telegram_bot'))").catch(() => {});
-  await botLockClient.end().catch(() => {});
-  botLockClient = null;
-}
-
-function enqueueMessage(message) {
-  messageQueue.push(message);
-  drainMessageQueue();
-}
-
-function drainMessageQueue() {
-  while (activeMessageHandlers < MAX_MESSAGE_HANDLERS && messageQueue.length) {
-    const message = messageQueue.shift();
-    if (!message) break;
-    activeMessageHandlers += 1;
-    void handleMessage(message)
-      .catch((error) => console.error("Telegram message failed:", error))
-      .finally(() => {
-        activeMessageHandlers -= 1;
-        drainMessageQueue();
-      });
-  }
-}
-
-if (!token) {
-  console.error("TELEGRAM_BOT_TOKEN is missing in .env");
-  process.exit(1);
-}
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function api(method, body = {}, retries = 5) {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
@@ -369,6 +320,25 @@ async function handleUpdate(update) {
   if (update?.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
   }
+  if (update?.message) {
+    await handleMessage(update.message);
+  }
+}
+
+async function processMessageBatch(messages) {
+  const queue = [...messages];
+  const workers = Array.from({ length: Math.min(10, queue.length) }, async () => {
+    while (queue.length) {
+      const message = queue.shift();
+      if (!message) return;
+      try {
+        await handleMessage(message);
+      } catch (error) {
+        console.error("Telegram message failed:", error);
+      }
+    }
+  });
+  await Promise.all(workers);
 }
 
 async function pollTelegramUpdates() {
@@ -402,14 +372,15 @@ async function pollTelegramUpdates() {
         timeout: 25,
         allowed_updates: ["message", "pre_checkout_query"],
       });
-      for (const update of Array.isArray(updates) ? updates : []) {
-        offset = Math.max(offset, Number(update.update_id) + 1);
-        if (update?.pre_checkout_query) {
-          void handleUpdate({ pre_checkout_query: update.pre_checkout_query })
-            .catch((error) => console.error(`Telegram pre-checkout ${update.update_id} failed:`, error));
-        }
-        if (update?.message) enqueueMessage(update.message);
-      }
+      const batch = Array.isArray(updates) ? updates : [];
+      const messageUpdates = batch.filter((update) => update?.message).map((update) => update.message);
+      const preCheckoutTasks = batch
+        .filter((update) => update?.pre_checkout_query)
+        .map((update) => handleUpdate({ pre_checkout_query: update.pre_checkout_query })
+          .catch((error) => console.error(`Telegram pre-checkout ${update.update_id} failed:`, error)));
+      await Promise.all(preCheckoutTasks);
+      await processMessageBatch(messageUpdates);
+      if (batch.length) offset = Math.max(offset, ...batch.map((update) => Number(update.update_id) + 1));
     } catch (error) {
       console.error("Telegram polling failed:", error);
       await sleep(3000);
