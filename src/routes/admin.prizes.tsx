@@ -106,6 +106,7 @@ function AdminPrizes() {
     if (kind === "MONEY") { draft.title = "Денежный приз"; draft.subtitle = "Выигрыш в гривнах"; draft.amount = 100; }
     if (kind === "STARS") { draft.title = "Stars"; draft.subtitle = "Telegram Stars"; draft.amount = 50; }
     if (kind === "PREMIUM") { draft.title = "Telegram Premium"; draft.subtitle = "3 месяца"; draft.amount = 3; }
+    if (kind === "NFT") { draft.title = "NFT"; draft.subtitle = "Подарок"; draft.amount = 0; draft.currency = "XTR"; }
     if (kind === "EMPTY") { draft.title = "Ничего"; draft.subtitle = "Без награды"; draft.amount = 0; draft.quantity = 100; }
     setDrafts((all) => [...all, draft]);
   };
@@ -196,7 +197,8 @@ function AdminPrizes() {
             <AddButton icon={Banknote} label="Деньги" hint="любая сумма грн" onClick={() => addPrize("MONEY")} />
             <AddButton icon={Star} label="Stars" hint="любая сумма ⭐" onClick={() => addPrize("STARS")} />
             <AddButton icon={Crown} label="Premium" hint="3 / 6 / 12 месяцев" onClick={() => addPrize("PREMIUM")} />
-            <AddButton icon={Sparkles} label="Другая" hint="NFT / item / custom" onClick={() => addPrize("CUSTOM")} />
+            <AddButton icon={Sparkles} label="NFT" hint="стоимость в Stars" onClick={() => addPrize("NFT")} />
+            <AddButton icon={Sparkles} label="Другая" hint="item / custom" onClick={() => addPrize("CUSTOM")} />
             <AddButton icon={Gift} label="Ничего" hint="пустой исход" onClick={() => addPrize("EMPTY")} />
           </div>
         </section>
@@ -211,7 +213,7 @@ function AdminPrizes() {
         <GlassCard className="admin-pool-summary space-y-2.5 px-3.5 py-3.5">
           <div className="flex items-center justify-between"><div><p className="eyebrow">Контроль фонда</p><p className="mt-1 text-xs font-semibold">Перед сохранением проверь доступный остаток</p></div><Trophy className="size-5 text-primary-glow" /></div>
           <div className="grid grid-cols-2 gap-2 text-[10px]"><LineMetric label="Premium" value={`${totals.premium} шт.`}/><LineMetric label="Premium cost" value={`${totals.premiumCost} CHF`}/><LineMetric label="Money cost" value={`${totals.moneyCost} грн`}/><LineMetric label="Stars liability" value={`${totals.stars} ⭐`}/></div>
-          <p className="text-[9px] leading-relaxed text-muted-foreground">Weight — относительный вес. Quantity — полный инвентарь. После выдачи первой единицы экономические параметры награды блокируются.</p>
+          <p className="text-[9px] leading-relaxed text-muted-foreground">Вес выпадения — относительный шанс: 2 примерно вдвое выше 1 при одинаковом остатке. Итоговый шанс также зависит от количества оставшихся призов. После первой выдачи экономические параметры награды блокируются.</p>
         </GlassCard>
 
         <PrimaryButton fullWidth disabled={loading || saving || !!removing || !seasonId} onClick={() => void save()}><Save className="size-4" />{saving ? "Сохраняем…" : "Сохранить призовой фонд"}</PrimaryButton>
@@ -238,18 +240,17 @@ function PrizeEditor({ draft, index, saving, removing, update, remove, remaining
     <div className="grid grid-cols-2 gap-2">
       <Field label="Название"><input value={draft.title} onChange={(e) => update(index, { title: e.target.value })} placeholder="Например, 250 грн" className="admin-input w-full" /></Field>
       <Field label="Описание"><input value={draft.subtitle} onChange={(e) => update(index, { subtitle: e.target.value })} placeholder="Короткое описание" className="admin-input w-full" /></Field>
-      <Field label={draft.kind === "STARS" ? "Stars" : draft.kind === "MONEY" ? "Сумма, грн" : "Значение"}><input type="number" min={0} step={draft.kind === "MONEY" ? "0.01" : "1"} value={draft.amount} disabled={locked} onChange={(e) => update(index, { amount: Number(e.target.value) })} className="admin-input w-full" /></Field>
+      <Field label={draft.kind === "STARS" || draft.kind === "NFT" ? "Стоимость, ⭐" : draft.kind === "MONEY" ? "Сумма, грн" : "Значение"} hint={draft.kind === "NFT" ? "Укажи оценочную стоимость NFT в Stars." : undefined}><input type="number" min={0} step={draft.kind === "MONEY" ? "0.01" : "1"} value={draft.amount} disabled={locked} onChange={(e) => update(index, { amount: Number(e.target.value) })} className="admin-input w-full" /></Field>
       <Field label="Количество"><div className="flex items-center gap-1"><button type="button" disabled={saving} onClick={() => update(index, { quantity: Math.max(draft.won, draft.quantity - 1) })} className="admin-step-button"><Minus className="size-3.5" /></button><input type="number" min={draft.won} value={draft.quantity} onChange={(e) => update(index, { quantity: Math.max(draft.won, Number(e.target.value) || 0) })} className="admin-input min-w-0 flex-1 text-center"/><button type="button" disabled={saving} onClick={() => update(index, { quantity: draft.quantity + 1 })} className="admin-step-button"><Plus className="size-3.5" /></button></div></Field>
-      <Field label="Weight"><input type="number" min={0} step="0.01" value={draft.weight} disabled={locked} onChange={(e) => update(index, { weight: Number(e.target.value) })} className="admin-input w-full" /></Field>
-      <Field label="Себестоимость"><input type="number" min={0} step="0.01" value={draft.unitCost} disabled={locked} onChange={(e) => update(index, { unitCost: Number(e.target.value) })} className="admin-input w-full" /></Field>
-      <Field label="Картинка URL"><input value={draft.imageUrl} onChange={(e) => update(index, { imageUrl: e.target.value })} placeholder="https://..." className="admin-input w-full" /></Field>
+      <Field label="Вес выпадения" hint="Чем больше число, тем выше относительный шанс. На итоговый шанс также влияет оставшееся количество."><input type="number" min={0} step="0.01" value={draft.weight} disabled={locked} onChange={(e) => update(index, { weight: Number(e.target.value) })} className="admin-input w-full" /></Field>
+      <Field label="Себестоимость" hint="Только для расчёта экономики, не для определения шанса."><input type="number" min={0} step="0.01" value={draft.unitCost} disabled={locked} onChange={(e) => update(index, { unitCost: Number(e.target.value) })} className="admin-input w-full" /></Field>
       <Field label="Участие"><button type="button" onClick={() => update(index, { active: !draft.active })} className={`admin-input w-full text-left ${draft.active ? "border-primary/40 bg-primary/10" : "opacity-55"}`}>{draft.active ? "✓ Участвует в розыгрыше" : "○ Выключена"}</button></Field>
     </div>
   </GlassCard>;
 }
 
 function labelForKind(kind: PrizeKind) { return kindMeta[kind].label; }
-function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block"><span className="field-label">{label}</span><div className="mt-1">{children}</div></label>; }
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) { return <label className="block"><span className="field-label">{label}</span><div className="mt-1">{children}</div>{hint && <span className="mt-1 block text-[8px] leading-relaxed text-muted-foreground">{hint}</span>}</label>; }
 function AddButton({ icon:Icon, label, hint, onClick }: { icon: typeof Gift; label: string; hint: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="admin-add-button text-left"><span className="admin-action-icon"><Icon className="size-4 text-primary-glow"/></span><span className="min-w-0"><span className="block text-sm font-semibold">{label}</span><span className="mt-0.5 block text-[9px] text-muted-foreground">{hint}</span></span><Plus className="ml-auto size-3.5 text-muted-foreground"/></button>; }
 function SummaryMetric({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Gift }) { return <div className="admin-metric"><span className="grid size-7 place-items-center rounded-xl border border-glass-border bg-muted/10"><Icon className="size-3.5 text-primary-glow"/></span><div className="min-w-0"><p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">{label}</p><p className="mt-0.5 truncate text-sm font-semibold">{value}</p></div></div>; }
 function LineMetric({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-glass-border bg-muted/10 px-3 py-2.5"><p className="text-muted-foreground">{label}</p><p className="mt-0.5 font-semibold">{value}</p></div>; }
