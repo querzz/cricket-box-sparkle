@@ -609,9 +609,9 @@ The model is now two-stage:
 Configurable server-side values are stored in `app_settings.daily_gift`:
 
 ```
-ROOKIE   60%
-VETERAN  70%
-ELITE    80%
+ROOKIE   1%
+VETERAN  3%
+ELITE    5%
 ```
 
 These are defaults and can be changed from **Admin → System settings → Daily Gift**.
