@@ -119,8 +119,9 @@ async function recordChannelActivity({ telegramUserId, eventType, eventKey, poin
   try {
     await client.connect();
     await client.query("BEGIN");
+    const dayKey = new Date().toISOString().slice(0, 10);
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-      \`cricket_box:activity:\${Number(telegramUserId)}:\${Number(channelId)}:\${new Date().toISOString().slice(0,10)}\`,
+      "cricket_box:activity:"+Number(telegramUserId)+":"+Number(channelId)+":"+dayKey,
     ]);
 
     const setting = await client.query("SELECT value FROM app_settings WHERE key='channel_activity' LIMIT 1");
@@ -145,23 +146,13 @@ async function recordChannelActivity({ telegramUserId, eventType, eventKey, poin
     }
 
     await client.query(
-      \`INSERT INTO channel_activity (user_id,telegram_user_id,channel_id,event_type,event_key,activity_points,occurred_at,metadata)
-       SELECT u.id,$1::bigint,$2::bigint,$3,$4,$5,now(),$6::jsonb
-         FROM (SELECT 1) seed
-         LEFT JOIN users u ON u.telegram_id=$1::bigint
-        WHERE NOT EXISTS (
-          SELECT 1 FROM channel_activity ca
-           WHERE ca.telegram_user_id=$1::bigint
-             AND ca.channel_id=$2::bigint
-             AND ca.event_type=$3
-             AND ca.event_key=$4
-        )\`,
+      "INSERT INTO channel_activity (user_id,telegram_user_id,channel_id,event_type,event_key,activity_points,occurred_at,metadata) SELECT u.id,$1::bigint,$2::bigint,$3,$4,$5,now(),$6::jsonb FROM (SELECT 1) seed LEFT JOIN users u ON u.telegram_id=$1::bigint WHERE NOT EXISTS (SELECT 1 FROM channel_activity ca WHERE ca.telegram_user_id=$1::bigint AND ca.channel_id=$2::bigint AND ca.event_type=$3 AND ca.event_key=$4)",
       [Number(telegramUserId), Number(channelId), eventType, eventKey, activityPoints, JSON.stringify(metadata)],
     );
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
-    console.warn(\`Channel activity record failed: \${error instanceof Error ? error.message : String(error)}\`);
+    console.warn("Channel activity record failed:", error instanceof Error ? error.message : String(error));
   } finally {
     await client.end().catch(() => {});
   }
@@ -386,6 +377,20 @@ async function handlePreCheckoutQuery(query) {
 }
 
 async function handleUpdate(update) {
+  if (update?.message_reaction) {
+    const reaction = update.message_reaction;
+    const telegramUserId = reaction.user?.id;
+    const chatId = reaction.chat?.id;
+    if (telegramUserId && Number.isSafeInteger(Number(chatId)) && Number(chatId) === Number(channelId)) {
+      await recordChannelActivity({
+        telegramUserId,
+        eventType: "REACTION",
+        eventKey: String(reaction.message_id),
+        points: 0,
+        metadata: { chatId, newReactions: reaction.new_reaction?.length ?? 0 },
+      });
+    }
+  }
   if (update?.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
   }
