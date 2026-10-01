@@ -31,7 +31,7 @@ function AdminSettings() {
   const [veteranEnabled, setVeteranEnabled] = useState(false);
   const [mechanicsEnabledCount, setMechanicsEnabledCount] = useState(0);
   const [mechanicsTotal, setMechanicsTotal] = useState(0);
-  const [giftChance, setGiftChance] = useState({ ROOKIE: 60, VETERAN: 70, ELITE: 80 });
+  const [giftChance, setGiftChance] = useState({ ROOKIE: 1, VETERAN: 3, ELITE: 5 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
