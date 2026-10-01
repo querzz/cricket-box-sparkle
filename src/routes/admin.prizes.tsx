@@ -166,7 +166,7 @@ function AdminPrizes() {
   const save = async () => {
     if (!seasonId) return;
     const invalid = drafts.find((draft) => !draft.title.trim() || draft.quantity < draft.won || draft.weight < 0 || !Number.isFinite(draft.weight) || draft.amount < 0 || !Number.isFinite(draft.amount) || draft.unitCost < 0 || !Number.isFinite(draft.unitCost));
-    if (invalid) { setError("Проверь название, количество, сумму и weight у всех наград."); return; }
+    if (invalid) { setError("Проверь название, количество, сумму и вес выпадения у всех наград."); return; }
     setSaving(true); setError(""); setMessage("");
     try {
       for (const draft of drafts) {
@@ -251,7 +251,7 @@ function AdminPrizes() {
 
         <GlassCard className="admin-pool-summary space-y-2.5 px-3.5 py-3.5">
           <div className="flex items-center justify-between"><div><p className="eyebrow">Контроль фонда</p><p className="mt-1 text-xs font-semibold">Перед сохранением проверь доступный остаток</p></div><Trophy className="size-5 text-primary-glow" /></div>
-          <div className="grid grid-cols-2 gap-2 text-[10px]"><LineMetric label="Premium" value={`${totals.premium} шт.`}/><LineMetric label="Premium cost" value={`${totals.premiumCost} CHF`}/><LineMetric label="Money cost" value={`${totals.moneyCost} грн`}/><LineMetric label="Stars liability" value={`${totals.stars} ⭐`}/></div>
+          <div className="grid grid-cols-2 gap-2 text-[10px]"><LineMetric label="Premium" value={`${totals.premium} шт.`}/><LineMetric label="Стоимость Premium" value={`${totals.premiumCost} CHF`}/><LineMetric label="Затраты на деньги" value={`${totals.moneyCost} грн`}/><LineMetric label="Обязательства Stars" value={`${totals.stars} ⭐`}/></div>
           <p className="text-[9px] leading-relaxed text-muted-foreground">Вес выпадения — относительный шанс: 2 примерно вдвое выше 1 при одинаковом остатке. Итоговый шанс также зависит от количества оставшихся призов. После первой выдачи экономические параметры награды блокируются.</p>
         </GlassCard>
 
