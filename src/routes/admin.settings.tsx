@@ -11,7 +11,7 @@ export const Route = createFileRoute("/admin/settings")({
   component: AdminSettings,
 });
 
-type VeteranApi = { ok: boolean; enabled?: boolean; code?: string };
+type VeteranApi = { ok: boolean; role?: "OWNER" | "ADMIN"; enabled?: boolean; code?: string };
 type DailyGiftApi = { ok: boolean; config?: { rewardChanceByTier: { ROOKIE: number; VETERAN: number; ELITE: number } }; code?: string };
 type MechanicsApi = { ok: boolean; settings?: { enabled: Record<string, boolean>; passCount: number; failureText: string; confirm: boolean }; code?: string };
 
@@ -29,6 +29,7 @@ async function request<T>(url: string, options?: RequestInit) {
 
 function AdminSettings() {
   const [veteranEnabled, setVeteranEnabled] = useState(false);
+  const [veteranRole, setVeteranRole] = useState<"OWNER" | "ADMIN">("ADMIN");
   const [mechanicsEnabledCount, setMechanicsEnabledCount] = useState(0);
   const [mechanicsTotal, setMechanicsTotal] = useState(0);
   const [giftChance, setGiftChance] = useState({ ROOKIE: 1, VETERAN: 3, ELITE: 5 });
@@ -47,6 +48,7 @@ function AdminSettings() {
         request<DailyGiftApi>(`/api/admin/daily-gift?initData=${encodeURIComponent(initData())}`),
       ]);
       setVeteranEnabled(veteran.enabled === true);
+      setVeteranRole(veteran.role === "OWNER" ? "OWNER" : "ADMIN");
       const enabled = Object.values(mechanics.settings?.enabled ?? {});
       setMechanicsEnabledCount(enabled.filter(Boolean).length);
       setMechanicsTotal(enabled.length);
@@ -92,7 +94,7 @@ function AdminSettings() {
       setVeteranEnabled(data.enabled === true);
       setMessage(data.enabled ? t("settingsAdmin.veteranEnabled") : t("settingsAdmin.veteranDisabled"));
     } catch (e) {
-      setError(e instanceof Error && e.message === "OWNER_ONLY" ? t("settingsAdmin.ownerOnly") : t("settingsAdmin.updateFailed"));
+      setError(e instanceof Error && e.message === "OWNER_ONLY" ? t("settingsAdmin.ownerOnly") : e instanceof Error && e.message === "ADMIN_ACCESS_DENIED" ? "У этого аккаунта нет доступа к админке." : t("settingsAdmin.updateFailed"));
     } finally {
       setSaving(false);
     }
@@ -148,8 +150,8 @@ function AdminSettings() {
                   <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t("settingsAdmin.veteranDescription")}</p>
                   <p className="mt-2 text-[10px] font-semibold">{veteranEnabled ? t("settingsAdmin.enabledNow") : t("settingsAdmin.disabledNow")}</p>
                 </div>
-                <button disabled={saving} type="button" onClick={() => void toggleVeteran()} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[10px] font-semibold">
-                  <Power className="size-3.5" /> {veteranEnabled ? t("settingsAdmin.disable") : t("settingsAdmin.enable")}
+                <button disabled={saving || veteranRole !== "OWNER"} title={veteranRole === "OWNER" ? "" : "Только владелец может менять эту настройку"} type="button" onClick={() => void toggleVeteran()} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-50">
+                  <Power className="size-3.5" /> {veteranRole === "OWNER" ? (veteranEnabled ? t("settingsAdmin.disable") : t("settingsAdmin.enable")) : "Только владелец"}
                 </button>
               </div>
             </GlassCard>
