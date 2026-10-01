@@ -41,7 +41,7 @@ function AdminSettings() {
     setLoading(true);
     setError("");
     try {
-      const [veteran, mechanics] = await Promise.all([
+      const [veteran, mechanics, dailyGift] = await Promise.all([
         request<VeteranApi>(`/api/admin/veteran?initData=${encodeURIComponent(initData())}`),
         request<MechanicsApi>(`/api/admin/mechanics?initData=${encodeURIComponent(initData())}`),
         request<DailyGiftApi>(`/api/admin/daily-gift?initData=${encodeURIComponent(initData())}`),
