@@ -41,6 +41,8 @@ export interface Prize { id: string; kind: RewardKind; title: string; subtitle?:
 export interface Reward { id: string; kind: RewardKind; title: string; subtitle?: string | undefined; amount?: number | undefined; wonAt: string; status: RewardStatus; payoutNote?: string | undefined; creditedAmount?: number | undefined; uncreditedAmount?: number | undefined; }
 export interface SpinState { freeSpins: number; paidSpinPrice: number | null; totalSpins: number; freeSpinDate?: string | undefined; bonusFreeSpins?: number | undefined; }
 export interface Gift { state: GiftState; availableAt: string; }
+export interface DailyStreakSnapshot { enabled: boolean; totalDays: number; currentDay: number; visitedDays: number; currentStreak: number; checkedInToday: boolean; eligibleForReward: boolean; rewardStars: number; }
+
 export interface ActivitySnapshot { points: number; pointsPerBonus: number; pointsToNext: number; progressPercent: number; reactions: number; comments: number; joins: number; activeDays: number; bonusSpinsGranted: number; bonusSpinsRemaining: number; maxBonusSpins: number; }
 export interface Withdrawal { id: string; rewardTitle: string; amount: number; requestedAt: string; status: WithdrawalStatus; }
 
@@ -50,6 +52,7 @@ export interface SessionSnapshot {
   stars: StarsBalance;
   spin: SpinState;
   gift: Gift;
+  streak: DailyStreakSnapshot;
   activity: ActivitySnapshot;
   prizes: Prize[];
   rewards: Reward[];
