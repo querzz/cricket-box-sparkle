@@ -8,7 +8,8 @@ export function ProfileHeader({ user }: { user: User }) {
   const currentLevelBase = (level - 1) * 100;
   const nextLevelXp = Number(user.nextLevelXp ?? level * 100);
   const levelProgress = Math.min(100, Math.max(0, Number(user.levelProgress ?? ((xp - currentLevelBase) / 100) * 100)));
-  const title = user.levelTitle ?? (level >= 20 ? "Ветеран" : level >= 10 ? "Профи" : level >= 5 ? "Опытный игрок" : level >= 2 ? "Участник" : "Новичок");
+  const veteranLabel = user.veteranTier === "ELITE" ? "Элита" : user.veteranTier === "VETERAN" ? "Ветеран" : "Новичок";
+  const title = veteranLabel;
   const benefit = user.levelBenefit ?? "Уровень показывает твою активность и открывает более высокий статус профиля.";
 
   return (
