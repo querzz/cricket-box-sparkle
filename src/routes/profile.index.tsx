@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, Trophy, ScrollText, HelpCircle, History, LifeBuoy, Settings } from "lucide-react";
+import { ChevronRight, Flame, Trophy, ScrollText, HelpCircle, History, LifeBuoy, Settings } from "lucide-react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -36,6 +36,18 @@ function ProfileScreen() {
   return (
     <AppShell title="Профиль" action={<Link to="/settings" aria-label="Настройки" className="press grid size-9 place-items-center rounded-full bg-muted/50"><Settings className="size-4" /></Link>}>
       <ProfileHeader user={snapshot.user} />
+      {snapshot.streak.enabled && <GlassCard className="mt-4 overflow-hidden px-4 py-4">
+        <div className="flex items-center gap-3">
+          <div className="grid size-11 shrink-0 place-items-center rounded-2xl border border-orange-400/25 bg-orange-500/10"><Flame className="size-5 text-orange-400"/></div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-end gap-2"><p className="font-display text-2xl leading-none">{snapshot.streak.currentStreak}</p><p className="pb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]">дней подряд</p></div>
+            <p className="mt-1 text-[10px] text-muted-foreground">{snapshot.streak.checkedInToday ? "Сегодня ✅" : "Зайди сегодня, чтобы сохранить огонёк"}</p>
+          </div>
+          <div className="text-right"><p className="font-display text-base">{snapshot.streak.visitedDays}/{snapshot.streak.totalDays}</p><p className="text-[9px] text-muted-foreground">дней сезона</p></div>
+        </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted/40"><div className="h-full rounded-full [background-image:var(--gradient-primary)]" style={{width:`${Math.min(100,Math.round((snapshot.streak.visitedDays/Math.max(1,snapshot.streak.totalDays))*100))}%`}}/></div>
+        <p className="mt-2 text-[10px] text-muted-foreground">{snapshot.streak.eligibleForReward ? `Полный проход — ${snapshot.streak.rewardStars} ⭐ в конце сезона` : `Цель: ${snapshot.streak.totalDays}/${snapshot.streak.totalDays} дней`}</p>
+      </GlassCard>}
       <GlassCard glow className="mt-5 px-4 py-4">
         <p className="relative text-[10px] uppercase tracking-[0.24em] text-muted-foreground">⭐ Баланс CRICKET BOX</p>
         <div className="relative mt-2.5"><StarsBalance balance={snapshot.stars} size="lg" showProgress /></div>
