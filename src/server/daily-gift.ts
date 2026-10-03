@@ -20,14 +20,14 @@ export const DEFAULT_DAILY_GIFT_CONFIG: DailyGiftConfig = {
 };
 
 export const DAILY_GIFT_REWARDS: DailyGiftReward[] = [
-  { kind: "STARS", amount: 10, title: "10 Stars", subtitle: "Stars зачислены на баланс.", weight: 20 },
-  { kind: "STARS", amount: 15, title: "15 Stars", subtitle: "Stars зачислены на баланс.", weight: 15 },
-  { kind: "STARS", amount: 25, title: "25 Stars", subtitle: "Неплохо! Stars зачислены на баланс.", weight: 10 },
-  { kind: "STARS", amount: 50, title: "50 Stars", subtitle: "Редкая находка!", weight: 3 },
-  { kind: "STARS", amount: 100, title: "100 Stars", subtitle: "Очень редкий приз! 🔥", weight: 1 },
-  { kind: "FREE_SPIN", amount: 1, title: "Бесплатная прокрутка", subtitle: "Дополнительная прокрутка сохранена.", weight: 6 },
-  { kind: "XP", amount: 25, title: "+25 XP", subtitle: "Опыт добавлен. Продолжай прокачиваться.", weight: 4 },
-  { kind: "XP", amount: 50, title: "+50 XP", subtitle: "Большой буст опыта!", weight: 1 },
+  { kind: "STARS", amount: 10, title: "10 Stars", subtitle: "Stars зачислены на баланс.", weight: 8 },
+  { kind: "STARS", amount: 15, title: "15 Stars", subtitle: "Stars зачислены на баланс.", weight: 4 },
+  { kind: "STARS", amount: 25, title: "25 Stars", subtitle: "Неплохо! Stars зачислены на баланс.", weight: 2 },
+  { kind: "STARS", amount: 50, title: "50 Stars", subtitle: "Редкая находка!", weight: 1 },
+  { kind: "STARS", amount: 100, title: "100 Stars", subtitle: "Очень редкий приз! 🔥", weight: 0.5 },
+  { kind: "FREE_SPIN", amount: 1, title: "Бесплатная прокрутка", subtitle: "Дополнительная прокрутка сохранена.", weight: 12 },
+  { kind: "XP", amount: 25, title: "+25 XP", subtitle: "Опыт добавлен. Продолжай прокачиваться.", weight: 6 },
+  { kind: "XP", amount: 50, title: "+50 XP", subtitle: "Большой буст опыта!", weight: 1.5 },
 ];
 
 const TIERS: VeteranTier[] = ["ROOKIE", "VETERAN", "ELITE"];
