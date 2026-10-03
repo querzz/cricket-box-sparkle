@@ -7,6 +7,7 @@ import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { grantActiveFreeSpinCampaigns } from "@/server/free-spin-campaigns";
 import { getCurrentSeasonDay, getSeasonDayCount, recordSeasonCheckin, summarizeCheckins } from "@/server/daily-streak";
+import { getVeteranTier, grantVeteranBonusIfDue } from "@/server/veteran";
 
 const MAX_STARS = 500;
 const MAX_BONUS_SPINS = 1000;
@@ -98,8 +99,7 @@ export const Route = createFileRoute("/api/session")({
           [user.id, season.id],
         );
         const completedVeteranSeasons = Number(veteranHistoryResult.rows[0]?.seasons ?? 0);
-        const veteranTier = user.veteran_tier_override
-          ?? (completedVeteranSeasons >= 4 ? "ELITE" : completedVeteranSeasons >= 2 ? "VETERAN" : "ROOKIE");
+        const veteranTier = user.veteran_tier_override ?? getVeteranTier(completedVeteranSeasons);
 
         const liveSeason = season.state === "ACTIVE" || season.state === "ENDING";
         if (liveSeason && isSubscribed && storedState.is_participant) {
@@ -156,6 +156,10 @@ export const Route = createFileRoute("/api/session")({
           }
 
           if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+            // Grant the veteran bonus on season entry so the rank perk is visible immediately.
+            const veteranBonus = await grantVeteranBonusIfDue(client, user.id, season.id);
+            bonusFreeSpins += Number(veteranBonus.granted ?? 0);
+
             // Global LiveOps free-spin campaigns are independent from channel-activity accrual.
             // They must still grant even when the operator pauses Channel Activity.
             const campaignGranted = await grantActiveFreeSpinCampaigns(client, user.id, season.id, current.is_participant, isSubscribed);
