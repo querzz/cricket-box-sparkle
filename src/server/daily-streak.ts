@@ -58,7 +58,7 @@ export function summarizeCheckins(days: number[], totalDays: number, currentDay:
     currentDay,
     visitedDays: unique.length,
     currentStreak,
-    checkedInToday,
+    checkedInToday: checkedToday,
     eligibleForReward: totalDays > 0 && unique.length === totalDays && unique.every((day, index) => day === index + 1),
     rewardStars: Math.max(0, Math.floor(rewardStars)),
   };
