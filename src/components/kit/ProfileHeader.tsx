@@ -10,6 +10,7 @@ export function ProfileHeader({ user }: { user: User }) {
   const levelProgress = Math.min(100, Math.max(0, Number(user.levelProgress ?? ((xp - currentLevelBase) / 100) * 100)));
   const veteranLabel = user.veteranTier === "ELITE" ? "Элита" : user.veteranTier === "VETERAN" ? "Ветеран" : "Новичок";
   const title = veteranLabel;
+  const veteranPerk = user.veteranTier === "ELITE" ? "+2 бонусные попытки в начале нового сезона" : user.veteranTier === "VETERAN" ? "+1 бонусная попытка в начале нового сезона" : "Базовый ранг без ветеранского бонуса";
   const benefit = user.levelBenefit ?? "Уровень показывает твою активность и открывает более высокий статус профиля.";
 
   return (
@@ -35,7 +36,8 @@ export function ProfileHeader({ user }: { user: User }) {
             <div className="h-full rounded-full bg-primary/55 transition-[width]" style={{ width: `${levelProgress}%` }} />
           </div>
         </div>
-        <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">{benefit}</p>
+        <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">{veteranPerk} · повышенный шанс Daily Gift</p>
+        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{benefit}</p>
       </div>
     </div>
   );
