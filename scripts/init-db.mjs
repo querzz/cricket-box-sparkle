@@ -80,6 +80,19 @@ try {
     )
   `);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_daily_gift_claims_user_time ON daily_gift_claims(user_id, created_at DESC)`);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS season_daily_checkins (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      day_index INTEGER NOT NULL CHECK (day_index >= 1),
+      checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (season_id,user_id,day_index)
+    );
+    CREATE INDEX IF NOT EXISTS idx_season_daily_checkins_season_day ON season_daily_checkins(season_id,day_index,user_id);
+    CREATE INDEX IF NOT EXISTS idx_season_daily_checkins_user ON season_daily_checkins(user_id,season_id,day_index);
+  `);
+
 
   await client.query(`
     WITH ranked AS (
