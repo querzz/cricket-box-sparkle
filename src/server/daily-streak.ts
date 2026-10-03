@@ -64,17 +64,6 @@ export function summarizeCheckins(days: number[], totalDays: number, currentDay:
 
 type CheckinRows = { day_index: number }[];
 
-export async function getUserDailyStreak(seasonId: string, startsAt: string | null, endsAt: string | null, rewardStars = 15) {
-  const totalDays = getSeasonDayCount(startsAt, endsAt);
-  const currentDay = getCurrentSeasonDay(startsAt, endsAt);
-  if (!totalDays) return summarizeCheckins([], 0, 0, rewardStars);
-  const result: QueryResult<CheckinRows[number]> = await query<CheckinRows[number]>(
-    `SELECT day_index FROM season_daily_checkins WHERE season_id=$1::uuid AND user_id=$2::uuid ORDER BY day_index ASC`,
-    [seasonId, "00000000-0000-0000-0000-000000000000"],
-  );
-  return summarizeCheckins(result.rows.map((row) => Number(row.day_index)), totalDays, currentDay, rewardStars);
-}
-
 export async function getUserDailyStreakForUser(seasonId: string, userId: string, startsAt: string | null, endsAt: string | null, rewardStars = 15) {
   const totalDays = getSeasonDayCount(startsAt, endsAt);
   const currentDay = getCurrentSeasonDay(startsAt, endsAt);
