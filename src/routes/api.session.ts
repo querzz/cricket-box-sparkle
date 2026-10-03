@@ -6,6 +6,7 @@ import { query, withTransaction } from "@/server/db";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { grantActiveFreeSpinCampaigns } from "@/server/free-spin-campaigns";
+import { getCurrentSeasonDay, getSeasonDayCount, recordSeasonCheckin, summarizeCheckins } from "@/server/daily-streak";
 
 const MAX_STARS = 500;
 const MAX_BONUS_SPINS = 1000;
@@ -86,6 +87,24 @@ export const Route = createFileRoute("/api/session")({
         );
         const season = seasonResult.rows[0];
         if (!season) return Response.json({ ok:false, code:"NO_SEASON" }, { status:409 });
+
+        const liveSeason = season.state === "ACTIVE" || season.state === "ENDING";
+        if (liveSeason && isSubscribed && storedState.is_participant) {
+          await recordSeasonCheckin(season.id, user.id, season.starts_at, season.ends_at);
+        }
+
+        const streakTotalDays = getSeasonDayCount(season.starts_at, season.ends_at);
+        const streakCurrentDay = getCurrentSeasonDay(season.starts_at, season.ends_at);
+        const streakDaysResult = await query<{day_index:number}>(
+          `SELECT day_index FROM season_daily_checkins WHERE season_id=$1::uuid AND user_id=$2::uuid ORDER BY day_index ASC`,
+          [season.id, user.id],
+        );
+        const dailyStreak = summarizeCheckins(
+          streakDaysResult.rows.map((row) => Number(row.day_index)),
+          streakTotalDays,
+          streakCurrentDay,
+          15,
+        );
 
         const activityResult = await query<{ points:string; reactions:string; comments:string; joins:string; active_days:string }>(
           `SELECT COALESCE(SUM(activity_points),0)::text AS points,
@@ -189,6 +208,7 @@ export const Route = createFileRoute("/api/session")({
           stars:{amount:Math.max(0,Math.min(MAX_STARS,activityState.starsBalance)),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
           gift:{state:giftedRecently?"COOLDOWN":live&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
+          streak:{...dailyStreak},
           activity:{enabled:activityEnabled,points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
           rewards,
