@@ -5,8 +5,8 @@ export type VeteranTier = "ROOKIE" | "VETERAN" | "ELITE";
 
 export const VETERAN_RULES: Record<VeteranTier, { minSeasons: number; bonusSpins: number; label: string; description: string }> = {
   ROOKIE: { minSeasons: 0, bonusSpins: 0, label: "Новичок", description: "Нет ветеранского бонуса." },
-  VETERAN: { minSeasons: 2, bonusSpins: 1, label: "Ветеран", description: "+1 бонусная попытка в первый день нового сезона." },
-  ELITE: { minSeasons: 4, bonusSpins: 2, label: "Элита", description: "+2 бонусные попытки в первый день нового сезона." },
+  VETERAN: { minSeasons: 3, bonusSpins: 1, label: "Ветеран", description: "+1 бонусная попытка в начале нового сезона." },
+  ELITE: { minSeasons: 5, bonusSpins: 2, label: "Элита", description: "+2 бонусные попытки в начале нового сезона." },
 };
 
 export function getVeteranTier(completedSeasons: number): VeteranTier {
