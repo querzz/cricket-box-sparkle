@@ -21,6 +21,7 @@ type UserRow = {
   first_name: string;
   last_name: string | null;
   is_premium: boolean;
+  veteran_tier_override: "ROOKIE" | "VETERAN" | "ELITE" | null;
   xp: number;
   level: number;
 };
@@ -62,7 +63,7 @@ export const Route = createFileRoute("/api/session")({
           `INSERT INTO users (telegram_id, username, first_name, last_name, language_code, is_premium, last_seen_at)
            VALUES ($1,$2,$3,$4,$5,$6,now())
            ON CONFLICT (telegram_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,language_code=EXCLUDED.language_code,is_premium=EXCLUDED.is_premium,last_seen_at=now()
-           RETURNING id::text,telegram_id::text,username,first_name,last_name,is_premium,xp,level`,
+           RETURNING id::text,telegram_id::text,username,first_name,last_name,is_premium,veteran_tier_override,xp,level`,
           [tgUser.id, tgUser.username ?? null, tgUser.first_name, tgUser.last_name ?? null, tgUser.language_code ?? null, Boolean(tgUser.is_premium)],
         );
         const user = userResult.rows[0];
@@ -87,6 +88,18 @@ export const Route = createFileRoute("/api/session")({
         );
         const season = seasonResult.rows[0];
         if (!season) return Response.json({ ok:false, code:"NO_SEASON" }, { status:409 });
+
+        const veteranHistoryResult = await query<{ seasons:string }>(
+          `SELECT COUNT(DISTINCT season_id)::text AS seasons
+             FROM spins
+            WHERE user_id=$1::uuid
+              AND status='COMPLETED'
+              AND season_id<>$2::uuid`,
+          [user.id, season.id],
+        );
+        const completedVeteranSeasons = Number(veteranHistoryResult.rows[0]?.seasons ?? 0);
+        const veteranTier = user.veteran_tier_override
+          ?? (completedVeteranSeasons >= 4 ? "ELITE" : completedVeteranSeasons >= 2 ? "VETERAN" : "ROOKIE");
 
         const liveSeason = season.state === "ACTIVE" || season.state === "ENDING";
         if (liveSeason && isSubscribed && storedState.is_participant) {
@@ -203,7 +216,7 @@ export const Route = createFileRoute("/api/session")({
         const currentActivityRemaining = Math.min(MAX_ACTIVITY_BONUS_SPINS, Math.max(0, activityIssued - activityUsed + (targetActivityBonusSpins > activityIssued ? targetActivityBonusSpins - activityIssued : 0)));
 
         return Response.json({ ok:true, snapshot:{
-          user:{id:user.id,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
+          user:{id:user.id,veteranTier,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
           season:{id:season.id,code:season.code,title:displaySeasonTitle(season.code,season.name),state:season.state,startsAt:season.starts_at??new Date().toISOString(),endsAt:season.ends_at??new Date(Date.now()+14*86400000).toISOString(),paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null},
           stars:{amount:Math.max(0,Math.min(MAX_STARS,activityState.starsBalance)),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
