@@ -15,7 +15,11 @@ export default defineConfig({
   },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
+  },
+  // Hetzner runs the generated server with Node + systemd.
+  // Keep the production Nitro output as a Node HTTP server, not a Cloudflare worker module.
+  nitro: {
+    preset: "node-server",
   },
 });
