@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, CalendarCheck2, CheckCircle2, Flame, Gift, RefreshCw, Users, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Flame, Gift, RefreshCw, Users, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -57,7 +57,6 @@ function DailyStreakAdmin(){
     const q=search.trim().toLowerCase();
     return all.filter((player)=>{
       if(filter==="MISSED"&&player.checkedInToday) return false;
-      if(filter==="STREAK"&&!player.currentDay===false){}
       if(filter==="STREAK" && !(player.currentDay>0 && player.currentStreak===player.currentDay && player.visitedDays===player.currentDay)) return false;
       if(filter==="ELIGIBLE"&&!player.eligibleForReward) return false;
       if(!q) return true;
