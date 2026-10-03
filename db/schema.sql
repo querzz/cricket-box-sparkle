@@ -26,6 +26,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_spins_user_idempotency ON spins(user_id,ide
 CREATE TABLE IF NOT EXISTS payouts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), spin_id UUID REFERENCES spins(id) ON DELETE SET NULL, user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT, prize_id UUID REFERENCES prizes(id) ON DELETE SET NULL, kind TEXT NOT NULL CHECK (kind IN ('STARS','PREMIUM','MONEY','NFT','PHYSICAL','CUSTOM','FREE_SPIN','EMPTY')), amount NUMERIC(18,2) NOT NULL DEFAULT 0, currency TEXT, status TEXT NOT NULL CHECK (status IN ('PENDING','REVIEW','PAID','FAILED','CANCELLED')) DEFAULT 'PENDING', operator_admin_id UUID REFERENCES admins(id) ON DELETE SET NULL, note TEXT, fulfillment_provider TEXT NOT NULL DEFAULT 'MANUAL', fulfillment_reference TEXT, fulfillment_note TEXT, fulfillment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), paid_at TIMESTAMPTZ
 );
+CREATE TABLE IF NOT EXISTS season_daily_checkins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day_index INTEGER NOT NULL CHECK (day_index >= 1),
+  checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (season_id,user_id,day_index)
+);
+CREATE INDEX IF NOT EXISTS idx_season_daily_checkins_season_day ON season_daily_checkins(season_id,day_index,user_id);
+CREATE INDEX IF NOT EXISTS idx_season_daily_checkins_user ON season_daily_checkins(user_id,season_id,day_index);
+
 CREATE TABLE IF NOT EXISTS daily_gift_claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('NOTHING','STARS','FREE_SPIN','XP')), amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0), title TEXT NOT NULL, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
