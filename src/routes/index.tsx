@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Gift, Heart } from "lucide-react";
+import { ChevronRight, Flame, Gift, Heart } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { assets, rewardArt } from "@/components/assets";
@@ -80,6 +80,38 @@ function HomeScreen() {
           <div className="mt-4">{ui.isFinished ? <div className="space-y-2"><PrimaryButton fullWidth size="lg" onClick={() => void navigate({ to: "/prizes" })}>{t("home.myPrizes")}</PrimaryButton>{ui.canWithdraw && <PrimaryButton variant="outline" fullWidth onClick={() => void navigate({ to: "/withdraw" })}>{t("home.withdrawStars")}</PrimaryButton>}</div> : <PrimaryButton fullWidth size="lg" disabled={!ui.canSpin} onClick={() => void navigate({ to: "/draw" })}>{ui.ctaLabel}</PrimaryButton>}</div>
         </div>
       </section>
+
+      {snapshot.streak.enabled && (
+        <section className="mt-4">
+          <GlassCard glow className="overflow-hidden px-4 py-4">
+            <div className="flex items-center gap-3">
+              <div className="grid size-12 shrink-0 place-items-center rounded-2xl border border-orange-400/25 bg-orange-500/10">
+                <Flame className="size-6 text-orange-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-end gap-2">
+                  <p className="font-display text-2xl leading-none">{snapshot.streak.currentStreak}</p>
+                  <p className="pb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em]">дней подряд</p>
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {snapshot.streak.checkedInToday ? "Сегодняшний вход засчитан ✅" : "Зайди сегодня, чтобы не сбить streak"}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="font-display text-lg">{snapshot.streak.visitedDays}/{snapshot.streak.totalDays}</p>
+                <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">дней сезона</p>
+              </div>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted/40">
+              <div className="h-full rounded-full [background-image:var(--gradient-primary)]" style={{ width: `${Math.min(100, Math.round((snapshot.streak.visitedDays / Math.max(1, snapshot.streak.totalDays)) * 100))}%` }} />
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+              <span>{snapshot.streak.eligibleForReward ? `⭐ Получишь ${snapshot.streak.rewardStars} ⭐ в конце сезона` : `Ещё ${Math.max(0, snapshot.streak.totalDays - snapshot.streak.visitedDays)} дн. для полного прохода`}</span>
+              <span>День {Math.min(snapshot.streak.currentDay || 1, snapshot.streak.totalDays)}</span>
+            </div>
+          </GlassCard>
+        </section>
+      )}
 
       <section className="mt-5 space-y-2.5"><div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t("home.possiblePrizes")}</h2><Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">{t("home.all")} <ChevronRight className="size-3.5" /></Link></div><PrizeStrip prizes={snapshot.prizes} /></section>
       <section className="mt-5 space-y-2.5"><div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t("home.yourPrizes")}</h2><Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">{t("home.all")} <ChevronRight className="size-3.5" /></Link></div><Link to="/prizes" className="block"><GlassCard className="press flex items-center gap-3 px-4 py-3.5">{latestReward ? <><img src={rewardArt[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" /><div className="min-w-0 flex-1"><p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">{t("home.latestPrize")}</p><p className="mt-1 truncate text-sm font-semibold">{latestReward.title}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{latestReward.status === "RECEIVED" ? t("home.received") : latestReward.status === "PROBLEM" ? t("home.problem") : t("home.pending")}</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></> : <><span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10"><Gift className="size-6 text-primary-glow" /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{t("home.emptyPrizes")}</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("home.emptyPrizesDescription")}</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></>}</GlassCard></Link></section>
