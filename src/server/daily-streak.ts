@@ -46,9 +46,11 @@ export async function recordSeasonCheckin(seasonId: string, userId: string, star
 export function summarizeCheckins(days: number[], totalDays: number, currentDay: number, rewardStars = 15): DailyStreakSummary {
   const unique = [...new Set(days)].filter((day) => Number.isInteger(day) && day >= 1 && day <= totalDays).sort((a,b) => a-b);
   let currentStreak = 0;
-  if (currentDay > 0 && unique.includes(currentDay)) {
+  const checkedToday = currentDay > 0 && unique.includes(currentDay);
+  const streakAnchor = checkedToday ? currentDay : currentDay - 1;
+  if (streakAnchor > 0) {
     const set = new Set(unique);
-    for (let day = currentDay; set.has(day); day -= 1) currentStreak += 1;
+    for (let day = streakAnchor; set.has(day); day -= 1) currentStreak += 1;
   }
   return {
     enabled: totalDays > 0,
@@ -56,7 +58,7 @@ export function summarizeCheckins(days: number[], totalDays: number, currentDay:
     currentDay,
     visitedDays: unique.length,
     currentStreak,
-    checkedInToday: currentDay > 0 && unique.includes(currentDay),
+    checkedInToday,
     eligibleForReward: totalDays > 0 && unique.length === totalDays && unique.every((day, index) => day === index + 1),
     rewardStars: Math.max(0, Math.floor(rewardStars)),
   };
