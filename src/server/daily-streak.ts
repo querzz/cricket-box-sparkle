@@ -1,4 +1,4 @@
-import { query, type QueryResult } from "./db.ts";
+import { query } from "./db.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -62,7 +62,6 @@ export function summarizeCheckins(days: number[], totalDays: number, currentDay:
   };
 }
 
-type CheckinRows = { day_index: number }[];
 
 export async function getUserDailyStreakForUser(seasonId: string, userId: string, startsAt: string | null, endsAt: string | null, rewardStars = 15) {
   const totalDays = getSeasonDayCount(startsAt, endsAt);
