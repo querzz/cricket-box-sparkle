@@ -15,6 +15,7 @@ export interface User {
   avatarUrl?: string | undefined;
   isParticipant: boolean;
   isSubscribed: boolean;
+  veteranTier: "ROOKIE" | "VETERAN" | "ELITE";
   xp: number;
   level: number;
   levelTitle?: string | undefined;
