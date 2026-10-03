@@ -29,7 +29,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
            )
            SELECT u.id::text,u.telegram_id::text,u.username,u.first_name,u.last_name,u.veteran_tier_override,
                   COALESCE(h.seasons,'0') AS seasons,COALESCE(h.spins,'0') AS spins,COALESCE(h.wins,'0') AS wins,
-                  CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override ELSE CASE WHEN COALESCE(h.seasons::int,0)>=4 THEN 'ELITE'::text WHEN COALESCE(h.seasons::int,0)>=2 THEN 'VETERAN'::text ELSE 'ROOKIE'::text END END AS tier,
+                  CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override ELSE CASE WHEN COALESCE(h.seasons::int,0)>=5 THEN 'ELITE'::text WHEN COALESCE(h.seasons::int,0)>=3 THEN 'VETERAN'::text ELSE 'ROOKIE'::text END END AS tier,
                   COALESCE(us.veteran_bonus_spins_issued,0)::text AS bonus_issued,
                   COALESCE((SELECT COUNT(*) FROM spins vb WHERE vb.user_id=u.id AND vb.type='VETERAN_BONUS' AND vb.status='COMPLETED'),0)::text AS bonus_used
              FROM users u
