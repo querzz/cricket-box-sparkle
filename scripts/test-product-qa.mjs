@@ -34,6 +34,7 @@ const adminRoutes = [
   "src/routes/admin.mechanics.tsx",
   "src/routes/admin.settings.tsx",
   "src/routes/admin.owner-gifts.tsx",
+  "src/routes/admin.daily-streak.tsx",
 ];
 
 const adminApis = [
@@ -55,6 +56,7 @@ const adminApis = [
   "src/routes/api.admin.veteran.ts",
   "src/routes/api.admin.daily-gift.ts",
   "src/routes/api.admin.free-spin-campaigns.ts",
+  "src/routes/api.admin.daily-streak.ts",
 ];
 
 for (const file of [...userRoutes, ...adminRoutes, ...adminApis]) {
@@ -77,6 +79,9 @@ const economics = await read("src/routes/admin.economics.tsx");
 const payouts = await read("src/routes/admin.payouts.tsx");
 const i18n = await read("src/lib/i18n.ts");
 const ru = await read("src/locales/ru.json");
+const streakService = await read("src/server/daily-streak.ts");
+const streakApi = await read("src/routes/api.admin.daily-streak.ts");
+const streakUi = await read("src/routes/admin.daily-streak.tsx");
 
 assert(draw.includes('t("draw.subscriptionPrompt")'), "draw uses the translated subscription prompt");
 assert(draw.includes("!snapshot.user.isSubscribed"), "draw checks subscription before showing free-spin availability");
@@ -162,6 +167,12 @@ assert(prizeAdmin.includes("Себестоимость") && prizeAdmin.includes(
 assert(bot.includes("countedComments >= 20") && bot.includes("(countedComments + 1) % 2 === 0"), "channel activity enforces 20 counted comments/day and 2 comments per point");
 assert(session.includes("const activityEnabled") && session.indexOf("grantActiveFreeSpinCampaigns") < session.indexOf("if (activityEnabled)"), "global free-spin campaign grant stays independent of activity accrual");
 assert(dailyGiftApi.includes("rewardChanceByTier") && adminSettings.includes("Шанс получить награду в Daily Gift"), "Daily Gift exposes one configurable chance per rank");
+assert(streakService.includes("getSeasonDayCount") && streakService.includes("getCurrentSeasonDay"), "daily streak duration is derived from season dates");
+assert(session.includes("recordSeasonCheckin") && session.includes("dailyStreak"), "session records and returns daily streak");
+assert(home.includes("snapshot.streak.currentStreak") && home.includes("дней подряд"), "player home shows streak flame/progress");
+assert(streakUi.includes("Daily Streak") && streakUi.includes("Без пропусков") && streakUi.includes("Готовы к 15"), "admin daily streak dashboard exposes key metrics");
+assert(streakApi.includes("season_daily_checkins") && streakApi.includes("eligibleForReward"), "admin daily streak API reads real season check-ins");
+assert(streakService.includes("eligibleForReward") && streakService.includes("rewardStars = 15"), "full season check-in eligibility is tracked for the 15 Stars reward");
 
 console.log("✅ Product UX/Admin/Bot static QA passed");
 console.log(`Checked user routes: ${userRoutes.length}, admin views: ${adminRoutes.length}, admin APIs: ${adminApis.length}`);
