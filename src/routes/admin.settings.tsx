@@ -32,7 +32,7 @@ function AdminSettings() {
   const [veteranRole, setVeteranRole] = useState<"OWNER" | "ADMIN">("ADMIN");
   const [mechanicsEnabledCount, setMechanicsEnabledCount] = useState(0);
   const [mechanicsTotal, setMechanicsTotal] = useState(0);
-  const [giftChance, setGiftChance] = useState({ ROOKIE: 1, VETERAN: 3, ELITE: 5 });
+  const [giftChance, setGiftChance] = useState({ ROOKIE: 8, VETERAN: 10, ELITE: 15 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
