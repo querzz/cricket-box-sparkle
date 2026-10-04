@@ -75,7 +75,7 @@ export const Route = createFileRoute("/api/session")({
         const avatarUrl = typeof tgUser.photo_url === "string" && tgUser.photo_url.trim() ? tgUser.photo_url.trim() : undefined;
         const levelInfo = getLevelInfo(Number(user.xp ?? 0));
 
-        await query(`INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins) VALUES ($1::uuid,125,TRUE,TRUE,0) ON CONFLICT (user_id) DO NOTHING`, [user.id]);
+        await query(`INSERT INTO user_state (user_id, stars_balance, is_subscribed, is_participant, bonus_free_spins) VALUES ($1::uuid,0,TRUE,TRUE,0) ON CONFLICT (user_id) DO NOTHING`, [user.id]);
         const stateResult = await query<{ stars_balance:number; is_subscribed:boolean; is_participant:boolean; daily_gift_claimed_at:string|null; bonus_free_spins:number; activity_bonus_season_id:string|null; activity_bonus_spins_issued:number }>(
           `SELECT stars_balance,is_subscribed,is_participant,daily_gift_claimed_at::text,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid`, [user.id],
         );
