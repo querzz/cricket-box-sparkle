@@ -42,7 +42,7 @@ function DailyStreakAdmin(){
   async function load(){
     setLoading(true);setError("");
     try{
-      const response=await fetch("/api/admin/daily-streak?initData="+encodeURIComponent(initData()));
+      const response=await fetch("/api/admin/daily-streak?initData="+encodeURIComponent(initData())+"&_="+Date.now(),{cache:"no-store"});
       const result=await response.json() as Api;
       if(!response.ok||!result.ok) throw new Error(result.code??"DAILY_STREAK_FAILED");
       setData(result);
