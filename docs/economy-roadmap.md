@@ -2,6 +2,45 @@
 
 This document records ideas agreed for a later phase. Do not implement these features until the core product flow is stable.
 
+## 🎟️ Season monetization strategy
+
+Approved product direction for the initial launch:
+
+### First 3 seasons — completely free
+
+- Seasons **#001, #002 and #003** are fully free for users.
+- No paid entry is required.
+- The goal is to collect real usage data, test retention, prize economy, Daily Gift, streaks and the overall season loop before introducing paid participation.
+- Paid spin purchases may remain a separate feature if enabled; “free season” refers to **season entry**, not necessarily to every possible paid action.
+
+### After the first 3 seasons — one season, two phases
+
+Do **not** run a separate free season and a separate paid season at the same time as the default model.
+
+Instead, one season should progress through two stages:
+
+**Phase 1 — 🆓 Free**
+- Users enter and use the season normally.
+- They can try the product and build engagement.
+- This phase acts as onboarding and creates demand for the next stage.
+
+**Phase 2 — 💎 Paid**
+- The same season continues, but access to the paid stage requires a purchase/paid participation condition.
+- The exact price, access rules and benefits are to be finalized before implementation.
+- The paid stage should offer a clear reason to pay: stronger rewards, exclusive prizes, additional opportunities or other measurable benefits.
+
+The preferred model is therefore:
+
+**один сезон → бесплатный этап → платный этап → завершение сезона**
+
+rather than:
+
+**бесплатный сезон + платный сезон одновременно**.
+
+This keeps the audience, season identity, statistics and prize/event context together while allowing monetization after users have already experienced the product for free.
+
+This is a product direction, not yet an implementation specification. Do not implement paid season phases until the pricing, eligibility, rewards and legal requirements are explicitly approved.
+
 ## Currency model
 
 ### ⭐ CRICKET BOX Stars balance
