@@ -50,7 +50,7 @@ function DailyStreakAdmin(){
       setError(e instanceof Error&&e.message==="ADMIN_ACCESS_DENIED"?"Нет доступа к админке.":"Не удалось загрузить Daily Streak.");
     }finally{setLoading(false);}
   }
-  useEffect(()=>{void load();},[]);
+  useEffect(()=>{ void load(); const timer=window.setInterval(()=>void load(),10000); return()=>window.clearInterval(timer); },[]);
 
   const players=useMemo(()=>{
     const all=data?.players??[];
