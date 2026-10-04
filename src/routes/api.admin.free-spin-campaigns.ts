@@ -59,9 +59,14 @@ export const Route = createFileRoute("/api/admin/free-spin-campaigns")({
           const row=await client.query("SELECT id::text FROM free_spin_campaigns WHERE id=$1::uuid FOR UPDATE",[id]);
           if(!row.rows[0]) throw new Error("CAMPAIGN_NOT_FOUND");
           await client.query("UPDATE free_spin_campaigns SET enabled=$2,updated_at=now() WHERE id=$1::uuid",[id,body.enabled]);
-          await client.query("INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'FREE_SPIN_CAMPAIGN_TOGGLED','free_spin_campaign',$2,$3::jsonb)",[admin.id,id,JSON.stringify({enabled:body.enabled})]);
+          const initialGrantedUsers=body.enabled ? await (async()=> {
+            const row=await client.query<{season_id:string}>(`SELECT season_id::text FROM free_spin_campaigns WHERE id=$1::uuid`,[id]);
+            return row.rows[0] ? grantFreeSpinCampaignToCurrentParticipants(client,id,row.rows[0].season_id) : 0;
+          })() : 0;
+          await client.query("INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'FREE_SPIN_CAMPAIGN_TOGGLED','free_spin_campaign',$2,$3::jsonb)",[admin.id,id,JSON.stringify({enabled:body.enabled,initialGrantedUsers})]);
+          return {enabled:body.enabled,initialGrantedUsers};
         });
-        return Response.json({ok:true,enabled:body.enabled});
+        return Response.json({ok:true,enabled:result.enabled,initialGrantedUsers:result.initialGrantedUsers});
       } catch(error) {
         const code=error instanceof Error?error.message:"CAMPAIGN_UPDATE_FAILED";
         return Response.json({ok:false,code},{status:code==="CAMPAIGN_NOT_FOUND"?404:409});
