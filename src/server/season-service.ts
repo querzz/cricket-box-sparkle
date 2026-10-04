@@ -95,15 +95,20 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
 
   const startsAtWasPatched = patch.startsAt !== undefined;
   const endsAtWasPatched = patch.endsAt !== undefined;
-  const startsAt = patch.startsAt === undefined ? current.starts_at : patch.startsAt;
+  const activatingSeason = (nextState === "ACTIVE" || nextState === "ENDING") && current.state !== nextState;
+  let startsAt = patch.startsAt === undefined ? current.starts_at : patch.startsAt;
   const endsAt = patch.endsAt === undefined ? current.ends_at : patch.endsAt;
   const currentStart = current.starts_at ? new Date(current.starts_at) : null;
   const currentEnd = current.ends_at ? new Date(current.ends_at) : null;
   const now = new Date();
-  const parsedStart = startsAt ? new Date(startsAt) : null;
+  let parsedStart = startsAt ? new Date(startsAt) : null;
   const parsedEnd = endsAt ? new Date(endsAt) : null;
   if (startsAt && (!parsedStart || Number.isNaN(parsedStart.getTime()))) throw new Error("INVALID_START_DATE");
   if (endsAt && (!parsedEnd || Number.isNaN(parsedEnd.getTime()))) throw new Error("INVALID_END_DATE");
+  if (activatingSeason && (!parsedStart || parsedStart > now)) {
+    startsAt = now.toISOString();
+    parsedStart = now;
+  }
   if (parsedStart && parsedEnd && parsedStart >= parsedEnd) throw new Error("INVALID_SEASON_DATES");
 
   const spinCountResult = await db.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM spins WHERE season_id=$1::uuid`, [id]);
@@ -126,9 +131,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   if (hasStarted && currentEnd && parsedEnd && parsedEnd < currentEnd) throw new Error("SEASON_END_CANNOT_BE_SHORTENED");
   if (hasStarted && endsAtWasPatched && currentEnd && endsAt === null) throw new Error("SEASON_END_CANNOT_BE_REMOVED");
 
-  const activatingSeason = (nextState === "ACTIVE" || nextState === "ENDING") && current.state !== nextState;
   if (nextState === "SCHEDULED" && (!parsedStart || parsedStart <= now)) throw new Error("SCHEDULED_START_MUST_BE_FUTURE");
-  if (activatingSeason && (!parsedStart || parsedStart > now)) throw new Error("ACTIVE_START_MUST_BE_NOW_OR_PAST");
   if ((nextState === "ACTIVE" || nextState === "ENDING") && parsedEnd && parsedEnd <= now) throw new Error("SEASON_END_ALREADY_PASSED");
 
   const requestedPrice = patch.paidSpinPrice;
