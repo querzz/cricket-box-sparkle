@@ -149,8 +149,9 @@ function AdminDashboard() {
     setSaving(true); setError(""); setMessage("");
     try {
       const isStarted = current.state === "ACTIVE" || current.state === "ENDING";
+      const isActivating = current.state === "ACTIVE" && !isStarted;
       const endsAt = isStarted ? current.endsAt ?? undefined : new Date(Date.now() + Math.max(1, current.days) * 86400000).toISOString();
-      const updated = await api<DbSeason>("/api/admin/seasons", "PATCH", { id: current.id, code: current.code.trim(), name: current.code.trim(), state: current.state, paidSpinPrice: Math.max(1, current.paidPrice), dailyFreeSpin: current.dailyFree, startsAt: isStarted ? undefined : current.startsAt ?? new Date().toISOString(), endsAt });
+      const updated = await api<DbSeason>("/api/admin/seasons", "PATCH", { id: current.id, code: current.code.trim(), name: current.code.trim(), state: current.state, paidSpinPrice: Math.max(1, current.paidPrice), dailyFreeSpin: current.dailyFree, startsAt: isActivating ? new Date().toISOString() : (isStarted ? undefined : current.startsAt ?? new Date().toISOString()), endsAt });
       const next = mapSeason(updated.season!);
       setSeasons((all) => all.map((season) => season.id === next.id ? { ...season, ...next, participants: season.participants, spins: season.spins, wins: season.wins } : season));
       setMessage("Настройки сезона сохранены.");
