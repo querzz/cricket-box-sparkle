@@ -151,6 +151,46 @@ try {
 
   await client.query(`INSERT INTO user_state (user_id) SELECT id FROM users ON CONFLICT (user_id) DO NOTHING`);
 
+  // Remove the legacy 125-Star welcome balance that earlier versions gave
+  // to new users. The correction is idempotent and touches only users whose
+  // original opening ledger entry was exactly 125 Stars.
+  await client.query("BEGIN");
+  try {
+    const legacyUsers = await client.query(`
+      SELECT us.user_id::text AS user_id, us.stars_balance
+        FROM user_state us
+        JOIN stars_ledger sl
+          ON sl.user_id = us.user_id
+         AND sl.type = 'OPENING_BALANCE'
+         AND sl.amount = 125
+         AND sl.idempotency_key = 'opening:' || us.user_id::text
+       WHERE NOT EXISTS (
+         SELECT 1 FROM stars_ledger correction
+          WHERE correction.idempotency_key = 'remove-initial-125:' || us.user_id::text
+       )
+       FOR UPDATE
+    `);
+    for (const row of legacyUsers.rows) {
+      const currentBalance = Math.max(0, Number(row.stars_balance ?? 0));
+      const nextBalance = Math.max(0, currentBalance - 125);
+      await client.query(
+        `UPDATE user_state SET stars_balance=$2, updated_at=now() WHERE user_id=$1::uuid`,
+        [row.user_id, nextBalance],
+      );
+      await client.query(
+        `INSERT INTO stars_ledger (user_id,type,amount,idempotency_key,metadata)
+         VALUES ($1::uuid,'ADMIN_CORRECTION',-125,$2::text,$3::jsonb)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [row.user_id, 'remove-initial-125:' + row.user_id, JSON.stringify({ source: 'remove_legacy_initial_balance', removed: 125 })],
+      );
+    }
+    await client.query("COMMIT");
+    if (legacyUsers.rowCount > 0) console.log(`✅ Removed legacy 125-Star welcome balance from ${legacyUsers.rowCount} user(s).`);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+
   // Environment admin IDs are bootstrap-only. Seed them only on a fresh admin table;
   // after the first successful bootstrap, the Admin WebApp is the source of truth.
   // This prevents npm run db:init from recreating an admin that was removed in the UI.
