@@ -79,7 +79,7 @@ export const Route = createFileRoute("/api/session")({
         const stateResult = await query<{ stars_balance:number; is_subscribed:boolean; is_participant:boolean; daily_gift_claimed_at:string|null; bonus_free_spins:number; activity_bonus_season_id:string|null; activity_bonus_spins_issued:number }>(
           `SELECT stars_balance,is_subscribed,is_participant,daily_gift_claimed_at::text,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid`, [user.id],
         );
-        const storedState = stateResult.rows[0] ?? { stars_balance:125,is_subscribed:!isProductionApp(),is_participant:true,daily_gift_claimed_at:null,bonus_free_spins:0,activity_bonus_season_id:null,activity_bonus_spins_issued:0 };
+        const storedState = stateResult.rows[0] ?? { stars_balance:0,is_subscribed:!isProductionApp(),is_participant:true,daily_gift_claimed_at:null,bonus_free_spins:0,activity_bonus_season_id:null,activity_bonus_spins_issued:0 };
         const isSubscribed = membership ?? storedState.is_subscribed;
         if (membership !== null && membership !== storedState.is_subscribed) await query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
 
