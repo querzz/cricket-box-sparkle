@@ -49,18 +49,42 @@ export const Route = createFileRoute("/api/admin/free-spin-campaigns")({
         const admin=await authenticateAdmin(typeof body.initData==="string"?body.initData:"");
         const id=String(body.id??"").trim();
         if(!id||typeof body.enabled!=="boolean") return Response.json({ok:false,code:"INVALID_CAMPAIGN"},{status:400});
-        await withTransaction(async(client)=>{
-          const row=await client.query("SELECT id::text FROM free_spin_campaigns WHERE id=$1::uuid FOR UPDATE",[id]);
-          if(!row.rows[0]) throw new Error("CAMPAIGN_NOT_FOUND");
-          const campaign=await client.query<{season_id:string;state:string;ends_at:string|null}>(`SELECT c.season_id::text,s.state,s.ends_at::text FROM free_spin_campaigns c JOIN seasons s ON s.id=c.season_id WHERE c.id=$1::uuid FOR UPDATE`,[id]);
+
+        const result=await withTransaction(async(client)=>{
+          const campaign=await client.query<{season_id:string;state:string;ends_at:string|null}>(
+            `SELECT c.season_id::text,s.state,s.ends_at::text
+               FROM free_spin_campaigns c
+               JOIN seasons s ON s.id=c.season_id
+              WHERE c.id=$1::uuid
+              FOR UPDATE`,
+            [id],
+          );
           if(!campaign.rows[0]) throw new Error("CAMPAIGN_NOT_FOUND");
-          await client.query("UPDATE free_spin_campaigns SET enabled=$2,starts_at=CASE WHEN $2 THEN now() ELSE starts_at END,ends_at=CASE WHEN $2 THEN COALESCE((SELECT ends_at FROM seasons WHERE id=season_id),ends_at) ELSE ends_at END,updated_at=now() WHERE id=$1::uuid",[id,body.enabled]);
-          let initialGrantedUsers=0;
-          if(body.enabled && ["ACTIVE","ENDING"].includes(campaign.rows[0].state)) initialGrantedUsers=await grantFreeSpinCampaignToCurrentParticipants(client,id,campaign.rows[0].season_id);
-          await client.query("INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'FREE_SPIN_CAMPAIGN_TOGGLED','free_spin_campaign',$2,$3::jsonb)",[admin.id,id,JSON.stringify({enabled:body.enabled,initialGrantedUsers})]);
-          return {enabled:body.enabled,initialGrantedUsers};
+
+          let grantedUsers=0;
+          if(body.enabled && ["ACTIVE","ENDING"].includes(campaign.rows[0].state)) {
+            const now=new Date();
+            const endsAt=campaign.rows[0].ends_at ? new Date(campaign.rows[0].ends_at) : new Date(now.getTime()+30*86400000);
+            await client.query(
+              "UPDATE free_spin_campaigns SET enabled=TRUE,starts_at=$2,ends_at=$3,updated_at=now() WHERE id=$1::uuid",
+              [id,now.toISOString(),endsAt.toISOString()],
+            );
+            grantedUsers=await grantFreeSpinCampaignToCurrentParticipants(client,id,campaign.rows[0].season_id);
+          } else {
+            await client.query(
+              "UPDATE free_spin_campaigns SET enabled=$2,updated_at=now() WHERE id=$1::uuid",
+              [id,body.enabled],
+            );
+          }
+
+          await client.query(
+            "INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'FREE_SPIN_CAMPAIGN_TOGGLED','free_spin_campaign',$2,$3::jsonb)",
+            [admin.id,id,JSON.stringify({enabled:body.enabled,grantedUsers})],
+          );
+          return {enabled:Boolean(body.enabled),grantedUsers};
         });
-        return Response.json({ok:true,enabled:result.enabled,initialGrantedUsers:result.initialGrantedUsers});
+
+        return Response.json({ok:true,enabled:result.enabled,grantedUsers:result.grantedUsers});
       } catch(error) {
         const code=error instanceof Error?error.message:"CAMPAIGN_UPDATE_FAILED";
         return Response.json({ok:false,code},{status:code==="CAMPAIGN_NOT_FOUND"?404:409});
