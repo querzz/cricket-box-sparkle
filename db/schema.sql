@@ -7,6 +7,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS veteran_tier_override TEXT CHECK (vet
 CREATE TABLE IF NOT EXISTS user_state (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, stars_balance INTEGER NOT NULL DEFAULT 0 CHECK (stars_balance >= 0 AND stars_balance <= 500), is_subscribed BOOLEAN NOT NULL DEFAULT TRUE, is_participant BOOLEAN NOT NULL DEFAULT TRUE, daily_gift_claimed_at TIMESTAMPTZ, bonus_free_spins INTEGER NOT NULL DEFAULT 0 CHECK (bonus_free_spins >= 0 AND bonus_free_spins <= 1000), activity_bonus_season_id UUID, activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0 CHECK (activity_bonus_spins_issued >= 0 AND activity_bonus_spins_issued <= 1000), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE user_state ALTER COLUMN stars_balance SET DEFAULT 0;
 CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), telegram_id BIGINT NOT NULL UNIQUE, username TEXT, role TEXT NOT NULL CHECK (role IN ('OWNER', 'ADMIN')), is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
