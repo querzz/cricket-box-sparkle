@@ -12,7 +12,7 @@ export async function grantActiveFreeSpinCampaigns(
   if (!isParticipant || !isSubscribed) return 0;
 
   const campaigns = await db.query<{ id:string; name:string; spins_per_user:number }>(
-    "SELECT id::text,name,spins_per_user FROM free_spin_campaigns WHERE season_id=$1::uuid AND enabled=TRUE AND starts_at<=now() AND ends_at>now() ORDER BY starts_at ASC",
+    "SELECT c.id::text,c.name,c.spins_per_user FROM free_spin_campaigns c JOIN seasons s ON s.id=c.season_id WHERE c.season_id=$1::uuid AND c.enabled=TRUE AND s.state IN ('ACTIVE','ENDING') ORDER BY c.created_at ASC",
     [seasonId],
   );
 
@@ -46,12 +46,12 @@ export async function grantFreeSpinCampaignToCurrentParticipants(
   campaignId: string,
   seasonId: string,
 ) {
-  const campaign = await db.query<{ id:string; name:string; spins_per_user:number; starts_at:Date; ends_at:Date; enabled:boolean }>(
-    "SELECT id::text,name,spins_per_user,starts_at,ends_at,enabled FROM free_spin_campaigns WHERE id=$1::uuid AND season_id=$2::uuid FOR UPDATE",
+  const campaign = await db.query<{ id:string; name:string; spins_per_user:number; enabled:boolean; season_state:string }>(
+    "SELECT c.id::text,c.name,c.spins_per_user,c.enabled,s.state AS season_state FROM free_spin_campaigns c JOIN seasons s ON s.id=c.season_id WHERE c.id=$1::uuid AND c.season_id=$2::uuid FOR UPDATE",
     [campaignId, seasonId],
   );
   const row = campaign.rows[0];
-  if (!row || !row.enabled || new Date(row.starts_at).getTime() > Date.now() || new Date(row.ends_at).getTime() <= Date.now()) return 0;
+  if (!row || !row.enabled || !["ACTIVE","ENDING"].includes(row.season_state)) return 0;
 
   const users = await db.query<{ id:string }>(
     `SELECT u.id::text
