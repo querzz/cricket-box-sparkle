@@ -30,19 +30,26 @@ export const Route = createFileRoute("/api/public-links")({
 
         let season: { title: string } | null = null;
         try {
-          const result = await query<{ title: string }>(`
-            WITH ranked AS (
-              SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS season_number
+          const result = await query<{ code: string; name: string }>(`
+            SELECT code, name
               FROM seasons
-            )
-            SELECT CONCAT('CRICKET BOX #', LPAD(r.season_number::text, 3, '0')) AS title
-              FROM seasons s
-              JOIN ranked r ON r.id = s.id
-             WHERE s.state IN ('ACTIVE','ENDING')
-             ORDER BY CASE WHEN s.state='ACTIVE' THEN 0 ELSE 1 END, s.created_at DESC
+             WHERE state IN ('ACTIVE','ENDING')
+             ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END, created_at DESC
              LIMIT 1
           `);
-          season = result.rows[0] ?? null;
+          const row = result.rows[0];
+          if (row) {
+            const code = row.code.trim();
+            const name = row.name.trim();
+            const codeMatch = code.match(/^(?:CB|C)(\\d+)(?:[-_].*)?$/i);
+            const nameMatch = name.match(/^CRICKET\\s+BOX\\s*#?(\\d+)(?:[-_].*)?$/i);
+            const title = codeMatch
+              ? `CRICKET BOX #${codeMatch[1]!.padStart(3, "0")}`
+              : nameMatch
+                ? `CRICKET BOX #${nameMatch[1]!.padStart(3, "0")}`
+                : (name || code || "CRICKET BOX");
+            season = { title };
+          }
         } catch (error) {
           console.warn("Public season title lookup failed:", error instanceof Error ? error.message : error);
         }
@@ -55,7 +62,7 @@ export const Route = createFileRoute("/api/public-links")({
             username: serverConfig.supportUsername ? `@${serverConfig.supportUsername}` : null,
             url: serverConfig.supportUsername ? `https://t.me/${serverConfig.supportUsername}` : null,
           },
-        }, { headers: { "cache-control": "public, max-age=30" } });
+        }, { headers: { "cache-control": "no-store" } });
       },
     },
   },
