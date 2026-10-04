@@ -29,7 +29,7 @@ export const Route = createFileRoute("/api/admin/free-spin-campaigns")({
         const s=season.rows[0] as {id:string;starts_at:string|null;ends_at:string|null;state:string}|undefined;
         if(!s) return Response.json({ok:false,code:"SEASON_NOT_FOUND"},{status:404});
         if(!["ACTIVE","ENDING"].includes(s.state)) return Response.json({ok:false,code:"SEASON_NOT_ACTIVE"},{status:409});
-        const id=await withTransaction(async(client)=>{
+        const result=await withTransaction(async(client)=>{
           const startsAt=new Date();
           const endsAt=s.ends_at ? new Date(s.ends_at) : new Date(startsAt.getTime()+30*86400000);
           const row=await client.query("INSERT INTO free_spin_campaigns(season_id,name,starts_at,ends_at,spins_per_user,enabled,created_by) VALUES($1::uuid,$2,$3,$4,$5,TRUE,$6::uuid) RETURNING id::text",[seasonId,name,startsAt.toISOString(),endsAt.toISOString(),spinsPerUser,admin.id]);
