@@ -90,11 +90,11 @@ assert(home.includes('t("home.unsubscribedNote")'), "home uses the translated su
 assert(session.includes("dailyAvailable = season.daily_free_spin && live && isSubscribed && isParticipant"), "session grants daily free spin only to eligible subscribed participants");
 assert(session.includes("freeSpins = dailyAvailable + bonusFreeSpins"), "session composes available free spins from server state");
 assert(seasonUi.includes("const finished = state === \"CLOSED\" || state === \"PAYOUT\" || state === \"ARCHIVED\""), "finished season states are handled");
-assert(seasonUi.includes("canSpin: live && subscribed"), "spin access is disabled outside live subscribed state");
+assert(seasonUi.includes("canSpin: live && !paused && subscribed"), "spin access is disabled outside live, paused, or unsubscribed state");
 assert(spin.includes('throw new Error("NO_ATTEMPTS")'), "server rejects a user with no free/bonus attempts");
 assert(spin.includes('throw new Error("NO_PRIZES")'), "server rejects an exhausted prize pool");
 assert(draw.includes("starsFull"), "draw handles a full 500 Stars balance");
-assert(!economics.includes('label="Revenue"') && !economics.includes('label="Known cost"') && !economics.includes("Paid conversion"), "economics UI no longer exposes obvious English metric labels");
+assert(!economics.includes('label="Revenue"') && !economics.includes('label="Known cost"') && !economics.includes("Paid conversion") && !economics.includes("dry-run") && !economics.includes("LiveOps-дропы"), "economics UI no longer exposes obvious English operational labels");
 assert(!/(?:[>\"\'])Lifecycle:\s/.test(payouts) && !/(?:[>\"\'])method:\s/.test(payouts) && !/(?:[>\"\'])ref:\s/.test(payouts), "payout UI no longer exposes obvious English operational labels");
 assert(selector.includes("quantity_remaining"), "selector uses remaining inventory");
 assert(selector.includes("weight"), "selector uses configured weight");
