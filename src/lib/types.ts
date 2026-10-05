@@ -48,6 +48,8 @@ export interface DailyStreakSnapshot { enabled: boolean; totalDays: number; curr
 export interface ActivitySnapshot { points: number; pointsPerBonus: number; pointsToNext: number; progressPercent: number; reactions: number; comments: number; joins: number; activeDays: number; bonusSpinsGranted: number; bonusSpinsRemaining: number; maxBonusSpins: number; }
 export interface Withdrawal { id: string; rewardTitle: string; amount: number; requestedAt: string; status: WithdrawalStatus; }
 
+export interface OwnerGift { id:string; title:string; message?:string; rewardType:"STARS"|"FREE_SPIN"|"XP"|"NOTE"; amount:number; createdAt:string; }
+
 export interface SessionSnapshot {
   user: User;
   season: Season;
@@ -55,6 +57,7 @@ export interface SessionSnapshot {
   spin: SpinState;
   gift: Gift;
   streak: DailyStreakSnapshot;
+  ownerGift: OwnerGift | null;
   activity: ActivitySnapshot;
   prizes: Prize[];
   rewards: Reward[];
