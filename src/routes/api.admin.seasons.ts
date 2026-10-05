@@ -8,7 +8,7 @@ async function repairLiveSeasons(){await query(`WITH ranked AS (SELECT id,ROW_NU
 function withDisplayCodes<T extends {code:string;name:string}>(seasons:T[]){return seasons.map((season,index)=>({...season,code:`CRICKET BOX #${String(seasons.length-index).padStart(3,"0")}`}));}
 
 export const Route=createFileRoute("/api/admin/seasons")({server:{handlers:{
- GET:async({request})=>{try{const url=new URL(request.url);await authenticateAdmin(url.searchParams.get("initData")??"");await repairLiveSeasons();const all=await listSeasons();
+ GET:async({request})=>{try{const url=new URL(request.url);await authenticateAdmin(url.searchParams.get("initData")??"");const all=await listSeasons();
 const metricsResult=await query<{season_id:string;participants:string;spins:string;wins:string}>(`SELECT s.season_id::text,
   COUNT(DISTINCT s.user_id) FILTER (WHERE s.status='COMPLETED' AND u.is_test=FALSE)::text AS participants,
   COUNT(*) FILTER (WHERE s.status='COMPLETED' AND u.is_test=FALSE)::text AS spins,
