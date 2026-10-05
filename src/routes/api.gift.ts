@@ -37,7 +37,7 @@ export const Route = createFileRoute("/api/gift")({
           if (membership !== null && membership !== current?.is_subscribed) await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.rows[0].id, membership]);
           if (!current?.is_participant || !subscribed) throw new Error("GIFT_UNAVAILABLE");
 
-          const season = await client.query<{ id:string; state:string }>(`SELECT id::text,state,is_paused FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
+          const season = await client.query<{ id:string; state:string; is_paused:boolean }>(`SELECT id::text,state,is_paused FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
           const currentSeason = season.rows[0];
           if (!currentSeason) throw new Error("GIFT_UNAVAILABLE");
           if (currentSeason.is_paused) throw new Error("SEASON_PAUSED");
