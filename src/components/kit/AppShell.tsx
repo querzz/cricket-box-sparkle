@@ -29,6 +29,14 @@ const ADMIN_NAV = [
   ["settings", "/admin/settings"],
   ["access", "/admin/access"],
   ["audit", "/admin/audit"],
+  ["dailyStreak", "/admin/daily-streak"],
+  ["channelActivity", "/admin/channel-activity"],
+  ["veteran", "/admin/veteran"],
+  ["bonuses", "/admin/bonuses"],
+  ["balances", "/admin/balances"],
+  ["ownerGifts", "/admin/owner-gifts"],
+  ["mechanics", "/admin/mechanics"],
+  ["seasonReport", "/admin/season-report"],
 ] as const;
 
 function telegramMiniAppIsAvailable() {
