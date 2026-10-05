@@ -13,6 +13,21 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const rawDays = Number(url.searchParams.get("days") ?? 7);
         const days = rawDays === 1 || rawDays === 30 ? rawDays : 7;
         const seriesStart = days === 1 ? "current_date" : "current_date - interval '" + String(days - 1) + " days'";
+        const spinDateFilter = days === 1
+          ? "AND s.created_at >= current_date"
+          : "AND s.created_at >= current_date - interval '" + String(days - 1) + " days'";
+        const ledgerDateFilter = days === 1
+          ? "AND sl.created_at >= current_date"
+          : "AND sl.created_at >= current_date - interval '" + String(days - 1) + " days'";
+        const transactionDateFilter = days === 1
+          ? "AND st.created_at >= current_date"
+          : "AND st.created_at >= current_date - interval '" + String(days - 1) + " days'";
+        const payoutDateFilter = days === 1
+          ? "AND py.created_at >= current_date"
+          : "AND py.created_at >= current_date - interval '" + String(days - 1) + " days'";
+        const withdrawalDateFilter = days === 1
+          ? "AND p.created_at >= current_date"
+          : "AND p.created_at >= current_date - interval '" + String(days - 1) + " days'";
         let seasonId: string | null = requestedSeasonId || null;
         if (!seasonId && scope === "current") {
           const season = await query<{ id: string }>(`SELECT id::text FROM seasons
@@ -33,22 +48,22 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const spinSeasonPredicate = seasonId ? `AND s.season_id=$1::uuid` : "";
         const payoutSeasonPredicate = seasonId ? `AND sp.season_id=$1::uuid` : "";
 
-        const users = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND u.is_test=FALSE ${seasonFilter}`, params);
-        const spins = await query<{ total: string; attempted: string; free: string; paid: string }>(`SELECT COUNT(*) FILTER (WHERE s.status='COMPLETED')::text AS total, COUNT(*)::text AS attempted, COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='FREE')::text AS free, COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='PAID')::text AS paid FROM spins s JOIN users u ON u.id=s.user_id WHERE u.is_test=FALSE ${seasonFilter}`, params);
-        const wins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s JOIN users u ON u.id=s.user_id LEFT JOIN prizes p ON p.id=s.prize_id WHERE s.status='COMPLETED' AND p.kind<>'EMPTY' AND u.is_test=FALSE ${seasonFilter}`, params);
-        const prizeStars = await query<{ value: string }>(`SELECT COALESCE(SUM(sl.amount),0)::text AS value FROM stars_ledger sl JOIN users u ON u.id=sl.user_id WHERE sl.type='REWARD' AND sl.spin_id IS NOT NULL AND u.is_test=FALSE ${seasonId ? `AND sl.season_id=$1::uuid` : ""}`, params);
-        const payoutPending = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM payouts py LEFT JOIN spins sp ON sp.id=py.spin_id JOIN users u ON u.id=py.user_id WHERE py.status IN ('PENDING','REVIEW') AND u.is_test=FALSE AND NOT (py.kind='STARS' AND py.note NOT LIKE 'WITHDRAWAL_REQUEST%') ${seasonId ? `AND (sp.season_id=$1::uuid OR py.note LIKE 'WITHDRAWAL_REQUEST%')` : ""}`, params);
+        const users = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND u.is_test=FALSE ${seasonFilter} ${spinDateFilter}`, params);
+        const spins = await query<{ total: string; attempted: string; free: string; paid: string }>(`SELECT COUNT(*) FILTER (WHERE s.status='COMPLETED')::text AS total, COUNT(*)::text AS attempted, COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='FREE')::text AS free, COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='PAID')::text AS paid FROM spins s JOIN users u ON u.id=s.user_id WHERE u.is_test=FALSE ${seasonFilter} ${spinDateFilter}`, params);
+        const wins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s JOIN users u ON u.id=s.user_id LEFT JOIN prizes p ON p.id=s.prize_id WHERE s.status='COMPLETED' AND p.kind<>'EMPTY' AND u.is_test=FALSE ${seasonFilter} ${spinDateFilter}`, params);
+        const prizeStars = await query<{ value: string }>(`SELECT COALESCE(SUM(sl.amount),0)::text AS value FROM stars_ledger sl JOIN users u ON u.id=sl.user_id WHERE sl.type='REWARD' AND sl.spin_id IS NOT NULL AND u.is_test=FALSE ${ledgerDateFilter} ${seasonId ? `AND sl.season_id=$1::uuid` : ""}`, params);
+        const payoutPending = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM payouts py LEFT JOIN spins sp ON sp.id=py.spin_id JOIN users u ON u.id=py.user_id WHERE py.status IN ('PENDING','REVIEW') AND u.is_test=FALSE ${payoutDateFilter} AND NOT (py.kind='STARS' AND py.note NOT LIKE 'WITHDRAWAL_REQUEST%') ${seasonId ? `AND (sp.season_id=$1::uuid OR py.note LIKE 'WITHDRAWAL_REQUEST%')` : ""}`, params);
         const withdrawalFilter = seasonId ? `AND (EXISTS (SELECT 1 FROM spins sp WHERE sp.id=p.spin_id AND sp.season_id=$1::uuid) OR p.note='WITHDRAWAL_REQUEST')` : "";
-        const withdrawals = await query<{ total: string; paid: string }>(`SELECT COUNT(*) FILTER (WHERE p.note='WITHDRAWAL_REQUEST')::text AS total, COUNT(*) FILTER (WHERE p.note='WITHDRAWAL_REQUEST' AND p.status='PAID')::text AS paid FROM payouts p JOIN users u ON u.id=p.user_id AND u.is_test=FALSE WHERE TRUE ${withdrawalFilter}`, params);
-        const revenue = await query<{ value: string }>(`SELECT COALESCE(SUM(amount),0)::text AS value FROM star_transactions st JOIN users u ON u.id=st.user_id WHERE st.status='SUCCESS' AND st.payload->>'type'='PAID_SPIN' AND u.is_test=FALSE ${seasonId ? `AND st.payload->>'seasonId'=$1` : ""}`, params);
+        const withdrawals = await query<{ total: string; paid: string }>(`SELECT COUNT(*) FILTER (WHERE p.note='WITHDRAWAL_REQUEST')::text AS total, COUNT(*) FILTER (WHERE p.note='WITHDRAWAL_REQUEST' AND p.status='PAID')::text AS paid FROM payouts p JOIN users u ON u.id=p.user_id AND u.is_test=FALSE WHERE TRUE ${withdrawalFilter} ${withdrawalDateFilter}`, params);
+        const revenue = await query<{ value: string }>(`SELECT COALESCE(SUM(amount),0)::text AS value FROM star_transactions st JOIN users u ON u.id=st.user_id WHERE st.status='SUCCESS' AND st.payload->>'type'='PAID_SPIN' AND u.is_test=FALSE ${transactionDateFilter} ${seasonId ? `AND st.payload->>'seasonId'=$1` : ""}`, params);
         const newUsers = await query<{ day: string; value: string }>("SELECT to_char(d.day,'DD.MM') AS day, COUNT(u.id)::text AS value FROM generate_series(" + seriesStart + ", current_date, interval '1 day') d(day) LEFT JOIN users u ON u.is_test=FALSE AND u.created_at >= d.day AND u.created_at < d.day + interval '1 day' GROUP BY d.day ORDER BY d.day");
         const spinDays = await query<{ day: string; value: string; free: string; paid: string; bonus: string }>("SELECT to_char(d.day,'DD.MM') AS day, COUNT(s.id) FILTER (WHERE s.status='COMPLETED')::text AS value, COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type='FREE')::text AS free, COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type='PAID')::text AS paid, COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type IN ('ACTIVITY_BONUS','VETERAN_BONUS','OWNER_GIFT'))::text AS bonus FROM generate_series(" + seriesStart + ", current_date, interval '1 day') d(day) LEFT JOIN spins s ON s.created_at >= d.day AND s.created_at < d.day + interval '1 day' AND s.status='COMPLETED' AND EXISTS (SELECT 1 FROM users u WHERE u.id=s.user_id AND u.is_test=FALSE) " + (seasonId ? "AND s.season_id=$1::uuid" : "") + " GROUP BY d.day ORDER BY d.day", params);
         const participantsToday = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND u.is_test=FALSE AND s.created_at >= current_date ${seasonId ? `AND s.season_id=$1::uuid` : ""}`, params);
 
         const registered = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM users WHERE is_test=FALSE`);
-        const repeatUsers = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM (SELECT s.user_id FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND u.is_test=FALSE ${spinSeasonPredicate} GROUP BY s.user_id HAVING COUNT(*)>=2) x`, params);
+        const repeatUsers = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM (SELECT s.user_id FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND u.is_test=FALSE ${spinSeasonPredicate} ${spinDateFilter} GROUP BY s.user_id HAVING COUNT(*)>=2) x`, params);
         const paidUsers = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND s.type='PAID' AND u.is_test=FALSE ${spinSeasonPredicate}`, params);
-        const failedSpins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='FAILED' AND u.is_test=FALSE ${seasonFilter}`, params);
+        const failedSpins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='FAILED' AND u.is_test=FALSE ${seasonFilter} ${spinDateFilter}`, params);
         const cohortRetention = await query<{ eligible_d1: string; retained_d1: string; eligible_d7: string; retained_d7: string }>(`
           WITH first_spins AS (
             SELECT s.user_id, MIN(s.created_at::date) AS cohort_day
