@@ -37,21 +37,21 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='OWNER_GIFT')::text AS owner_gift_spins," +
           "COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='ACTIVITY_BONUS')::text AS activity_spins," +
           "COUNT(*) FILTER (WHERE s.status='COMPLETED' AND s.type='VETERAN_BONUS')::text AS veteran_spins " +
-          "FROM spins s WHERE s.season_id=$1::uuid", params);
+          "FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid", params);
 
         const rewards = await query<NumRow>(
           "SELECT " +
           "COUNT(*) FILTER (WHERE s.status='COMPLETED' AND p.kind='EMPTY')::text AS empty_spins," +
           "COUNT(*) FILTER (WHERE s.status='COMPLETED' AND p.kind<>'EMPTY')::text AS wins," +
           "COUNT(*) FILTER (WHERE s.status='COMPLETED')::text AS resolved " +
-          "FROM spins s LEFT JOIN prizes p ON p.id=s.prize_id WHERE s.season_id=$1::uuid", params);
+          "FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE LEFT JOIN prizes p ON p.id=s.prize_id WHERE s.season_id=$1::uuid", params);
 
         const paid = await query<NumRow>(
           "SELECT " +
           "COUNT(DISTINCT user_id)::text AS paid_users," +
           "COUNT(*)::text AS payments," +
           "COALESCE(SUM(amount),0)::text AS revenue " +
-          "FROM star_transactions WHERE status='SUCCESS' AND payload->>'type'='PAID_SPIN' AND payload->>'seasonId'=$1", params);
+          "FROM star_transactions st JOIN users u ON u.id=st.user_id AND u.is_test=FALSE WHERE st.status='SUCCESS' AND st.payload->>'type'='PAID_SPIN' AND st.payload->>'seasonId'=$1", params);
 
         const payout = await query<NumRow>(
           "SELECT " +
@@ -62,12 +62,12 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='STARS' AND p.status='PAID'),0)::text AS paid_stars," +
           "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='MONEY' AND p.status IN ('PENDING','REVIEW')),0)::text AS pending_money," +
           "COALESCE(SUM(pr.unit_cost) FILTER (WHERE p.kind<>'EMPTY'),0)::text AS prize_cost " +
-          "FROM payouts p JOIN spins s ON s.id=p.spin_id LEFT JOIN prizes pr ON pr.id=p.prize_id WHERE s.season_id=$1::uuid", params);
+          "FROM payouts p JOIN users u ON u.id=p.user_id AND u.is_test=FALSE JOIN spins s ON s.id=p.spin_id LEFT JOIN prizes pr ON pr.id=p.prize_id WHERE s.season_id=$1::uuid", params);
 
         const withdrawals = await query<NumRow>(
           "SELECT COUNT(*)::text AS requests, COUNT(*) FILTER (WHERE p.status='PAID')::text AS paid, " +
           "COALESCE(SUM(p.amount),0)::text AS requested_stars, COALESCE(SUM(p.amount) FILTER (WHERE p.status='PAID'),0)::text AS paid_stars " +
-          "FROM payouts p WHERE p.note='WITHDRAWAL_REQUEST' AND p.user_id IS NOT NULL " +
+          "FROM payouts p JOIN users u ON u.id=p.user_id AND u.is_test=FALSE WHERE p.note='WITHDRAWAL_REQUEST' AND p.user_id IS NOT NULL " +
           "AND EXISTS (SELECT 1 FROM stars_ledger sl WHERE sl.user_id=p.user_id AND sl.type='WITHDRAWAL' AND sl.season_id=$1::uuid)", params);
 
         const gifts = await query<NumRow>(
@@ -77,14 +77,14 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COUNT(*) FILTER (WHERE kind='FREE_SPIN')::text AS spin_claims, " +
           "COALESCE(SUM(amount) FILTER (WHERE kind='FREE_SPIN'),0)::text AS spins_awarded, " +
           "COUNT(*) FILTER (WHERE kind='XP')::text AS xp_claims, COALESCE(SUM(amount) FILTER (WHERE kind='XP'),0)::text AS xp_awarded " +
-          "FROM daily_gift_claims WHERE season_id=$1::uuid", params);
+          "FROM daily_gift_claims g JOIN users u ON u.id=g.user_id AND u.is_test=FALSE WHERE g.season_id=$1::uuid", params);
 
         const streak = await query<NumRow>(
           "WITH season_days AS (" +
           " SELECT GREATEST(1,CEIL(EXTRACT(EPOCH FROM (COALESCE(s.ends_at,s.starts_at+interval '1 day')-s.starts_at))/86400.0))::int AS total_days FROM seasons s WHERE s.id=$1::uuid" +
           "), by_user AS (" +
           " SELECT c.user_id,COUNT(DISTINCT c.day_index)::int AS visited,MAX(c.day_index)::int AS max_day " +
-          " FROM season_daily_checkins c WHERE c.season_id=$1::uuid GROUP BY c.user_id" +
+          " FROM season_daily_checkins c JOIN users u ON u.id=c.user_id AND u.is_test=FALSE WHERE c.season_id=$1::uuid GROUP BY c.user_id" +
           ") SELECT (SELECT total_days FROM season_days)::text AS total_days," +
           "COUNT(*)::text AS checkin_users," +
           "COUNT(*) FILTER (WHERE visited=(SELECT total_days FROM season_days))::text AS perfect_users," +
@@ -99,7 +99,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
 
         const engagement = await query<NumRow>(
           "SELECT COUNT(*)::text AS unique_users,COALESCE(AVG(user_spins),0)::text AS avg_user_spins,COALESCE(MAX(user_spins),0)::text AS max_user_spins " +
-          "FROM (SELECT user_id,COUNT(*) FILTER (WHERE status='COMPLETED')::int AS user_spins FROM spins WHERE season_id=$1::uuid GROUP BY user_id) x", params);
+          "FROM (SELECT s.user_id,COUNT(*) FILTER (WHERE s.status='COMPLETED')::int AS user_spins FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid GROUP BY s.user_id) x", params);
 
         const newUsers = await query<NumRow>(
           "SELECT COUNT(*)::text AS users FROM users WHERE is_test=FALSE " +
@@ -107,7 +107,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "AND created_at<=COALESCE((SELECT ends_at FROM seasons WHERE id=$1::uuid),now())", params);
 
         const retention = await query<NumRow>(
-          "WITH first_spin AS (SELECT user_id,MIN(created_at::date) AS first_day FROM spins WHERE season_id=$1::uuid AND status='COMPLETED' GROUP BY user_id), " +
+          "WITH first_spin AS (SELECT s.user_id,MIN(s.created_at::date) AS first_day FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid AND s.status='COMPLETED' GROUP BY s.user_id), " +
           "r AS (SELECT f.user_id,f.first_day,EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+1) AS d1, " +
           "EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+3) AS d3, " +
           "EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+7) AS d7 FROM first_spin f) " +
@@ -119,7 +119,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid) AND d7)::text AS d7_retained FROM r", params);
         const prizes = await query<NumRow>(
           "WITH won AS (" +
-          " SELECT s.prize_id,COUNT(*)::int AS won FROM spins s WHERE s.season_id=$1::uuid AND s.status='COMPLETED' AND s.prize_id IS NOT NULL GROUP BY s.prize_id" +
+          " SELECT s.prize_id,COUNT(*)::int AS won FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid AND s.status='COMPLETED' AND s.prize_id IS NOT NULL GROUP BY s.prize_id" +
           ") SELECT p.id::text,p.kind,p.title,p.subtitle,p.amount::text,p.unit_cost::text,p.quantity_total::text,p.quantity_remaining::text,COALESCE(w.won,0)::text AS won," +
           "CASE WHEN p.quantity_total>0 THEN ROUND(100.0*(p.quantity_total-p.quantity_remaining)/p.quantity_total,1) ELSE 0 END::text AS consumed_pct " +
           "FROM prizes p LEFT JOIN won w ON w.prize_id=p.id WHERE p.season_id=$1::uuid ORDER BY COALESCE(w.won,0) DESC,p.quantity_total DESC,p.created_at ASC", params);
@@ -145,14 +145,14 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COALESCE((SELECT date_trunc('day',starts_at) FROM seasons WHERE id=$1::uuid),current_date)," +
           "COALESCE(date_trunc('day',(SELECT ends_at FROM seasons WHERE id=$1::uuid)),current_date)," +
           "interval '1 day') d(day) " +
-          "LEFT JOIN spins s ON s.season_id=$1::uuid AND s.created_at>=d.day AND s.created_at<d.day+interval '1 day' " +
+          "LEFT JOIN spins s ON s.season_id=$1::uuid AND s.created_at>=d.day AND s.created_at<d.day+interval '1 day' AND EXISTS (SELECT 1 FROM users u WHERE u.id=s.user_id AND u.is_test=FALSE) " +
           "GROUP BY d.day ORDER BY d.day", params);
 
         const repeatUsers = await query<NumRow>(
-          "SELECT COUNT(*)::text AS count FROM (SELECT user_id FROM spins WHERE season_id=$1::uuid AND status='COMPLETED' GROUP BY user_id HAVING COUNT(*)>=2) x", params);
+          "SELECT COUNT(*)::text AS count FROM (SELECT s.user_id FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid AND s.status='COMPLETED' GROUP BY s.user_id HAVING COUNT(*)>=2) x", params);
 
         const ranks = await query<NumRow>(
-          "WITH prior AS (SELECT s.user_id,COUNT(*)::int AS completed_seasons FROM seasons ps JOIN spins s ON s.season_id=ps.id " +
+          "WITH prior AS (SELECT s.user_id,COUNT(DISTINCT ps.id)::int AS completed_seasons FROM seasons ps JOIN spins s ON s.season_id=ps.id JOIN users u ON u.id=s.user_id AND u.is_test=FALSE " +
           "WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid) AND s.status='COMPLETED' GROUP BY s.user_id), " +
           "tiers AS (SELECT u.id,CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override " +
           "WHEN COALESCE(pr.completed_seasons,0)>=5 THEN 'ELITE' WHEN COALESCE(pr.completed_seasons,0)>=3 THEN 'VETERAN' ELSE 'ROOKIE' END AS tier " +
