@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS seasons (
 );
 ALTER TABLE seasons ADD COLUMN IF NOT EXISTS is_paused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+ALTER TABLE seasons ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
 WITH ranked AS (SELECT id,ROW_NUMBER() OVER (ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC) rn FROM seasons WHERE state IN ('ACTIVE','ENDING')) UPDATE seasons s SET state='CLOSED',updated_at=now() FROM ranked r WHERE s.id=r.id AND r.rn>1;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_one_live_season ON seasons ((1)) WHERE state IN ('ACTIVE','ENDING');
 CREATE TABLE IF NOT EXISTS prizes (
@@ -39,6 +40,19 @@ CREATE TABLE IF NOT EXISTS season_daily_checkins (
 );
 CREATE INDEX IF NOT EXISTS idx_season_daily_checkins_season_day ON season_daily_checkins(season_id,day_index,user_id);
 CREATE INDEX IF NOT EXISTS idx_season_daily_checkins_user ON season_daily_checkins(user_id,season_id,day_index);
+CREATE TABLE IF NOT EXISTS season_streak_rewards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cycle_no INTEGER NOT NULL CHECK (cycle_no >= 1),
+  day_index INTEGER NOT NULL CHECK (day_index BETWEEN 1 AND 7),
+  reward_type TEXT NOT NULL CHECK (reward_type IN ('STARS','FREE_SPIN','DAILY_GIFT_BOOST','NEXT_SPIN_BOOST')),
+  amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (season_id,user_id,cycle_no,day_index)
+);
+CREATE INDEX IF NOT EXISTS idx_season_streak_rewards_user ON season_streak_rewards(user_id,season_id,created_at DESC);
 
 CREATE TABLE IF NOT EXISTS daily_gift_claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('NOTHING','STARS','FREE_SPIN','XP')), amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0), title TEXT NOT NULL, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -80,6 +94,8 @@ INSERT INTO stars_ledger(user_id,type,amount,idempotency_key,metadata) SELECT us
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
 ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_season_id UUID;
 ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS daily_gift_chance_boost_pct INTEGER NOT NULL DEFAULT 0 CHECK (daily_gift_chance_boost_pct >= 0 AND daily_gift_chance_boost_pct <= 100);
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS next_spin_boosts INTEGER NOT NULL DEFAULT 0 CHECK (next_spin_boosts >= 0 AND next_spin_boosts <= 10);
 ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS image_url TEXT;
@@ -144,7 +160,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
 CREATE OR REPLACE VIEW season_leaderboard AS
 WITH spin_stats AS (SELECT season_id,user_id,COUNT(*)::int spins_count FROM spins WHERE status='COMPLETED' GROUP BY season_id,user_id),
-win_stats AS (SELECT s.season_id,py.user_id,COUNT(*)::int wins_count,COALESCE(SUM(CASE WHEN py.kind='STARS' THEN py.amount ELSE 0 END),0)::numeric stars_won FROM payouts py JOIN spins s ON s.id=py.spin_id WHERE py.prize_id IS NOT NULL AND py.kind<>'EMPTY' GROUP BY s.season_id,py.user_id),
+win_stats AS (SELECT s.season_id,s.user_id,COUNT(*)::int wins_count,COALESCE(SUM(sl.amount) FILTER (WHERE sl.type='REWARD' AND sl.spin_id=s.id),0)::numeric stars_won FROM spins s LEFT JOIN stars_ledger sl ON sl.spin_id=s.id AND sl.type='REWARD' JOIN prizes p ON p.id=s.prize_id WHERE s.status='COMPLETED' AND p.kind<>'EMPTY' GROUP BY s.season_id,s.user_id),
 base AS (SELECT ss.season_id,ss.user_id,ss.spins_count,COALESCE(ws.wins_count,0)::int wins_count,COALESCE(ws.stars_won,0)::numeric stars_won FROM spin_stats ss LEFT JOIN win_stats ws ON ws.season_id=ss.season_id AND ws.user_id=ss.user_id)
 SELECT season_id,user_id,spins_count,wins_count,stars_won,RANK() OVER(PARTITION BY season_id ORDER BY spins_count DESC,wins_count DESC,stars_won DESC,user_id)::int rank FROM base;
 
