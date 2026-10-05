@@ -2,6 +2,9 @@ import { query } from "./db.ts";
 
 const DAY_MS = 86_400_000;
 
+export const DAILY_STREAK_REWARDS = [1,1,1,2,2,3] as const;
+export const DAILY_STREAK_TOTAL_DAYS = 7;
+
 export type DailyStreakSummary = {
   enabled: boolean;
   totalDays: number;
@@ -43,7 +46,7 @@ export async function recordSeasonCheckin(seasonId: string, userId: string, star
   return dayIndex;
 }
 
-export function summarizeCheckins(days: number[], totalDays: number, currentDay: number, rewardStars = 15): DailyStreakSummary {
+export function summarizeCheckins(days: number[], totalDays: number, currentDay: number, rewardStars = 10): DailyStreakSummary {
   const unique = [...new Set(days)].filter((day) => Number.isInteger(day) && day >= 1 && day <= totalDays).sort((a,b) => a-b);
   let currentStreak = 0;
   const checkedToday = currentDay > 0 && unique.includes(currentDay);
@@ -59,13 +62,13 @@ export function summarizeCheckins(days: number[], totalDays: number, currentDay:
     visitedDays: unique.length,
     currentStreak,
     checkedInToday: checkedToday,
-    eligibleForReward: totalDays > 0 && unique.length === totalDays && unique.every((day, index) => day === index + 1),
+    eligibleForReward: currentStreak >= DAILY_STREAK_TOTAL_DAYS,
     rewardStars: Math.max(0, Math.floor(rewardStars)),
   };
 }
 
 
-export async function getUserDailyStreakForUser(seasonId: string, userId: string, startsAt: string | null, endsAt: string | null, rewardStars = 15) {
+export async function getUserDailyStreakForUser(seasonId: string, userId: string, startsAt: string | null, endsAt: string | null, rewardStars = 10) {
   const totalDays = getSeasonDayCount(startsAt, endsAt);
   const currentDay = getCurrentSeasonDay(startsAt, endsAt);
   if (!totalDays) return summarizeCheckins([], 0, 0, rewardStars);
