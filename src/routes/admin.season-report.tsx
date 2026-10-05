@@ -54,7 +54,7 @@ function SeasonReport(){
       const r=await fetch("/api/admin/seasons?all=1&initData="+encodeURIComponent(initData()));
       const d=await r.json() as {ok:boolean;seasons?:Array<{id:string;name:string;code:string;state:string}>};
       if(r.ok&&d.ok)setSeasonList((d.seasons??[]).filter(s=>["CLOSED","PAYOUT","ARCHIVED","ENDING"].includes(s.state)));
-    }catch{}
+    }catch{/* Season list is auxiliary; the report can still render with no choices. */}
   }
   async function refresh(id=seasonId){
     setLoading(true);setError("");
