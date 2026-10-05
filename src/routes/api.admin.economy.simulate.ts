@@ -47,17 +47,21 @@ export const Route = createFileRoute("/api/admin/economy/simulate")({
           [seasonId],
         );
 
-        const simulationPrizes = prizes.rows.map(p => ({
-          id: p.id,
-          kind: p.kind,
-          title: p.title,
-          quantity_total: p.quantity_total,
-          quantity_remaining: p.quantity_remaining,
-          amount: Number(p.amount),
-          unitCost: Number(p.unit_cost),
-          weight: Number(p.metadata?.weight ?? 1) || 1,
-          metadata: p.metadata,
-        }));
+        const simulationPrizes = prizes.rows.map(p => {
+          const rawWeight = Number(p.metadata?.weight ?? 1);
+          if (!Number.isFinite(rawWeight) || rawWeight < 0) throw new Error("INVALID_PRIZE_WEIGHT");
+          return {
+            id: p.id,
+            kind: p.kind,
+            title: p.title,
+            quantity_total: p.quantity_total,
+            quantity_remaining: p.quantity_remaining,
+            amount: Number(p.amount),
+            unitCost: Number(p.unit_cost),
+            weight: rawWeight,
+            metadata: p.metadata,
+          };
+        });
         const result = simulateSeason({ spins: spinCount, trials: trialCount, seed, elapsedFraction, prizes: simulationPrizes });
         const guardrails = evaluateEconomyGuardrails({
           projectedSeasonSpins: spinCount,
