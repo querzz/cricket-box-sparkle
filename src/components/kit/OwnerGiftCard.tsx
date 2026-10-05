@@ -55,7 +55,7 @@ export function OwnerGiftCard({ gift }: { gift: OwnerGift | null }) {
     </GlassCard>
 
     {showPopup&&<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/65 p-3 sm:items-center" onClick={()=>setShowPopup(false)}>
-      <GlassCard glow className="w-full max-w-sm overflow-hidden border-primary/40 bg-background/95 px-5 py-5 shadow-2xl" onClick={(event:MouseEvent)=>event.stopPropagation()}>
+      <GlassCard glow className="w-full max-w-sm overflow-hidden border-primary/40 bg-background/95 px-5 py-5 shadow-2xl" onClick={(event)=>event.stopPropagation()}>
         <div className="relative">
           <button type="button" aria-label="Закрыть" onClick={()=>setShowPopup(false)} className="absolute right-0 top-0 grid size-8 place-items-center rounded-full border border-glass-border bg-muted/20"><X className="size-4"/></button>
           <div className="mx-auto grid size-16 place-items-center rounded-[1.4rem] border border-primary/35 bg-primary/10 shadow-[0_0_34px_color-mix(in_oklab,var(--color-primary)_24%,transparent)]"><Icon className="size-8 text-primary-glow"/></div>
