@@ -47,7 +47,7 @@ export const Route = createFileRoute("/api/admin/balances")({
         const summary = await query(
           "SELECT COALESCE(SUM(COALESCE(us.stars_balance,0)),0)::text AS total_stars," +
           "COUNT(*) FILTER (WHERE COALESCE(us.stars_balance,0)>0)::text AS users_with_balance," +
-          "COUNT(*)::text AS users_total FROM users u LEFT JOIN user_state us ON us.user_id=u.id " +
+          "COUNT(*)::text AS users_total,COALESCE(AVG(COALESCE(us.stars_balance,0)),0)::text AS average_balance FROM users u LEFT JOIN user_state us ON us.user_id=u.id " +
           "WHERE u.is_test=FALSE",
         );
 
