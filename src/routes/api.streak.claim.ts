@@ -36,6 +36,8 @@ export const Route=createFileRoute('/api/streak/claim')({server:{handlers:{
       const result=await withTransaction(async client=>{
         const user=await client.query<{id:string}>(\"SELECT id::text FROM users WHERE telegram_id=$1 FOR UPDATE\",[tg.id]);
         if(!user.rows[0]) throw new Error('USER_NOT_FOUND');
+        if(!user.rows[0].is_subscribed) throw new Error('NOT_SUBSCRIBED');
+        if(!user.rows[0].is_participant) throw new Error('NOT_PARTICIPANT');
         const season=await client.query<{id:string;state:string;starts_at:string|null;ends_at:string|null;is_paused:boolean}>(\"SELECT id::text,state,starts_at::text,ends_at::text,is_paused FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE\");
         if(!season.rows[0]) throw new Error('SEASON_NOT_ACTIVE');
         const s=season.rows[0];
@@ -67,7 +69,7 @@ export const Route=createFileRoute('/api/streak/claim')({server:{handlers:{
       return Response.json({ok:true,...result});
     }catch(error){
       const code=error instanceof Error?error.message:'STREAK_CLAIM_FAILED';
-      const status=['INVALID_STREAK_CHOICE','TELEGRAM_USER_MISSING'].includes(code)?400:['STREAK_NOT_READY','SEASON_PAUSED','SEASON_NOT_ACTIVE'].includes(code)?409:400;
+      const status=['INVALID_STREAK_CHOICE','TELEGRAM_USER_MISSING'].includes(code)?400:['STREAK_NOT_READY','SEASON_PAUSED','SEASON_NOT_ACTIVE'].includes(code)?409:['NOT_SUBSCRIBED','NOT_PARTICIPANT'].includes(code)?403:400;
       return Response.json({ok:false,code},{status});
     }
   },
