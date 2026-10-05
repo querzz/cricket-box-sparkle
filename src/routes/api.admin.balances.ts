@@ -67,7 +67,7 @@ export const Route = createFileRoute("/api/admin/balances")({
           summary: {
             totalStars: Number(summary.rows[0]?.total_stars ?? 0),
             usersWithBalance: Number(summary.rows[0]?.users_with_balance ?? 0),
-            usersTotal: Number(summary.rows[0]?.users_total ?? 0),
+            usersTotal: Number(summary.rows[0]?.users_total ?? 0), averageBalance: Number(summary.rows[0]?.average_balance ?? 0),
           },
         });
       } catch (error) {
