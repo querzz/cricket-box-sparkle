@@ -46,7 +46,7 @@ export const Route = createFileRoute("/api/dev/paid-spin")({
           );
           if (!prizes.rows.length) throw new Error("NO_PRIZES");
 
-          const selection = pickDynamicPrize(prizes.rows, secureRandomUnit, {});
+          const selection = pickDynamicPrize(prizes.rows, secureRandomUnit, { paidSpin: true });
           const picked = selection.prize;
 
           return Response.json({
