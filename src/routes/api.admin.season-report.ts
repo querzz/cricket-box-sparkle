@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
         const seasonId = (url.searchParams.get("seasonId") ?? "").trim();
 
         const seasons = await query<{
-          id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; is_paused:boolean; paused_at:string|null; paid_spin_price:number; paid_spin_enabled:boolean;
+          id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; closed_at:string|null; is_paused:boolean; paused_at:string|null; paid_spin_price:number; paid_spin_enabled:boolean;
         }>(
           "SELECT id::text,code,name,state,starts_at::text,ends_at::text,closed_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled FROM seasons " +
           (seasonId ? "WHERE id=$1::uuid" : "WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED') ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 WHEN state='PAYOUT' THEN 2 WHEN state='CLOSED' THEN 3 WHEN state='ARCHIVED' THEN 4 ELSE 5 END,created_at DESC LIMIT 1"),
@@ -55,14 +55,13 @@ export const Route = createFileRoute("/api/admin/season-report")({
 
         const payout = await query<NumRow>(
           "SELECT " +
-          "COUNT(*) FILTER (WHERE p.status IN ('PENDING','REVIEW'))::text AS pending_count," +
-          "COUNT(*) FILTER (WHERE p.status='PAID')::text AS paid_count," +
-          "COUNT(*) FILTER (WHERE p.kind<>'EMPTY' AND p.status IN ('PENDING','REVIEW'))::text AS pending_rewards," +
-          "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='STARS' AND p.status IN ('PENDING','REVIEW')),0)::text AS pending_stars," +
-          "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='STARS' AND p.status='PAID'),0)::text AS paid_stars," +
+          "COUNT(*) FILTER (WHERE p.status IN ('PENDING','REVIEW') AND NOT (p.kind='STARS' AND p.note LIKE 'WITHDRAWAL_REQUEST%'))::text AS pending_count," +
+          "COUNT(*) FILTER (WHERE p.status='PAID' AND NOT (p.kind='STARS' AND p.note LIKE 'WITHDRAWAL_REQUEST%'))::text AS paid_count," +
+          "COUNT(*) FILTER (WHERE p.kind<>'EMPTY' AND p.kind<>'STARS' AND p.status IN ('PENDING','REVIEW'))::text AS pending_rewards," +
+          "0::text AS pending_stars,0::text AS paid_stars," +
           "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='MONEY' AND p.status IN ('PENDING','REVIEW')),0)::text AS pending_money," +
-          "COALESCE(SUM(pr.unit_cost) FILTER (WHERE p.kind<>'EMPTY'),0)::text AS prize_cost " +
-          "FROM payouts p JOIN users u ON u.id=p.user_id AND u.is_test=FALSE JOIN spins s ON s.id=p.spin_id LEFT JOIN prizes pr ON pr.id=p.prize_id WHERE s.season_id=$1::uuid", params);
+          "COALESCE(SUM(pr.unit_cost) FILTER (WHERE p.kind<>'EMPTY' AND p.kind<>'STARS'),0)::text AS prize_cost " +
+          "FROM payouts p JOIN users u ON u.id=p.user_id AND u.is_test=FALSE JOIN spins s ON s.id=p.spin_id LEFT JOIN prizes pr ON pr.id=p.prize_id WHERE s.season_id=$1::uuid AND NOT (p.kind='STARS' AND p.note LIKE 'WITHDRAWAL_REQUEST%')", params);
 
         const withdrawals = await query<NumRow>(
           "SELECT COUNT(*)::text AS requests, COUNT(*) FILTER (WHERE p.status='PAID')::text AS paid, " +
@@ -129,8 +128,8 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COUNT(s.id) FILTER (WHERE s.status='COMPLETED')::text AS spins," +
           "COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND p.kind<>'EMPTY')::text AS wins," +
           "COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type='PAID')::text AS paid_spins," +
-          "COALESCE(SUM(p.amount) FILTER (WHERE s.status='COMPLETED' AND p.kind='STARS'),0)::text AS stars_won " +
-          "FROM users u JOIN spins s ON s.user_id=u.id LEFT JOIN prizes p ON p.id=s.prize_id " +
+          "COALESCE(SUM(sl.amount) FILTER (WHERE s.status='COMPLETED' AND p.kind='STARS' AND sl.type='REWARD' AND sl.spin_id=s.id),0)::text AS stars_won " +
+          "FROM users u JOIN spins s ON s.user_id=u.id LEFT JOIN prizes p ON p.id=s.prize_id LEFT JOIN stars_ledger sl ON sl.spin_id=s.id AND sl.type='REWARD' " +
           "WHERE s.season_id=$1::uuid AND u.is_test=FALSE GROUP BY u.id,u.username,u.first_name,u.last_name " +
           "ORDER BY COUNT(s.id) FILTER (WHERE s.status='COMPLETED') DESC,COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND p.kind<>'EMPTY') DESC,stars_won DESC LIMIT 10", params);
 
@@ -177,9 +176,9 @@ export const Route = createFileRoute("/api/admin/season-report")({
         return Response.json({
           ok:true,
           season:{
-            id:season.id,code:season.code,name:season.name,state:season.state,startsAt:season.starts_at,endsAt:season.ends_at,
+            id:season.id,code:season.code,name:season.name,state:season.state,startsAt:season.starts_at,endsAt:season.ends_at,closedAt:season.closed_at,
             isPaused:season.is_paused,pausedAt:season.paused_at,paidSpinPrice:Number(season.paid_spin_price),
-            durationDays:season.starts_at&&((season.state==='CLOSED'||season.state==='PAYOUT'||season.state==='ARCHIVED')?season.closed_at:season.ends_at)?Math.max(0,(new Date(((season.state==='CLOSED'||season.state==='PAYOUT'||season.state==='ARCHIVED')?season.closed_at:season.ends_at)!).getTime()-new Date(season.starts_at).getTime())/86400000):null
+            durationDays:season.starts_at&&durationEnd?Math.max(0,(new Date(durationEnd).getTime()-new Date(season.starts_at).getTime())/86400000):null
           },
           kpis:{
             participants:Number(overview.rows[0]?.participants??0),
