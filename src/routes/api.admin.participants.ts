@@ -77,7 +77,7 @@ export const Route = createFileRoute("/api/admin/participants")({
               stars: Math.max(0, Number(row.stars_balance) || 0),
               rewards: row.rewards,
               referrals: 0,
-              status: row.spins > 0 ? "Активен" as const : "Не участвовал" as const,
+              status: row.spins > 0 ? "Активен" as const : "Неактивен" as const,
               isPremium: row.is_premium,
               xp: row.xp,
               level: row.level,
