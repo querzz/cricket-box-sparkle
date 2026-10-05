@@ -11,19 +11,20 @@ export const Route = createFileRoute("/api/admin/participants")({
           const initData = (url.searchParams.get("initData") ?? "").trim();
           const search = (url.searchParams.get("search") ?? "").trim();
           const seasonId = (url.searchParams.get("seasonId") ?? "").trim();
+          const allSeasons = url.searchParams.get("all") === "1";
           const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 50)));
           if (!initData) return Response.json({ ok: false, code: "INIT_DATA_MISSING" }, { status: 400 });
           await authenticateAdmin(initData);
 
           const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
-          const params: unknown[] = [pattern, search, seasonId || null, limit];
+          const params: unknown[] = [pattern, search, seasonId || null, limit, allSeasons];
           const result = await query<{
             id: string; telegram_id: string; username: string | null; first_name: string; last_name: string | null;
             created_at: string; last_seen_at: string; is_premium: boolean; xp: number; level: number;
             spins: number; free_spins: number; paid_spins: number; rewards: number; stars_balance: number; last_activity: string | null;
           }>(
             `WITH current_season AS (
-               SELECT COALESCE($3::uuid, (
+               SELECT CASE WHEN $5 THEN NULL ELSE COALESCE($3::uuid, (
                  SELECT id FROM seasons
                   WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')
                   ORDER BY CASE
@@ -35,7 +36,7 @@ export const Route = createFileRoute("/api/admin/participants")({
                     ELSE 5
                   END, created_at DESC
                   LIMIT 1
-               )) AS id
+               )) END AS id
              ),
              spin_stats AS (
                SELECT user_id,
@@ -44,7 +45,7 @@ export const Route = createFileRoute("/api/admin/participants")({
                       COUNT(*) FILTER (WHERE status='COMPLETED' AND type='PAID')::int AS paid_spins,
                       MAX(created_at) AS last_activity
                  FROM spins
-                WHERE season_id = (SELECT id FROM current_season)
+                WHERE $5 OR season_id = (SELECT id FROM current_season)
                 GROUP BY user_id
              ),
              reward_stats AS (
@@ -52,7 +53,7 @@ export const Route = createFileRoute("/api/admin/participants")({
                       COALESCE(SUM(CASE WHEN py.kind='STARS' AND py.prize_id IS NOT NULL THEN py.amount ELSE 0 END),0)::int AS stars
                  FROM payouts py
                  JOIN spins s ON s.id=py.spin_id
-                WHERE s.season_id=(SELECT id FROM current_season)
+                WHERE ($5 OR s.season_id=(SELECT id FROM current_season))
                   AND py.status IN ('PENDING','REVIEW','PAID')
                 GROUP BY py.user_id
              )
