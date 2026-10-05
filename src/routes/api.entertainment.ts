@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import type { PoolClient } from 'pg';
 import { validateTelegramInitData } from '@/server/auth/telegram';
 import { requireBotToken } from '@/server/config';
 import { query, withTransaction } from '@/server/db';
@@ -9,7 +10,7 @@ type Reward={type:'STARS'|'FREE_SPIN'|'XP'|'NOTE';amount:number;title?:string};
 function enabled(settings:unknown,type:string){const s=settings as {enabled?:Record<string,unknown>}|null;return s?.enabled?.[type.toLowerCase().replaceAll('_','-')]!==false;}
 function targetLabel(row:{username:string|null;first_name:string;last_name:string|null}){return row.username?'@'+row.username.replace(/^@/,''):[row.first_name,row.last_name].filter(Boolean).join(' ');}
 
-async function applyReward(client:any,userId:string,seasonId:string|null,reward:Reward,referenceId:string,source:string){
+async function applyReward(client:PoolClient,userId:string,seasonId:string|null,reward:Reward,referenceId:string,source:string){
  if(reward.type==='NOTE')return {credited:0};
  const amount=Math.max(0,Math.floor(Number(reward.amount)||0));
  if(reward.type==='STARS'){
