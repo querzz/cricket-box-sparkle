@@ -10,6 +10,7 @@ const MAX_BONUS_SPINS = 1000;
 
 type ActivityStatus = "Низкая" | "Активный" | "Очень активный" | "Максимальная";
 type TelegramUser = { id:number; username?:string; first_name?:string; last_name?:string; is_bot?:boolean };
+type TelegramApiResult = { id?:number; title?:string; linked_chat_id?:number; status?:string; user?:TelegramUser };
 
 function levelFromScore(score:number):ActivityStatus {
   if (score >= 16) return "Максимальная";
@@ -31,7 +32,7 @@ async function telegramApi(method:string, body:Record<string,unknown>) {
       body:JSON.stringify(body),
       signal:AbortSignal.timeout(6000),
     });
-    const data=await response.json() as {ok:boolean;result?:any;description?:string};
+    const data=await response.json() as {ok:boolean;result?:TelegramApiResult;description?:string};
     return data.ok ? {ok:true,result:data.result} as const : {ok:false,error:data.description??"TELEGRAM_API_ERROR"} as const;
   } catch(error) {
     return {ok:false,error:error instanceof Error?error.message:"TELEGRAM_REQUEST_FAILED"} as const;
