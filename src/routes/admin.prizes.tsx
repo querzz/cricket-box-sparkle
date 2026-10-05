@@ -91,7 +91,7 @@ function AdminPrizes() {
   const loadPrizes = async (id: string) => {
     if (!id) { setDrafts([]); return; }
     try {
-      const data = await api<Prize[]>(`/api/admin/prizes?seasonId=${encodeURIComponent(id)}&initData=${encodeURIComponent(initData())}`);
+      const data = await api<Prize[]>(`/api/admin/prizes?seasonId=${encodeURIComponent(id)}&includeInactive=true&initData=${encodeURIComponent(initData())}`);
       setDrafts((data.prizes ?? []).map(fromPrize));
     } catch (e) { setError(e instanceof Error ? e.message : "Не удалось загрузить призовой фонд."); }
   };
