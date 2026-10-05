@@ -63,6 +63,10 @@ export const Route = createFileRoute("/api/admin/mechanics")({ server:{ handlers
       if (!['GIFT_OR_PASS','GOOD_OR_BAD','OWNER_SPECIAL'].includes(type)) throw new Error('INVALID_EVENT_TYPE');
       const telegramId = String(body.telegramId ?? '').replace(/\D/g,'');
       if (!telegramId) throw new Error('TELEGRAM_ID_REQUIRED');
+      const settingsRow = await query<{value: Settings}>(`SELECT value FROM app_settings WHERE key='mechanics' LIMIT 1`);
+      const currentSettings = parseSettings(settingsRow.rows[0]?.value ?? DEFAULTS);
+      const mechanismKey = type==='GIFT_OR_PASS' ? 'gift-or-pass' : type==='GOOD_OR_BAD' ? 'good-or-bad' : 'owner-special';
+      if (!currentSettings.enabled[mechanismKey]) throw new Error('MECHANIC_DISABLED');
       const rewardType = String(body.rewardType ?? 'NOTE');
       if (!['STARS','FREE_SPIN','XP','NOTE'].includes(rewardType)) throw new Error('INVALID_REWARD_TYPE');
       const amount = Math.floor(Number(body.amount ?? 0));
@@ -87,7 +91,7 @@ export const Route = createFileRoute("/api/admin/mechanics")({ server:{ handlers
       return Response.json({ok:true,event:result});
     } catch(error) {
       const code=error instanceof Error?error.message:'ENTERTAINMENT_CREATE_FAILED';
-      const status=['INVALID_EVENT_TYPE','INVALID_REWARD_TYPE','INVALID_REWARD_AMOUNT','TELEGRAM_ID_REQUIRED'].includes(code)?400:code==='USER_NOT_FOUND'?404:code==='ADMIN_ACCESS_DENIED'?401:500;
+      const status=['INVALID_EVENT_TYPE','INVALID_REWARD_TYPE','INVALID_REWARD_AMOUNT','TELEGRAM_ID_REQUIRED','MECHANIC_DISABLED'].includes(code)?400:code==='USER_NOT_FOUND'?404:code==='ADMIN_ACCESS_DENIED'?401:500;
       return Response.json({ok:false,code},{status});
     }
   },
