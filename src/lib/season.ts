@@ -37,6 +37,7 @@ export function displaySeasonTitle(code: string, name: string): string {
 export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const state = snapshot.season.state;
   const live = state === "ACTIVE" || state === "ENDING";
+  const paused = live && snapshot.season.isPaused;
   const finished = state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED";
   const waiting = state === "DRAFT" || state === "SCHEDULED";
   const subscribed = snapshot.user.isSubscribed;
@@ -47,22 +48,22 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   if (state === "SCHEDULED" && snapshot.season.startsAt) {
     countdownTarget = snapshot.season.startsAt;
     countdownLabel = "Сезон начнётся через";
-  } else if ((state === "ACTIVE" || state === "ENDING") && snapshot.season.endsAt) {
+  } else if ((state === "ACTIVE" || state === "ENDING") && !paused && snapshot.season.endsAt) {
     countdownTarget = snapshot.season.endsAt;
     countdownLabel = state === "ENDING" ? "Сезон завершится через" : "Сезон закончится через";
   }
 
-  const meta = headlines[state];
+  const meta = paused ? { headline: "Сезон на паузе", note: "Сезон временно приостановлен. Новые прокрутки недоступны." } : headlines[state];
   return {
     isLive: live,
     isFinished: finished,
     isWaiting: waiting,
-    canSpin: live && subscribed,
-    canClaimGift: live && subscribed && participant,
+    canSpin: live && !paused && subscribed,
+    canClaimGift: live && !paused && subscribed && participant,
     canWithdraw: finished,
     headline: meta.headline,
     note: meta.note,
-    ctaLabel: live ? "Крутить" : waiting ? "Ещё не начался" : "Закрыт",
+    ctaLabel: paused ? "На паузе" : live ? "Крутить" : waiting ? "Ещё не начался" : "Закрыт",
     countdownTarget,
     countdownLabel,
   };
@@ -76,6 +77,7 @@ export function errorCopy(code: string): string {
     case "GIFT_BALANCE_FULL": return "Подарок сейчас не может зачислить Stars из-за лимита баланса.";
     case "SEASON_CLOSED": return "Сезон завершён: новые прокрутки недоступны.";
     case "SEASON_NOT_ACTIVE": return "Сейчас нет активного сезона.";
+    case "SEASON_PAUSED": return "Сезон временно приостановлен. Попробуй позже.";
     case "SEASON_NOT_STARTED": return "Сезон ещё не начался.";
     case "NOT_SUBSCRIBED": return "Подпишись на канал, чтобы участвовать.";
     case "NOT_PARTICIPANT": return "Ты пока не участвуешь в этом сезоне.";
