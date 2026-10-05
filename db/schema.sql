@@ -8,11 +8,13 @@ CREATE TABLE IF NOT EXISTS user_state (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, stars_balance INTEGER NOT NULL DEFAULT 0 CHECK (stars_balance >= 0 AND stars_balance <= 500), is_subscribed BOOLEAN NOT NULL DEFAULT TRUE, is_participant BOOLEAN NOT NULL DEFAULT TRUE, daily_gift_claimed_at TIMESTAMPTZ, bonus_free_spins INTEGER NOT NULL DEFAULT 0 CHECK (bonus_free_spins >= 0 AND bonus_free_spins <= 1000), activity_bonus_season_id UUID, activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0 CHECK (activity_bonus_spins_issued >= 0 AND activity_bonus_spins_issued <= 1000), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE user_state ALTER COLUMN stars_balance SET DEFAULT 0;
+ALTER TABLE seasons ADD COLUMN IF NOT EXISTS is_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), telegram_id BIGINT NOT NULL UNIQUE, username TEXT, role TEXT NOT NULL CHECK (role IN ('OWNER', 'ADMIN')), is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS seasons (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('DRAFT','SCHEDULED','ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')) DEFAULT 'DRAFT', starts_at TIMESTAMPTZ, ends_at TIMESTAMPTZ, paid_spin_price INTEGER NOT NULL DEFAULT 100, paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE, daily_free_spin BOOLEAN NOT NULL DEFAULT TRUE, created_by UUID REFERENCES admins(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('DRAFT','SCHEDULED','ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')) DEFAULT 'DRAFT', starts_at TIMESTAMPTZ, ends_at TIMESTAMPTZ, is_paused BOOLEAN NOT NULL DEFAULT FALSE, paused_at TIMESTAMPTZ, paid_spin_price INTEGER NOT NULL DEFAULT 100, paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE, daily_free_spin BOOLEAN NOT NULL DEFAULT TRUE, created_by UUID REFERENCES admins(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 WITH ranked AS (SELECT id,ROW_NUMBER() OVER (ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC) rn FROM seasons WHERE state IN ('ACTIVE','ENDING')) UPDATE seasons s SET state='CLOSED',updated_at=now() FROM ranked r WHERE s.id=r.id AND r.rn>1;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_one_live_season ON seasons ((1)) WHERE state IN ('ACTIVE','ENDING');
