@@ -2,6 +2,16 @@
 
 This document records agreed future economy ideas plus the current admin/product worklist. Features in the backlog are not considered implemented until explicitly completed and verified in production.
 
+### Current implementation notes — 2026-10-05
+
+The agreed admin/economy batch is now tracked as the active implementation scope. The repository currently contains the corresponding code changes, but production deployment/verification is still required before calling them live.
+
+Paid-spin clarification: **the paid spin in the main season is intended to have better reward odds than a free spin**. The current implementation uses a **1.25× relative weight multiplier for non-EMPTY outcomes on paid spins**; this is an initial tunable value, not a final economy decision.
+
+The Store is deliberately deferred. The first planned store scope is **Titles + Cosmetics**; Premium/Gifts/NFTs and other monetization products remain later experiments.
+
+The withdrawal rule is **50 ⭐ minimum**. Balances below 50 ⭐ at season end carry forward instead of being deleted.
+
 ## 🔴 Current agreed work — implement next
 
 ### 1. 🎲 Free Spin issuing
