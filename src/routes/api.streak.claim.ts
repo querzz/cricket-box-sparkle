@@ -34,7 +34,7 @@ export const Route=createFileRoute('/api/streak/claim')({server:{handlers:{
       const tg=validated.user;
       if(!tg?.id) return Response.json({ok:false,code:'TELEGRAM_USER_MISSING'},{status:400});
       const result=await withTransaction(async client=>{
-        const user=await client.query<{id:string}>(\"SELECT id::text FROM users WHERE telegram_id=$1 FOR UPDATE\",[tg.id]);
+        const user=await client.query<{id:string;is_subscribed:boolean;is_participant:boolean}>(\"SELECT u.id::text,COALESCE(us.is_subscribed,FALSE) AS is_subscribed,COALESCE(us.is_participant,FALSE) AS is_participant FROM users u LEFT JOIN user_state us ON us.user_id=u.id WHERE u.telegram_id=$1 FOR UPDATE\",[tg.id]);
         if(!user.rows[0]) throw new Error('USER_NOT_FOUND');
         if(!user.rows[0].is_subscribed) throw new Error('NOT_SUBSCRIBED');
         if(!user.rows[0].is_participant) throw new Error('NOT_PARTICIPANT');
