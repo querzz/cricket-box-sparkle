@@ -7,6 +7,11 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+# Payment checks should also converge on the latest revision.
+concurrency:
+  group: cricket-box-payment-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
