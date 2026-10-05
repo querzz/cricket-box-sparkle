@@ -10,7 +10,7 @@ function icon(type:string){if(type==='STARS')return Star;if(type==='FREE_SPIN')r
 
 export function EntertainmentEventCard(){
  const [event,setEvent]=useState<Event|null>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState('');
- async function load(){try{const r=await fetch('/api/entertainment?initData='+encodeURIComponent(initData()),{cache:'no-store'});const d=await r.json() as Api;if(r.ok&&d.ok)setEvent(d.event??null);}catch{}finally{setLoading(false);}}
+ async function load(){try{const r=await fetch('/api/entertainment?initData='+encodeURIComponent(initData()),{cache:'no-store'});const d=await r.json() as Api;if(r.ok&&d.ok)setEvent(d.event??null);}catch{/* Best-effort read; absence of an event is a valid state. */}finally{setLoading(false);}}
  useEffect(()=>{void load();},[]);
  if(loading||!event)return null;
  const currentEvent=event;
