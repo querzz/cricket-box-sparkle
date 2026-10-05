@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/admin/participants")({
           const result = await query<{
             id: string; telegram_id: string; username: string | null; first_name: string; last_name: string | null;
             created_at: string; last_seen_at: string; is_premium: boolean; xp: number; level: number;
-            spins: number; free_spins: number; paid_spins: number; rewards: number; stars: number; last_activity: string | null;
+            spins: number; free_spins: number; paid_spins: number; rewards: number; stars_balance: number; last_activity: string | null;
           }>(
             `WITH current_season AS (
                SELECT COALESCE($3::uuid, (SELECT id FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1)) AS id
@@ -48,7 +48,7 @@ export const Route = createFileRoute("/api/admin/participants")({
                     u.created_at::text, u.last_seen_at::text, u.is_premium, u.xp, u.level,
                     COALESCE(ss.spins,0)::int AS spins, COALESCE(ss.free_spins,0)::int AS free_spins,
                     COALESCE(ss.paid_spins,0)::int AS paid_spins, COALESCE(rs.rewards,0)::int AS rewards,
-                    COALESCE(rs.stars,0)::int AS stars, ss.last_activity::text
+                    COALESCE(us.stars_balance,0)::int AS stars_balance, ss.last_activity::text
                FROM users u
                LEFT JOIN user_state us ON us.user_id=u.id
                LEFT JOIN spin_stats ss ON ss.user_id=u.id
@@ -74,7 +74,7 @@ export const Route = createFileRoute("/api/admin/participants")({
               spins: row.spins,
               freeSpins: row.free_spins,
               paidSpins: row.paid_spins,
-              stars: row.stars,
+              stars: Math.max(0, Number(row.stars_balance) || 0),
               rewards: row.rewards,
               referrals: 0,
               status: row.spins > 0 ? "Активен" as const : "Не участвовал" as const,
