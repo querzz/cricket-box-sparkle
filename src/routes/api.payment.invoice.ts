@@ -89,7 +89,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
         if (!state.rows[0]?.is_participant) return Response.json({ ok: false, code: "NOT_PARTICIPANT" }, { status: 403 });
 
         const context = await withTransaction(async client => {
-          const seasonResult = await client.query<{ id: string; code: string; state: string; paid_spin_price: number; paid_spin_enabled: boolean }>(
+          const seasonResult = await client.query<{ id: string; code: string; state: string; is_paused: boolean; paid_spin_price: number; paid_spin_enabled: boolean }>(
             `SELECT id::text,code,state,is_paused,paid_spin_price,paid_spin_enabled
                FROM seasons
               WHERE state IN ('ACTIVE','ENDING')
