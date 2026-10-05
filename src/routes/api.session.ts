@@ -146,8 +146,8 @@ export const Route = createFileRoute("/api/session")({
         // concurrent session refreshes cannot grant the same activity bonus twice.
         const activityState = await withTransaction(async client => {
           await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [user.id]);
-          const locked = await client.query<{ is_subscribed:boolean; is_participant:boolean; bonus_free_spins:number; activity_bonus_season_id:string|null; activity_bonus_spins_issued:number }>(
-            `SELECT is_subscribed,is_participant,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,
+          const locked = await client.query<{ is_subscribed:boolean; is_participant:boolean; stars_balance:number; bonus_free_spins:number; activity_bonus_season_id:string|null; activity_bonus_spins_issued:number }>(
+            `SELECT is_subscribed,is_participant,stars_balance,bonus_free_spins,activity_bonus_season_id::text,activity_bonus_spins_issued FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,
             [user.id],
           );
           const current = locked.rows[0];
