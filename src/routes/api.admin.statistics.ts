@@ -9,11 +9,12 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const url = new URL(request.url);
         await authenticateAdmin(url.searchParams.get("initData") ?? "");
         const scope = url.searchParams.get("scope") === "all" ? "all" : "current";
+        const requestedSeasonId = (url.searchParams.get("seasonId") ?? "").trim();
         const rawDays = Number(url.searchParams.get("days") ?? 7);
         const days = rawDays === 1 || rawDays === 30 ? rawDays : 7;
         const seriesStart = days === 1 ? "current_date" : "current_date - interval '" + String(days - 1) + " days'";
-        let seasonId: string | null = null;
-        if (scope === "current") {
+        let seasonId: string | null = requestedSeasonId || null;
+        if (!seasonId && scope === "current") {
           const season = await query<{ id: string }>(`SELECT id::text FROM seasons
            WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')
            ORDER BY CASE
