@@ -43,6 +43,21 @@ type SeasonRow = {
   daily_free_spin: boolean;
 };
 
+const STREAK_DAY_STARS = [0,1,1,1,2,2,3] as const;
+
+function getStreakCycleInfo(days:number[], currentDay:number) {
+  const sorted=[...new Set(days)].filter((day)=>Number.isInteger(day)&&day>=1).sort((a,b)=>a-b);
+  let cycleNo=1; let currentCycle=1;
+  for(let i=0;i<sorted.length;i++){
+    if(i>0 && sorted[i]!==sorted[i-1]+1) cycleNo++;
+    if(sorted[i]===currentDay) currentCycle=cycleNo;
+  }
+  const anchor=currentDay>0&&sorted.includes(currentDay)?currentDay:currentDay-1;
+  const set=new Set(sorted); let currentStreak=0;
+  for(let day=anchor;day>0&&set.has(day);day--) currentStreak++;
+  return {currentStreak,cycleNo:currentCycle||cycleNo};
+}
+
 function displaySeasonTitle(code: string, name: string) {
   const cleanCode = code.trim();
   const match = cleanCode.match(/^(?:CB|C)(\d+)(?:[-_].*)?$/i);
