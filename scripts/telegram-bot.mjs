@@ -38,7 +38,7 @@ const { Client } = pg;
 
 let botLockClient = null;
 let linkedDiscussionChatId = null;
-let databaseChannelId = dbChannelId;
+let databaseChannelId = Number(channelId);
 
 async function acquireBotLock() {
   if (!databaseUrl) throw new Error("DATABASE_URL is missing in .env");
@@ -115,7 +115,7 @@ async function paymentDbQuery(text, values = []) {
 }
 
 async function recordChannelActivity({ telegramUserId, eventType, eventKey, points = 0, metadata = {} }) {
-  const dbChannelId = Number.isSafeInteger(databaseChannelId) ? databaseChannelId : dbChannelId;
+  const dbChannelId = Number.isSafeInteger(databaseChannelId) ? databaseChannelId : Number(channelId);
   if (!databaseUrl || !channelId || !Number.isSafeInteger(dbChannelId) || !Number.isSafeInteger(Number(telegramUserId))) return;
   const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
   try {
