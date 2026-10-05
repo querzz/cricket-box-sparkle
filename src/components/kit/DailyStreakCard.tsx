@@ -20,7 +20,7 @@ export function DailyStreakCard({streak}:{streak:DailyStreakSnapshot}){
   if(!streak.enabled) return null;
 
   const day7Ready=Boolean(streak.day7ChoiceAvailable)&&!streak.closed;
-  const completed=Math.min(7,Math.max(0,streak.currentStreak));
+  const visited=new Set(streak.visitedDayIndexes??[]); const completed=Math.min(7,Math.max(0,streak.currentStreak));
   const current=Math.min(7,Math.max(0,streak.currentDay||0));
 
   async function choose(choice:DailyStreakChoice["type"]){
@@ -45,7 +45,7 @@ export function DailyStreakCard({streak}:{streak:DailyStreakSnapshot}){
 
     <div className="mt-4 grid grid-cols-7 gap-1.5">
       {Array.from({length:7},(_,i)=>i+1).map(day=>{
-        const done=day<=completed;
+        const done=visited.has(day);
         const active=day===current&&!streak.closed;
         const special=day===7;
         return <div key={day} className={`min-w-0 rounded-xl border px-1 py-2 text-center ${special?"border-primary/45 bg-primary/10":"border-glass-border bg-muted/10"} ${active?"ring-1 ring-primary/50":""}`}>
