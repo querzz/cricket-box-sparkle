@@ -22,7 +22,7 @@ export function createInitialSnapshot(): SessionSnapshot {
       { id: "p_stars20", kind: "STARS", title: "20 Stars", amount: 20, remaining: 11, total: 11, weight: 1 },
       { id: "p_empty", kind: "EMPTY", title: "Пусто", remaining: 1980, total: 1980, weight: 1 },
     ],
-    streak: { enabled: true, totalDays: 7, currentDay: 1, visitedDays: 0, currentStreak: 0, checkedInToday: false, eligibleForReward: false, rewardStars: 10, cycleNo: 1, dayRewards: [1,1,1,2,2,3], day7Choices: [{type:"STARS",title:"+5 Stars",amount:5},{type:"FREE_SPIN",title:"+1 бонусная попытка",amount:1},{type:"DAILY_GIFT_BOOST",title:"+20% к шансу Daily Gift",amount:20},{type:"NEXT_SPIN_BOOST",title:"Буст на следующую прокрутку",amount:1}], day7ChoiceAvailable: false, closed: false },
+    streak: { enabled: true, totalDays: 7, currentDay: 1, visitedDays: 0, currentStreak: 0, checkedInToday: false, eligibleForReward: false, rewardStars: 10, cycleNo: 1, dayRewards: [1,1,1,2,2,3], day7Choices: [{type:"STARS",title:"+5 Stars",amount:5},{type:"FREE_SPIN",title:"+1 бонусная попытка",amount:1},{type:"DAILY_GIFT_BOOST",title:"+20% к шансу Daily Gift",amount:20},{type:"NEXT_SPIN_BOOST",title:"Буст на следующую прокрутку",amount:1}], day7ChoiceAvailable: false, closed: false, visitedDayIndexes: [] },
     ownerGift: null,
     rewards: [],
     withdrawals: [],
