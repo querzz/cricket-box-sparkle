@@ -60,8 +60,9 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COUNT(*) FILTER (WHERE p.kind<>'EMPTY' AND p.status IN ('PENDING','REVIEW'))::text AS pending_rewards," +
           "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='STARS' AND p.status IN ('PENDING','REVIEW')),0)::text AS pending_stars," +
           "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='STARS' AND p.status='PAID'),0)::text AS paid_stars," +
-          "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='MONEY' AND p.status IN ('PENDING','REVIEW')),0)::text AS pending_money " +
-          "FROM payouts p JOIN spins s ON s.id=p.spin_id WHERE s.season_id=$1::uuid", params);
+          "COALESCE(SUM(p.amount) FILTER (WHERE p.kind='MONEY' AND p.status IN ('PENDING','REVIEW')),0)::text AS pending_money," +
+          "COALESCE(SUM(pr.unit_cost) FILTER (WHERE p.kind<>'EMPTY'),0)::text AS prize_cost " +
+          "FROM payouts p JOIN spins s ON s.id=p.spin_id LEFT JOIN prizes pr ON pr.id=p.prize_id WHERE s.season_id=$1::uuid", params);
 
         const withdrawals = await query<NumRow>(
           "SELECT COUNT(*)::text AS requests, COUNT(*) FILTER (WHERE p.status='PAID')::text AS paid, " +
@@ -95,6 +96,27 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "WHERE u.is_test=FALSE AND a.occurred_at >= COALESCE((SELECT starts_at FROM seasons WHERE id=$1::uuid),now()) " +
           "AND a.occurred_at <= COALESCE((SELECT ends_at FROM seasons WHERE id=$1::uuid),now())", params);
 
+
+        const engagement = await query<NumRow>(
+          "SELECT COUNT(*)::text AS unique_users,COALESCE(AVG(user_spins),0)::text AS avg_user_spins,COALESCE(MAX(user_spins),0)::text AS max_user_spins " +
+          "FROM (SELECT user_id,COUNT(*) FILTER (WHERE status='COMPLETED')::int AS user_spins FROM spins WHERE season_id=$1::uuid GROUP BY user_id) x", params);
+
+        const newUsers = await query<NumRow>(
+          "SELECT COUNT(*)::text AS users FROM users WHERE is_test=FALSE " +
+          "AND created_at>=COALESCE((SELECT starts_at FROM seasons WHERE id=$1::uuid),'epoch'::timestamptz) " +
+          "AND created_at<=COALESCE((SELECT ends_at FROM seasons WHERE id=$1::uuid),now())", params);
+
+        const retention = await query<NumRow>(
+          "WITH first_spin AS (SELECT user_id,MIN(created_at::date) AS first_day FROM spins WHERE season_id=$1::uuid AND status='COMPLETED' GROUP BY user_id), " +
+          "r AS (SELECT f.user_id,f.first_day,EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+1) AS d1, " +
+          "EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+3) AS d3, " +
+          "EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+7) AS d7 FROM first_spin f) " +
+          "SELECT COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-1 FROM seasons WHERE id=$1::uuid))::text AS d1_eligible, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-1 FROM seasons WHERE id=$1::uuid) AND d1)::text AS d1_retained, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-3 FROM seasons WHERE id=$1::uuid))::text AS d3_eligible, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-3 FROM seasons WHERE id=$1::uuid) AND d3)::text AS d3_retained, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid))::text AS d7_eligible, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid) AND d7)::text AS d7_retained FROM r", params);
         const prizes = await query<NumRow>(
           "WITH won AS (" +
           " SELECT s.prize_id,COUNT(*)::int AS won FROM spins s WHERE s.season_id=$1::uuid AND s.status='COMPLETED' AND s.prize_id IS NOT NULL GROUP BY s.prize_id" +
@@ -127,8 +149,10 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "GROUP BY d.day ORDER BY d.day", params);
 
         const ranks = await query<NumRow>(
-          "SELECT COALESCE(u.veteran_tier_override,'ROOKIE') AS tier,COUNT(DISTINCT s.user_id)::text AS users " +
-          "FROM spins s JOIN users u ON u.id=s.user_id WHERE s.season_id=$1::uuid AND u.is_test=FALSE GROUP BY COALESCE(u.veteran_tier_override,'ROOKIE') ORDER BY users DESC", params);
+          "SELECT CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override " +
+          "WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=5 THEN 'ELITE' " +
+          "WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=3 THEN 'VETERAN' ELSE 'ROOKIE' END AS tier,COUNT(DISTINCT s.user_id)::text AS users " +
+          "FROM spins s JOIN users u ON u.id=s.user_id WHERE s.season_id=$1::uuid AND u.is_test=FALSE GROUP BY CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=5 THEN 'ELITE' WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=3 THEN 'VETERAN' ELSE 'ROOKIE' END ORDER BY users DESC", params);
 
         const totalDays = Number(streak.rows[0]?.total_days ?? 1);
         const completed = Number(overview.rows[0]?.completed ?? 0);
