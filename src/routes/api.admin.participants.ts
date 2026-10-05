@@ -49,14 +49,15 @@ export const Route = createFileRoute("/api/admin/participants")({
                 GROUP BY user_id
              ),
              reward_stats AS (
-               SELECT py.user_id, COUNT(*) FILTER (WHERE py.prize_id IS NOT NULL AND py.kind <> 'EMPTY')::int AS rewards,
-                      COALESCE(SUM(CASE WHEN py.kind='STARS' AND py.prize_id IS NOT NULL THEN py.amount ELSE 0 END),0)::int AS stars
-                 FROM payouts py
-                 JOIN spins s ON s.id=py.spin_id
+               SELECT s.user_id,
+                      COUNT(*) FILTER (WHERE s.status='COMPLETED' AND p.kind<>'EMPTY')::int AS rewards,
+                      COALESCE(SUM(sl.amount) FILTER (WHERE sl.type='REWARD'),0)::int AS stars
+                 FROM spins s
+                 JOIN prizes p ON p.id=s.prize_id
+                 LEFT JOIN stars_ledger sl ON sl.spin_id=s.id AND sl.type='REWARD'
                 WHERE ($5 OR s.season_id=(SELECT id FROM current_season))
-                  AND py.status IN ('PENDING','REVIEW','PAID')
-                GROUP BY py.user_id
-             )
+                GROUP BY s.user_id
+                          )
              SELECT u.id::text, u.telegram_id::text, u.username, u.first_name, u.last_name,
                     u.created_at::text, u.last_seen_at::text, u.is_premium, u.xp, u.level,
                     COALESCE(ss.spins,0)::int AS spins, COALESCE(ss.free_spins,0)::int AS free_spins,
