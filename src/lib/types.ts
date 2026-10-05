@@ -37,7 +37,7 @@ export interface LeaderboardEntry {
 }
 
 export interface StarsBalance { amount: number; max: number; }
-export interface Season { id: string; code: string; title: string; state: SeasonState; startsAt: string; endsAt: string; paidSpinPrice: number | null; }
+export interface Season { id: string; code: string; title: string; state: SeasonState; startsAt: string; endsAt: string; isPaused: boolean; pausedAt?: string | undefined; paidSpinPrice: number | null; }
 export interface Prize { id: string; kind: RewardKind; title: string; subtitle?: string | undefined; amount?: number | undefined; remaining: number; total: number; weight?: number | undefined; active?: boolean | undefined; imageUrl?: string | undefined; }
 export interface Reward { id: string; kind: RewardKind; title: string; subtitle?: string | undefined; amount?: number | undefined; wonAt: string; status: RewardStatus; payoutNote?: string | undefined; creditedAmount?: number | undefined; uncreditedAmount?: number | undefined; }
 export interface SpinState { freeSpins: number; paidSpinPrice: number | null; totalSpins: number; freeSpinDate?: string | undefined; bonusFreeSpins?: number | undefined; }
