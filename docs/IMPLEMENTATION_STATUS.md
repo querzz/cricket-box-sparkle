@@ -182,3 +182,20 @@ Current-head CI must finish Build/typecheck/lint, PostgreSQL integration and Pay
 - Referral system
 - Streaks / missions unless separately approved
 - Automated Premium/money/NFT fulfillment providers
+
+
+## 2026-10-05 Repair batch — approved and in progress
+
+The following runtime repairs are now the active implementation target. This section supersedes older "remaining V2" wording where it conflicts with the 2026-10-05 product addendum.
+
+1. **Stars accounting:** move Stars spin rewards into the user's Stars ledger immediately; expose the resulting balance everywhere; reserve Payouts for post-season withdrawal requests and non-Stars manual fulfillment.
+2. **Withdrawals:** requests are available only after season close (CLOSED/PAYOUT), minimum 50 ⭐, one active request per user.
+3. **Payouts / Balances / Spins:** fix PostgreSQL loading failures, season selectors and real data presentation; support Free/Paid/Bonus clearly.
+4. **Daily Streak:** implement the 7-day reward table and day-7 choice; stop the streak immediately when a season closes; remove future planned days from closed-season UI.
+5. **Season duration / reports:** persist actual close time and use it for closed-season duration and all season-scoped day calculations.
+6. **Owner Gifts:** use transactional real reward application for Stars, Free Spin and XP and show the applied result.
+7. **Audit:** resolve target names and use readable event text; raw IDs become secondary/copyable.
+8. **Entertainment mechanics:** turn the existing admin configuration into a real event-capable module; no second currency and no hidden main-prize-pool liability.
+9. **Documentation:** keep this repair plan and the 2026-10-05 Product Decisions addendum as the active source for these changes.
+
+Each block is considered complete only after code-level verification and a production runtime check.
