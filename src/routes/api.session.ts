@@ -34,6 +34,8 @@ type SeasonRow = {
   state: "DRAFT" | "SCHEDULED" | "ACTIVE" | "ENDING" | "CLOSED" | "PAYOUT" | "ARCHIVED";
   starts_at: string | null;
   ends_at: string | null;
+  is_paused: boolean;
+  paused_at: string | null;
   paid_spin_price: number;
   paid_spin_enabled: boolean;
   daily_free_spin: boolean;
@@ -84,7 +86,7 @@ export const Route = createFileRoute("/api/session")({
         if (membership !== null && membership !== storedState.is_subscribed) await query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
 
         const seasonResult = await query<SeasonRow>(
-          `SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin
+          `SELECT id::text,code,name,state,starts_at::text,ends_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin
              FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
         );
         const season = seasonResult.rows[0];
@@ -102,7 +104,7 @@ export const Route = createFileRoute("/api/session")({
         const veteranTier = user.veteran_tier_override ?? getVeteranTier(completedVeteranSeasons);
 
         const liveSeason = season.state === "ACTIVE" || season.state === "ENDING";
-        if (liveSeason && isSubscribed && storedState.is_participant) {
+        if (liveSeason && !season.is_paused && isSubscribed && storedState.is_participant) {
           await recordSeasonCheckin(season.id, user.id, season.starts_at, season.ends_at);
         }
 
@@ -221,10 +223,10 @@ export const Route = createFileRoute("/api/session")({
 
         return Response.json({ ok:true, snapshot:{
           user:{id:user.id,veteranTier,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
-          season:{id:season.id,code:season.code,title:displaySeasonTitle(season.code,season.name),state:season.state,startsAt:season.starts_at??new Date().toISOString(),endsAt:season.ends_at??new Date(Date.now()+14*86400000).toISOString(),paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null},
+          season:{id:season.id,code:season.code,title:displaySeasonTitle(season.code,season.name),state:season.state,startsAt:season.starts_at??new Date().toISOString(),endsAt:season.ends_at??new Date(Date.now()+14*86400000).toISOString(),isPaused:Boolean(season.is_paused),pausedAt:season.paused_at??undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null},
           stars:{amount:Math.max(0,Math.min(MAX_STARS,activityState.starsBalance)),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
-          gift:{state:giftedRecently?"COOLDOWN":live&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
+          gift:{state:giftedRecently?"COOLDOWN":live&&!season.is_paused&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
           streak:{...dailyStreak},
           activity:{enabled:activityEnabled,points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
