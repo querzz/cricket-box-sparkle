@@ -148,11 +148,17 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "LEFT JOIN spins s ON s.season_id=$1::uuid AND s.created_at>=d.day AND s.created_at<d.day+interval '1 day' " +
           "GROUP BY d.day ORDER BY d.day", params);
 
+        const repeatUsers = await query<NumRow>(
+          "SELECT COUNT(*)::text AS count FROM (SELECT user_id FROM spins WHERE season_id=$1::uuid AND status='COMPLETED' GROUP BY user_id HAVING COUNT(*)>=2) x", params);
+
         const ranks = await query<NumRow>(
-          "SELECT CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override " +
-          "WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=5 THEN 'ELITE' " +
-          "WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=3 THEN 'VETERAN' ELSE 'ROOKIE' END AS tier,COUNT(DISTINCT s.user_id)::text AS users " +
-          "FROM spins s JOIN users u ON u.id=s.user_id WHERE s.season_id=$1::uuid AND u.is_test=FALSE GROUP BY CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=5 THEN 'ELITE' WHEN (SELECT COUNT(*) FROM seasons ps WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid))>=3 THEN 'VETERAN' ELSE 'ROOKIE' END ORDER BY users DESC", params);
+          "WITH prior AS (SELECT s.user_id,COUNT(*)::int AS completed_seasons FROM seasons ps JOIN spins s ON s.season_id=ps.id " +
+          "WHERE ps.state IN ('CLOSED','PAYOUT','ARCHIVED') AND ps.created_at < (SELECT created_at FROM seasons WHERE id=$1::uuid) AND s.status='COMPLETED' GROUP BY s.user_id), " +
+          "tiers AS (SELECT u.id,CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override " +
+          "WHEN COALESCE(pr.completed_seasons,0)>=5 THEN 'ELITE' WHEN COALESCE(pr.completed_seasons,0)>=3 THEN 'VETERAN' ELSE 'ROOKIE' END AS tier " +
+          "FROM users u LEFT JOIN prior pr ON pr.user_id=u.id WHERE u.is_test=FALSE) " +
+          "SELECT t.tier,COUNT(DISTINCT s.user_id)::text AS users FROM tiers t JOIN spins s ON s.user_id=t.id " +
+          "WHERE s.season_id=$1::uuid GROUP BY t.tier ORDER BY users DESC", params);
 
         const totalDays = Number(streak.rows[0]?.total_days ?? 1);
         const completed = Number(overview.rows[0]?.completed ?? 0);
@@ -178,17 +184,19 @@ export const Route = createFileRoute("/api/admin/season-report")({
             participants:Number(overview.rows[0]?.participants??0),
             completedSpins:completed,attemptedSpins:Number(overview.rows[0]?.attempted??0),failedSpins:Number(overview.rows[0]?.failed??0),refundedSpins:Number(overview.rows[0]?.refunded??0),
             freeSpins:Number(overview.rows[0]?.free_spins??0),paidSpins,paidUsers,paidRevenueStars:revenue,avgSpinsPerParticipant:Number(avgSpins.toFixed(2)),avgPaidRevenuePerPayer:Number(avgPaid.toFixed(2)),
-            wins,emptySpins:empty,winRate:completed?wins/completed:0,emptyRate:completed?empty/completed:0,repeatUsers:topUsers.rows.length,
+            wins,emptySpins:empty,winRate:completed?wins/completed:0,emptyRate:completed?empty/completed:0,repeatUsers:Number(repeatUsers.rows[0]?.count??0),
           },
           bonusSpins:{ownerGift:Number(overview.rows[0]?.owner_gift_spins??0),activity:Number(overview.rows[0]?.activity_spins??0),veteran:Number(overview.rows[0]?.veteran_spins??0)},
           payouts:{
             pendingCount:Number(payout.rows[0]?.pending_count??0),paidCount:Number(payout.rows[0]?.paid_count??0),pendingRewards:Number(payout.rows[0]?.pending_rewards??0),
-            pendingStars,payedStars:paidPrizeStars,pendingMoney:Number(payout.rows[0]?.pending_money??0)
+            pendingStars,payedStars:paidPrizeStars,pendingMoney:Number(payout.rows[0]?.pending_money??0),prizeCost:Number(payout.rows[0]?.prize_cost??0)
           },
           withdrawals:{requests:Number(withdrawals.rows[0]?.requests??0),paid:Number(withdrawals.rows[0]?.paid??0),requestedStars:Number(withdrawals.rows[0]?.requested_stars??0),paidStars:Number(withdrawals.rows[0]?.paid_stars??0)},
           dailyGift:{claims:Number(gifts.rows[0]?.claims??0),users:Number(gifts.rows[0]?.users??0),starsClaims:Number(gifts.rows[0]?.stars_claims??0),starsAwarded:Number(gifts.rows[0]?.stars_awarded??0),spinClaims:Number(gifts.rows[0]?.spin_claims??0),spinsAwarded:Number(gifts.rows[0]?.spins_awarded??0),xpClaims:Number(gifts.rows[0]?.xp_claims??0),xpAwarded:Number(gifts.rows[0]?.xp_awarded??0)},
           streak:{totalDays,users:Number(streak.rows[0]?.checkin_users??0),perfectUsers:Number(streak.rows[0]?.perfect_users??0),checkins:Number(streak.rows[0]?.checkins??0),perfectRate:Number(streak.rows[0]?.checkin_users??0)?Number(streak.rows[0]?.perfect_users??0)/Number(streak.rows[0]?.checkin_users??0):0},
           activity:{users:Number(activity.rows[0]?.users??0),events:Number(activity.rows[0]?.events??0),points:Number(activity.rows[0]?.points??0)},
+          engagement:{uniqueUsers:Number(engagement.rows[0]?.unique_users??0),avgUserSpins:Number(engagement.rows[0]?.avg_user_spins??0),maxUserSpins:Number(engagement.rows[0]?.max_user_spins??0),newUsers:Number(newUsers.rows[0]?.users??0)},
+          retention:{d1Eligible:Number(retention.rows[0]?.d1_eligible??0),d1Retained:Number(retention.rows[0]?.d1_retained??0),d3Eligible:Number(retention.rows[0]?.d3_eligible??0),d3Retained:Number(retention.rows[0]?.d3_retained??0),d7Eligible:Number(retention.rows[0]?.d7_eligible??0),d7Retained:Number(retention.rows[0]?.d7_retained??0)},
           prizes:prizes.rows,
           topUsers:topUsers.rows,
           ranks:ranks.rows,
