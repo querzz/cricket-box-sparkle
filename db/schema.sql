@@ -251,3 +251,24 @@ CREATE TABLE IF NOT EXISTS entertainment_events (
 );
 CREATE INDEX IF NOT EXISTS idx_entertainment_events_user ON entertainment_events(user_id,status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_entertainment_events_season ON entertainment_events(season_id,type,status,created_at DESC);
+
+
+-- Backfill actual close times for already closed seasons
+UPDATE seasons s
+SET closed_at = COALESCE(
+  (
+    SELECT a.created_at
+    FROM audit_logs a
+    WHERE a.entity_type='season'
+      AND a.entity_id=s.id::text
+      AND a.action IN ('SEASON_STATE_AUTO_TRANSITION','SEASON_UPDATED')
+      AND a.after_data->>'state'='CLOSED'
+    ORDER BY a.created_at ASC
+    LIMIT 1
+  ),
+  CASE
+    WHEN s.state IN ('CLOSED','PAYOUT','ARCHIVED') AND s.updated_at < COALESCE(s.ends_at, s.updated_at) THEN s.updated_at
+    ELSE NULL
+  END
+)
+WHERE s.state IN ('CLOSED','PAYOUT','ARCHIVED') AND s.closed_at IS NULL;
