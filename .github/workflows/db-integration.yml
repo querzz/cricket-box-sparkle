@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: ["main"]
 
+# Keep the queue focused on the newest main revision.
+concurrency:
+  group: cricket-box-db-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
