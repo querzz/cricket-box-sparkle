@@ -274,7 +274,12 @@ export const Route = createFileRoute("/api/session")({
              LEFT JOIN LATERAL (SELECT metadata FROM stars_ledger WHERE spin_id=s.id AND type='REWARD' ORDER BY created_at DESC LIMIT 1) sl ON TRUE
             WHERE s.user_id=$1::uuid AND s.status='COMPLETED' AND p.kind<>'EMPTY'
             ORDER BY s.created_at DESC LIMIT 60`, [user.id]);
-                const giftHistory = await query<{id:string;kind:string;title:string;amount:number;created_at:string}>(`SELECT id::text,kind,title,amount,created_at::text FROM daily_gift_claims WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 30`, [user.id]);
+                const ownerGiftResult = await query<{id:string;title:string;message:string|null;reward_type:string;amount:number;created_at:string}>(
+          `SELECT og.id::text,og.title,og.message,COALESCE(og.rewards->0->>'type','NOTE') AS reward_type,COALESCE((og.rewards->0->>'amount')::int,0) AS amount,og.created_at::text
+             FROM owner_gifts og
+            WHERE og.user_id=$1::uuid AND og.status='SENT'
+            ORDER BY og.created_at DESC LIMIT 1`, [user.id]);
+        const giftHistory = await query<{id:string;kind:string;title:string;amount:number;created_at:string}>(`SELECT id::text,kind,title,amount,created_at::text FROM daily_gift_claims WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 30`, [user.id]);
         const rewards = [
           ...rewardResult.rows.map((r)=>({ id:`${r.id}_reward`,kind:r.kind==="FREE_SPIN"?"FREE_SPIN":r.kind,title:r.title,subtitle:r.subtitle??undefined,amount:Number(r.amount)||undefined,wonAt:r.created_at,status:r.kind==="STARS"||r.status==="PAID"?"RECEIVED":"PENDING",payoutNote:r.kind==="STARS"?(Number(r.credited??0)<Number(r.amount??0)?`Зачислено ${Number(r.credited??0)} ⭐ из ${Number(r.amount??0)} ⭐.`:`+${Number(r.credited??0)} ⭐ зачислено на баланс.`):r.status==="PAID"?"Выдано.":"Ожидает выдачи администратором.",creditedAmount:r.kind==="STARS"?Number(r.credited??0):undefined,uncreditedAmount:r.kind==="STARS"?Math.max(0,Number(r.amount??0)-Number(r.credited??0)):undefined })),
           ...giftHistory.rows.map((g)=>({ id:`${g.id}_gift`,kind:g.kind,title:g.title,amount:Number(g.amount)||undefined,wonAt:g.created_at,status:"RECEIVED" as const,payoutNote:g.kind==="XP"?`+${g.amount} XP`:g.kind==="FREE_SPIN"?`+${g.amount} бесплатная прокрутка`:g.kind==="NOTHING"?"Без награды.":`+${g.amount} Stars` })),
@@ -296,6 +301,7 @@ export const Route = createFileRoute("/api/session")({
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
           gift:{state:giftedRecently?"COOLDOWN":live&&!season.is_paused&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
           streak:dailyStreak,
+          ownerGift: ownerGiftResult.rows[0] ? {id:ownerGiftResult.rows[0].id,title:ownerGiftResult.rows[0].title,message:ownerGiftResult.rows[0].message??undefined,rewardType:ownerGiftResult.rows[0].reward_type as "STARS"|"FREE_SPIN"|"XP"|"NOTE",amount:Number(ownerGiftResult.rows[0].amount??0),createdAt:ownerGiftResult.rows[0].created_at} : null,
           activity:{enabled:activityEnabled,points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
           rewards,
