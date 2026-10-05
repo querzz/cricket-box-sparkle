@@ -51,8 +51,9 @@ async function changePayout(client: PoolClient, adminId: string, id: string, nex
   const operatorNote = typeof fulfillmentNote === "string" ? fulfillmentNote.trim().slice(0, 1000) : "";
   if (nextStatus === "PAID" && !reference) throw new Error("FULFILLMENT_REFERENCE_REQUIRED");
 
-  const isWithdrawal = before.note === "WITHDRAWAL_REQUEST" && before.kind === "STARS";
+  const isWithdrawal = before.kind === "STARS" && before.note?.startsWith("WITHDRAWAL_REQUEST");
   const isStarsPrize = before.kind === "STARS" && !isWithdrawal;
+  if (isStarsPrize) throw new Error("STARS_PRIZE_NOT_PAYOUT");
   const provider = isWithdrawal ? "TELEGRAM_STARS_WITHDRAWAL" : "MANUAL";
   let starsFulfillment = null;
   if (nextStatus === "PAID" && isStarsPrize) starsFulfillment = await fulfillStarsPrize(client, id, before.user_id, Number(before.amount), adminId);
@@ -112,7 +113,7 @@ export const Route = createFileRoute("/api/admin/payouts")({
           await withTransaction(client=>changePayout(client,admin.id,id,nextStatus,fulfillmentReference,fulfillmentNote));
           return Response.json({ok:true});
         }
-        catch(error){ const code=error instanceof Error?error.message:"PAYOUT_UPDATE_FAILED"; return Response.json({ok:false,code},{status:code==="NOT_FOUND"?404:code==="INVALID_TRANSITION"||code==="FULFILLMENT_REFERENCE_REQUIRED"?409:400}); }
+        catch(error){ const code=error instanceof Error?error.message:"PAYOUT_UPDATE_FAILED"; return Response.json({ok:false,code},{status:code==="NOT_FOUND"?404:code==="INVALID_TRANSITION"||code==="FULFILLMENT_REFERENCE_REQUIRED"||code==="STARS_PRIZE_NOT_PAYOUT"?409:400}); }
       },
       POST: async ({ request }) => {
         try {
