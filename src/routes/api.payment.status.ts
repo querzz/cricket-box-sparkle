@@ -43,10 +43,11 @@ export const Route = createFileRoute("/api/payment/status")({
         const tx = transaction.rows[0];
         if (!tx) return Response.json({ ok: false, code: "PAYMENT_NOT_FOUND" }, { status: 404 });
 
-        let spin: { id: string; prize_kind: string; prize_title: string; prize_subtitle: string | null; prize_amount: string; payout_status: string | null } | null = null;
+        let spin: { id: string; prize_kind: string; prize_title: string; prize_subtitle: string | null; prize_amount: string; payout_status: string | null; stars_credited: number | null } | null = null;
         if (tx.spin_id) {
           const spinResult = await query<{ id: string; prize_kind: string; prize_title: string; prize_subtitle: string | null; prize_amount: string; payout_status: string | null }>(
-            `SELECT s.id::text,p.kind AS prize_kind,p.title AS prize_title,p.subtitle AS prize_subtitle,p.amount::text AS prize_amount,py.status AS payout_status
+            `SELECT s.id::text,p.kind AS prize_kind,p.title AS prize_title,p.subtitle AS prize_subtitle,p.amount::text AS prize_amount,py.status AS payout_status,
+                      CASE WHEN p.kind='STARS' THEN COALESCE((SELECT (sl.metadata->>'creditedAmount')::int FROM stars_ledger sl WHERE sl.spin_id=s.id AND sl.type='REWARD' ORDER BY sl.created_at DESC LIMIT 1),0) ELSE NULL END AS stars_credited
                FROM spins s
                JOIN prizes p ON p.id=s.prize_id
                LEFT JOIN payouts py ON py.spin_id=s.id
@@ -72,7 +73,7 @@ export const Route = createFileRoute("/api/payment/status")({
               title: spin.prize_title,
               subtitle: spin.prize_subtitle,
               amount: Number(spin.prize_amount) || undefined,
-              status: spin.payout_status === "PAID" || spin.prize_kind === "EMPTY" ? "RECEIVED" : "PENDING",
+              status: spin.prize_kind === "STARS" || spin.payout_status === "PAID" || spin.prize_kind === "EMPTY" ? "RECEIVED" : "PENDING",
               payoutStatus: spin.payout_status,
             },
           } : null,
