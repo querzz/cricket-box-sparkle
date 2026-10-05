@@ -214,7 +214,8 @@ export const Route = createFileRoute("/api/session")({
           if (membership !== null && membership !== current.is_subscribed) {
             await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
           }
-          return { isSubscribed: membership ?? current.is_subscribed, isParticipant: current.is_participant, bonusFreeSpins, activityIssued, dailyGiftClaimedAt: storedState.daily_gift_claimed_at, starsBalance: Number(storedState.stars_balance ?? 0) };
+          const balance = await client.query<{stars_balance:number}>(`SELECT stars_balance FROM user_state WHERE user_id=$1::uuid`, [user.id]);
+          return { isSubscribed: membership ?? current.is_subscribed, isParticipant: current.is_participant, bonusFreeSpins, activityIssued, dailyGiftClaimedAt: storedState.daily_gift_claimed_at, starsBalance: Number(balance.rows[0]?.stars_balance ?? current.stars_balance ?? 0) };
         });
 
         const isParticipant = activityState.isParticipant;
@@ -226,8 +227,8 @@ export const Route = createFileRoute("/api/session")({
           [season.id,user.id],
         );
         const streakDays = streakDaysResult.rows.map((row)=>Number(row.day_index));
-        const streakTotalDays = getSeasonDayCount(season.starts_at,effectiveEnd);
-        const streakCurrentDay = getCurrentSeasonDay(season.starts_at,effectiveEnd);
+        const streakTotalDays = 7;
+        const streakCurrentDay = Math.min(7, Math.max(0, getCurrentSeasonDay(season.starts_at,effectiveEnd)));
         const streakInfo = getStreakCycleInfo(streakDays,streakCurrentDay);
         const dailyStreak = {
           ...summarizeCheckins(streakDays,streakTotalDays,streakCurrentDay,10),
@@ -263,11 +264,19 @@ export const Route = createFileRoute("/api/session")({
         bonusFreeSpins = live && isSubscribed && isParticipant ? Math.max(0, bonusFreeSpins) : 0;
         const freeSpins = dailyAvailable + bonusFreeSpins;
 
-        const rewardResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;status:string;created_at:string}>(
-          `SELECT p.id::text,p.kind,p.title,p.subtitle,p.amount::text,py.status,py.created_at::text FROM payouts py JOIN prizes p ON p.id=py.prize_id WHERE py.user_id=$1::uuid AND py.status IN ('PENDING','REVIEW','PAID') AND p.kind<>'EMPTY' ORDER BY py.created_at DESC LIMIT 50`, [user.id]);
-        const giftHistory = await query<{id:string;kind:string;title:string;amount:number;created_at:string}>(`SELECT id::text,kind,title,amount,created_at::text FROM daily_gift_claims WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 30`, [user.id]);
+        const rewardResult = await query<{id:string;kind:string;title:string;subtitle:string|null;amount:string;status:string;created_at:string;credited:number|null}>(
+          `SELECT s.id::text,p.kind,p.title,p.subtitle,p.amount::text,
+             CASE WHEN p.kind='STARS' THEN 'PAID' ELSE COALESCE(py.status,'PENDING') END AS status,
+             s.created_at::text,
+             CASE WHEN p.kind='STARS' THEN COALESCE((sl.metadata->>'creditedAmount')::int,(sl.metadata->>'balanceDelta')::int,0) ELSE NULL END AS credited
+             FROM spins s JOIN prizes p ON p.id=s.prize_id
+             LEFT JOIN LATERAL (SELECT status FROM payouts WHERE spin_id=s.id ORDER BY created_at DESC LIMIT 1) py ON TRUE
+             LEFT JOIN LATERAL (SELECT metadata FROM stars_ledger WHERE spin_id=s.id AND type='REWARD' ORDER BY created_at DESC LIMIT 1) sl ON TRUE
+            WHERE s.user_id=$1::uuid AND s.status='COMPLETED' AND p.kind<>'EMPTY'
+            ORDER BY s.created_at DESC LIMIT 60`, [user.id]);
+                const giftHistory = await query<{id:string;kind:string;title:string;amount:number;created_at:string}>(`SELECT id::text,kind,title,amount,created_at::text FROM daily_gift_claims WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 30`, [user.id]);
         const rewards = [
-          ...rewardResult.rows.map((r)=>({ id:`${r.id}_reward`,kind:r.kind==="FREE_SPIN"?"FREE_SPIN":r.kind,title:r.title,subtitle:r.subtitle??undefined,amount:Number(r.amount)||undefined,wonAt:r.created_at,status:r.status==="PAID"?"RECEIVED":"PENDING",payoutNote:r.status==="PAID"?"Выдано.":"Ожидает выдачи администратором." })),
+          ...rewardResult.rows.map((r)=>({ id:`${r.id}_reward`,kind:r.kind==="FREE_SPIN"?"FREE_SPIN":r.kind,title:r.title,subtitle:r.subtitle??undefined,amount:Number(r.amount)||undefined,wonAt:r.created_at,status:r.kind==="STARS"||r.status==="PAID"?"RECEIVED":"PENDING",payoutNote:r.kind==="STARS"?(Number(r.credited??0)<Number(r.amount??0)?`Зачислено ${Number(r.credited??0)} ⭐ из ${Number(r.amount??0)} ⭐.`:`+${Number(r.credited??0)} ⭐ зачислено на баланс.`):r.status==="PAID"?"Выдано.":"Ожидает выдачи администратором.",creditedAmount:r.kind==="STARS"?Number(r.credited??0):undefined,uncreditedAmount:r.kind==="STARS"?Math.max(0,Number(r.amount??0)-Number(r.credited??0)):undefined })),
           ...giftHistory.rows.map((g)=>({ id:`${g.id}_gift`,kind:g.kind,title:g.title,amount:Number(g.amount)||undefined,wonAt:g.created_at,status:"RECEIVED" as const,payoutNote:g.kind==="XP"?`+${g.amount} XP`:g.kind==="FREE_SPIN"?`+${g.amount} бесплатная прокрутка`:g.kind==="NOTHING"?"Без награды.":`+${g.amount} Stars` })),
         ].sort((a,b)=>new Date(b.wonAt).getTime()-new Date(a.wonAt).getTime()).slice(0,60);
         const leaderboardResult = await query<{rank:number;user_id:string;username:string|null;spins_count:number;wins_count:number;stars_won:string;level:number}>(
