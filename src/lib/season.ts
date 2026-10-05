@@ -39,6 +39,7 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const live = state === "ACTIVE" || state === "ENDING";
   const paused = live && snapshot.season.isPaused;
   const finished = state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED";
+  const withdrawalOpen = state === "CLOSED" || state === "PAYOUT";
   const waiting = state === "DRAFT" || state === "SCHEDULED";
   const subscribed = snapshot.user.isSubscribed;
   const participant = snapshot.user.isParticipant;
@@ -60,7 +61,7 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
     isWaiting: waiting,
     canSpin: live && !paused && subscribed,
     canClaimGift: live && !paused && subscribed && participant,
-    canWithdraw: finished,
+    canWithdraw: withdrawalOpen,
     headline: meta.headline,
     note: meta.note,
     ctaLabel: paused ? "На паузе" : live ? "Крутить" : waiting ? "Ещё не начался" : "Закрыт",
