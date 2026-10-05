@@ -10,6 +10,7 @@ export type DbSeason = {
   ends_at: string | null;
   is_paused: boolean;
   paused_at: string | null;
+  closed_at: string | null;
   paid_spin_price: number;
   paid_spin_enabled: boolean;
   daily_free_spin: boolean;
@@ -74,19 +75,19 @@ async function ensurePlayablePrizePool(db: DbExecutor, seasonId: string) {
 }
 
 export async function listSeasons() {
-  const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, is_paused, paused_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons ORDER BY created_at DESC`);
+  const result = await query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, is_paused, paused_at, closed_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons ORDER BY created_at DESC`);
   return result.rows;
 }
 
 export async function createSeason(input: { code: string; name: string; paidSpinPrice: number; paidSpinEnabled?: boolean; dailyFreeSpin: boolean; adminId: string }) {
   if (!Number.isSafeInteger(input.paidSpinPrice) || input.paidSpinPrice <= 0) throw new Error("INVALID_PAID_SPIN_PRICE");
-  const result = await query<DbSeason>(`INSERT INTO seasons (code, name, paid_spin_price, paid_spin_enabled, daily_free_spin, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, code, name, state, starts_at, ends_at, paid_spin_price, paid_spin_enabled, daily_free_spin`, [input.code, input.name, input.paidSpinPrice, input.paidSpinEnabled !== false, input.dailyFreeSpin, input.adminId]);
+  const result = await query<DbSeason>(`INSERT INTO seasons (code, name, paid_spin_price, paid_spin_enabled, daily_free_spin, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, code, name, state, starts_at, ends_at, is_paused, paused_at, closed_at, paid_spin_price, paid_spin_enabled, daily_free_spin`, [input.code, input.name, input.paidSpinPrice, input.paidSpinEnabled !== false, input.dailyFreeSpin, input.adminId]);
   return result.rows[0];
 }
 
 export async function updateSeason(id: string, patch: Partial<{ code: string; name: string; state: DbSeason["state"]; startsAt: string | null; endsAt: string | null; paused: boolean; paidSpinPrice: number; paidSpinEnabled: boolean; dailyFreeSpin: boolean }>, executor?: DbExecutor) {
   const db: DbExecutor = executor ?? ({ query: (text: string, values?: unknown[]) => query(text, values) } as DbExecutor);
-  const currentResult = await db.query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, is_paused, paused_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons WHERE id = $1 FOR UPDATE`, [id]);
+  const currentResult = await db.query<DbSeason>(`SELECT id, code, name, state, starts_at, ends_at, is_paused, paused_at, closed_at, paid_spin_price, paid_spin_enabled, daily_free_spin FROM seasons WHERE id = $1 FOR UPDATE`, [id]);
   if (!currentResult.rows[0]) return undefined;
 
   const current = currentResult.rows[0];
@@ -102,6 +103,7 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
   let endsAt = patch.endsAt === undefined ? current.ends_at : patch.endsAt;
   let isPaused = current.is_paused;
   let pausedAt = current.paused_at ? new Date(current.paused_at) : null;
+  let closedAt = current.closed_at ? new Date(current.closed_at) : null;
   const currentStart = current.starts_at ? new Date(current.starts_at) : null;
   const currentEnd = current.ends_at ? new Date(current.ends_at) : null;
   const now = new Date();
@@ -163,12 +165,18 @@ export async function updateSeason(id: string, patch: Partial<{ code: string; na
 
   if (nextState === "ACTIVE" || nextState === "ENDING") {
     await ensurePlayablePrizePool(db, id);
-    await db.query(`UPDATE seasons SET state = 'CLOSED', updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
+    await db.query(`UPDATE seasons SET state = 'CLOSED', is_paused=FALSE, paused_at=NULL, closed_at=COALESCE(closed_at,now()), updated_at = now() WHERE id <> $1 AND state IN ('ACTIVE','ENDING')`, [id]);
+    closedAt = null;
+  }
+  if (nextState === "CLOSED" && current.state !== "CLOSED") {
+    closedAt = closedAt ?? now;
+    isPaused = false;
+    pausedAt = null;
   }
 
   const result = await db.query<DbSeason>(
-    `UPDATE seasons SET code = COALESCE($2, code), name = COALESCE($3, name), state = $4, starts_at = $5, ends_at = $6, is_paused = $7, paused_at = $8, paid_spin_price = COALESCE($9, paid_spin_price), paid_spin_enabled = COALESCE($10, paid_spin_enabled), daily_free_spin = COALESCE($11, daily_free_spin), updated_at = now() WHERE id = $1 RETURNING id, code, name, state, starts_at, ends_at, is_paused, paused_at, paid_spin_price, paid_spin_enabled, daily_free_spin`,
-    [id, patch.code ?? null, patch.name ?? null, nextState, startsAt, endsAt, isPaused, pausedAt ? pausedAt.toISOString() : null, requestedPrice ?? null, patch.paidSpinEnabled ?? null, patch.dailyFreeSpin ?? null],
+    `UPDATE seasons SET code = COALESCE($2, code), name = COALESCE($3, name), state = $4, starts_at = $5, ends_at = $6, is_paused = $7, paused_at = $8, closed_at = $9, paid_spin_price = COALESCE($10, paid_spin_price), paid_spin_enabled = COALESCE($11, paid_spin_enabled), daily_free_spin = COALESCE($12, daily_free_spin), updated_at = now() WHERE id = $1 RETURNING id, code, name, state, starts_at, ends_at, is_paused, paused_at, closed_at, paid_spin_price, paid_spin_enabled, daily_free_spin`,
+    [id, patch.code ?? null, patch.name ?? null, nextState, startsAt, endsAt, isPaused, pausedAt ? pausedAt.toISOString() : null, closedAt ? closedAt.toISOString() : null, requestedPrice ?? null, patch.paidSpinEnabled ?? null, patch.dailyFreeSpin ?? null],
   );
   return result.rows[0];
 }
