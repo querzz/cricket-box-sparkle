@@ -229,7 +229,7 @@ export async function upsertPrize(input: {
     const economicChanged = old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency || old.quantity_total !== input.quantityTotal || oldWeight !== newWeight;
     const immutableChange = old.kind !== input.kind || Number(old.amount) !== input.amount || oldUnitCost !== newUnitCost || oldCurrency !== newCurrency;
     if (hasStarted && economicChanged && !economicOverride) throw new Error("PRIZE_ECONOMICS_LOCKED");
-    if (hasStarted && immutableChange) throw new Error("PRIZE_ECONOMICS_LOCKED");
+    if (hasStarted && immutableChange && !economicOverride) throw new Error("PRIZE_ECONOMICS_LOCKED");
     if (hasStarted && economicOverride && economicChanged && overrideReason.length < 5) throw new Error("INVALID_OVERRIDE_REASON");
 
     const won = old.quantity_total - old.quantity_remaining;
