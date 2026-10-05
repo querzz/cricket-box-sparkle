@@ -7,7 +7,7 @@ import { appendStarsLedger } from "@/server/stars-ledger";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { grantActiveFreeSpinCampaigns } from "@/server/free-spin-campaigns";
-import { getCurrentSeasonDay, getSeasonDayCount, recordSeasonCheckin, summarizeCheckins } from "@/server/daily-streak";
+import { getCurrentSeasonDay, summarizeCheckins } from "@/server/daily-streak";
 import { getVeteranTier, grantVeteranBonusIfDue } from "@/server/veteran";
 
 const MAX_STARS = 500;
@@ -134,7 +134,7 @@ export const Route = createFileRoute("/api/session")({
             WHERE telegram_user_id=$1
               AND ($2::timestamptz IS NULL OR occurred_at >= $2::timestamptz)
               AND ($3::timestamptz IS NULL OR occurred_at <= $3::timestamptz)`,
-          [tgUser.id, season.starts_at, season.ends_at],
+          [tgUser.id, season.starts_at, effectiveEnd],
         );
         const activitySetting = await query<{ value: unknown }>("SELECT value FROM app_settings WHERE key='channel_activity' LIMIT 1");
         const activityEnabled = (activitySetting.rows[0]?.value as { enabled?: unknown } | undefined)?.enabled !== false;
@@ -215,7 +215,7 @@ export const Route = createFileRoute("/api/session")({
             await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
           }
           const balance = await client.query<{stars_balance:number}>(`SELECT stars_balance FROM user_state WHERE user_id=$1::uuid`, [user.id]);
-          return { isSubscribed: membership ?? current.is_subscribed, isParticipant: current.is_participant, bonusFreeSpins, activityIssued, dailyGiftClaimedAt: storedState.daily_gift_claimed_at, starsBalance: Number(balance.rows[0]?.stars_balance ?? current.stars_balance ?? 0) };
+          return { isSubscribed: membership ?? current.is_subscribed, isParticipant: current.is_participant, bonusFreeSpins, activityIssued, dailyGiftClaimedAt: storedState.daily_gift_claimed_at, starsBalance: Number(balance.rows[0]?.stars_balance ?? 0) };
         });
 
         const isParticipant = activityState.isParticipant;
