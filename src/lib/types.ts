@@ -37,12 +37,13 @@ export interface LeaderboardEntry {
 }
 
 export interface StarsBalance { amount: number; max: number; }
-export interface Season { id: string; code: string; title: string; state: SeasonState; startsAt: string; endsAt: string; isPaused: boolean; pausedAt?: string | undefined; paidSpinPrice: number | null; }
+export interface Season { id: string; code: string; title: string; state: SeasonState; startsAt: string; endsAt: string; closedAt?: string | undefined; isPaused: boolean; pausedAt?: string | undefined; paidSpinPrice: number | null; }
 export interface Prize { id: string; kind: RewardKind; title: string; subtitle?: string | undefined; amount?: number | undefined; remaining: number; total: number; weight?: number | undefined; active?: boolean | undefined; imageUrl?: string | undefined; }
 export interface Reward { id: string; kind: RewardKind; title: string; subtitle?: string | undefined; amount?: number | undefined; wonAt: string; status: RewardStatus; payoutNote?: string | undefined; creditedAmount?: number | undefined; uncreditedAmount?: number | undefined; }
 export interface SpinState { freeSpins: number; paidSpinPrice: number | null; totalSpins: number; freeSpinDate?: string | undefined; bonusFreeSpins?: number | undefined; }
 export interface Gift { state: GiftState; availableAt: string; }
-export interface DailyStreakSnapshot { enabled: boolean; totalDays: number; currentDay: number; visitedDays: number; currentStreak: number; checkedInToday: boolean; eligibleForReward: boolean; rewardStars: number; }
+export interface DailyStreakChoice { type: "STARS" | "FREE_SPIN" | "DAILY_GIFT_BOOST" | "NEXT_SPIN_BOOST"; title: string; amount: number; }
+export interface DailyStreakSnapshot { enabled: boolean; totalDays: number; currentDay: number; visitedDays: number; currentStreak: number; checkedInToday: boolean; eligibleForReward: boolean; rewardStars: number; cycleNo?: number; dayRewards?: number[]; day7Choices?: DailyStreakChoice[]; day7ChoiceAvailable?: boolean; closed?: boolean; stoppedReason?: string | undefined; }
 
 export interface ActivitySnapshot { points: number; pointsPerBonus: number; pointsToNext: number; progressPercent: number; reactions: number; comments: number; joins: number; activeDays: number; bonusSpinsGranted: number; bonusSpinsRemaining: number; maxBonusSpins: number; }
 export interface Withdrawal { id: string; rewardTitle: string; amount: number; requestedAt: string; status: WithdrawalStatus; }
