@@ -43,6 +43,7 @@ async function getTelegramDiagnostics() {
     configured:Boolean(CHANNEL_ID&&TELEGRAM_BOT_TOKEN),
     channelId:CHANNEL_ID??null,
     linkedDiscussionChatId:null as string|null,
+    databaseChannelId:null as string|null,
     botId:null as number|null,
     botChannelStatus:null as string|null,
     botDiscussionStatus:null as string|null,
@@ -68,6 +69,7 @@ async function getTelegramDiagnostics() {
   }
 
   diagnostics.channelTitle=typeof chat.result?.title==="string"?chat.result.title:null;
+  diagnostics.databaseChannelId=chat.result?.id!==undefined&&chat.result?.id!==null?String(chat.result.id):null;
   const linked=chat.result?.linked_chat_id;
   diagnostics.linkedDiscussionChatId=linked!==undefined&&linked!==null?String(linked):null;
 
@@ -125,7 +127,9 @@ export const Route=createFileRoute("/api/admin/channel-activity")({server:{handl
       if(!selected) return Response.json({ok:true,season:null,seasons:[],enabled:activityEnabled,configured:Boolean(CHANNEL_ID&&TELEGRAM_BOT_TOKEN),diagnostics:await getTelegramDiagnostics(),stats:{activeUsers:0,totalPoints:0,totalActions:0,bonusReady:0,comments:0,reactions:0,joins:0,lastEventAt:null},users:[]});
 
       const diagnostics=await getTelegramDiagnostics();
-      if(!CHANNEL_ID) {
+      const databaseChannelId=diagnostics.databaseChannelId;
+      if(!databaseChannelId || !/^-?\d+$/.test(databaseChannelId)) {
+        diagnostics.issues.push("Telegram не вернул числовой ID канала, поэтому записи активности невозможно надёжно связать с PostgreSQL.");
         return Response.json({
           ok:true,
           enabled:activityEnabled,
@@ -165,7 +169,7 @@ export const Route=createFileRoute("/api/admin/channel-activity")({server:{handl
             AND ca.telegram_user_id > 0
           GROUP BY u.id,u.first_name,u.last_name,u.username,us.bonus_free_spins,us.activity_bonus_spins_issued,ca.telegram_user_id
           ORDER BY SUM(ca.activity_points) DESC,MAX(ca.occurred_at) DESC`,
-        [CHANNEL_ID,selected.id,selected.starts_at,selected.ends_at],
+        [databaseChannelId,selected.id,selected.starts_at,selected.ends_at],
       );
 
       const globalCounts=await query<{active_users:string;total_points:string;total_actions:string;comments:string;reactions:string;joins:string;last_event_at:string|null;bonus_ready:string}>(
@@ -190,7 +194,7 @@ export const Route=createFileRoute("/api/admin/channel-activity")({server:{handl
           WHERE ca.channel_id=$1::bigint
             AND ($3::timestamptz IS NULL OR ca.occurred_at >= $3::timestamptz)
             AND ($4::timestamptz IS NULL OR ca.occurred_at <= $4::timestamptz)`,
-        [CHANNEL_ID,selected.id,selected.starts_at,selected.ends_at],
+        [databaseChannelId,selected.id,selected.starts_at,selected.ends_at],
       );
 
       const missingProfiles=result.rows.filter((row)=>!row.username||row.name==="Telegram user").slice(0,50);
