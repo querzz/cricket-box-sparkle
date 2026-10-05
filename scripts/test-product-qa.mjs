@@ -82,6 +82,7 @@ const ru = await read("src/locales/ru.json");
 const streakService = await read("src/server/daily-streak.ts");
 const streakApi = await read("src/routes/api.admin.daily-streak.ts");
 const streakUi = await read("src/routes/admin.daily-streak.tsx");
+const streakCard = await read("src/components/kit/DailyStreakCard.tsx");
 
 assert(draw.includes('t("draw.subscriptionPrompt")'), "draw uses the translated subscription prompt");
 assert(draw.includes("!snapshot.user.isSubscribed"), "draw checks subscription before showing free-spin availability");
@@ -170,7 +171,7 @@ assert(session.includes("const activityEnabled") && session.indexOf("grantActive
 assert(dailyGiftApi.includes("parseDailyGiftConfig") && adminSettings.includes("Шанс получить награду в Daily Gift") && adminSettings.includes("rewardChanceByTier"), "Daily Gift exposes one configurable chance per rank");
 assert(streakService.includes("DAILY_STREAK_REWARDS") && streakService.includes("DAILY_STREAK_TOTAL_DAYS = 7"), "daily streak uses the approved 7-day reward cycle");
 assert(session.includes("season_daily_checkins") && session.includes("dailyStreak"), "session records and returns daily streak");
-assert(home.includes("snapshot.streak.currentStreak") && home.includes("дней подряд"), "player home shows streak flame/progress");
+assert(streakCard.includes("Серия") && streakCard.includes("дней подряд") && streakCard.includes("currentStreak"), "player home shows streak flame/progress");
 assert(streakUi.includes("Daily Streak") && streakUi.includes("Без пропусков") && streakUi.includes("Готовы к дню 7"), "admin daily streak dashboard exposes key metrics");
 assert(streakApi.includes("season_daily_checkins") && streakApi.includes("eligibleForReward"), "admin daily streak API reads real season check-ins");
 assert(streakService.includes("eligibleForReward") && streakService.includes("rewardStars = 10"), "7-day streak eligibility and 10 Stars reward schedule are tracked");
