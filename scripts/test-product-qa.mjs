@@ -159,6 +159,7 @@ assert(veteranUi.includes("rankError(") && veteranUi.includes("Проверь Te
 assert(adminSettings.includes('role?: "OWNER" | "ADMIN"') && adminSettings.includes('veteranRole !== "OWNER"'), "admin settings keeps veteran system toggle owner-only");
 assert(selector.includes("getAntiStreakMultiplier") && selector.includes("1 / pityMultiplier"), "EMPTY anti-streak multiplier counteracts long EMPTY streaks");
 const prizeAdmin = await read("src/routes/admin.prizes.tsx");
+assert(prizeAdmin.includes('draft.kind === "STARS" || p.kind === "NFT"') || prizeAdmin.includes('p.kind === "STARS" || p.kind === "NFT"'), "NFT value is included in Stars fund obligations");
 assert(prizeAdmin.includes('[5,10,15,20].map'), "prize editor exposes 5/10/15/20 chance presets");
 assert(prizeAdmin.includes('draft.kind === "EMPTY"') && prizeAdmin.includes("desiredEmptyMass"), "chance presets adjust EMPTY mass while preserving reward weights");
 assert(prizeAdmin.includes('label="NFT"') && prizeAdmin.includes('draft.kind === "NFT"'), "prize editor exposes dedicated NFT configuration");
@@ -173,6 +174,8 @@ assert(home.includes("snapshot.streak.currentStreak") && home.includes("дней
 assert(streakUi.includes("Daily Streak") && streakUi.includes("Без пропусков") && streakUi.includes("Готовы к дню 7"), "admin daily streak dashboard exposes key metrics");
 assert(streakApi.includes("season_daily_checkins") && streakApi.includes("eligibleForReward"), "admin daily streak API reads real season check-ins");
 assert(streakService.includes("eligibleForReward") && streakService.includes("rewardStars = 10"), "7-day streak eligibility and 10 Stars reward schedule are tracked");
+assert(prizeAdmin.includes('p.kind === "STARS" || p.kind === "NFT"'), "NFT value is included in Stars fund totals");
+assert(economics.includes("Всё в норме") && economics.includes("Риск убытка") && !economics.includes("dry-run"), "economics admin is localized for non-technical admins");
 
 console.log("✅ Product UX/Admin/Bot static QA passed");
 console.log(`Checked user routes: ${userRoutes.length}, admin views: ${adminRoutes.length}, admin APIs: ${adminApis.length}`);
