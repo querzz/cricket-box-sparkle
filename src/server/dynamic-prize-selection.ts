@@ -13,6 +13,7 @@ export type DynamicSelectionContext = {
   emptyStreak?: number;
   recentKinds?: string[];
   paidSpin?: boolean;
+  nextSpinBoost?: boolean;
 };
 
 export type DynamicSelectionDiagnostics = {
@@ -22,6 +23,7 @@ export type DynamicSelectionDiagnostics = {
   pityMultiplier: number;
   antiStreakMultiplier: number;
   paidSpinMultiplier: number;
+  nextSpinBoostMultiplier: number;
   finalWeight: number;
 };
 
@@ -80,6 +82,7 @@ export function buildDynamicWeights<T extends DynamicPrize>(
   const elapsedFraction = clamp(Number(context.elapsedFraction) || 0, 0, 1);
   const emptyStreak = Math.max(0, Math.floor(Number(context.emptyStreak) || 0));
   const paidSpin = context.paidSpin === true;
+  const nextSpinBoost = context.nextSpinBoost === true;
 
   return prizes.map((prize) => {
     const baseWeight = configuredWeight(prize);
@@ -92,7 +95,8 @@ export function buildDynamicWeights<T extends DynamicPrize>(
     const pityMultiplier = getPityMultiplier(emptyStreak, prize.kind);
     const antiStreakMultiplier = getAntiStreakMultiplier(emptyStreak, prize.kind);
     const paidSpinMultiplier = paidSpin && prize.kind !== "EMPTY" ? 1.25 : 1;
-    const finalWeight = baseWeight * inventoryPressure * globalMultiplier * pityMultiplier * antiStreakMultiplier * paidSpinMultiplier;
+    const nextSpinBoostMultiplier = nextSpinBoost && prize.kind !== "EMPTY" ? 1.25 : 1;
+    const finalWeight = baseWeight * inventoryPressure * globalMultiplier * pityMultiplier * antiStreakMultiplier * paidSpinMultiplier * nextSpinBoostMultiplier;
 
     return {
       prize,
@@ -103,6 +107,7 @@ export function buildDynamicWeights<T extends DynamicPrize>(
         pityMultiplier,
         antiStreakMultiplier,
         paidSpinMultiplier,
+        nextSpinBoostMultiplier,
         finalWeight,
       },
     };
