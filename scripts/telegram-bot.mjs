@@ -202,7 +202,7 @@ async function handleActivityUpdate(update) {
   if (
     reaction &&
     channelId &&
-    String(reaction.chat?.id ?? "") === String(channelId) &&
+    String(reaction.chat?.id ?? "") === String(databaseChannelId) &&
     reaction.user?.id &&
     !reaction.user?.is_bot &&
     Array.isArray(reaction.new_reaction) &&
@@ -225,7 +225,7 @@ async function handleActivityUpdate(update) {
   if (
     memberUpdate &&
     channelId &&
-    String(memberUpdate.chat?.id ?? "") === String(channelId) &&
+    String(memberUpdate.chat?.id ?? "") === String(databaseChannelId) &&
     memberUpdate.from?.id &&
     memberUpdate.new_chat_member?.user?.id &&
     !memberUpdate.new_chat_member.user.is_bot &&
