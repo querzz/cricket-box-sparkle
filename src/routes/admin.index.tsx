@@ -114,10 +114,11 @@ function AdminDashboard() {
     } finally { setLoading(false); }
   }
 
-  async function loadStats() {
+  async function loadStats(seasonId?: string) {
     setStatsLoading(true);
     try {
-      const data = await fetch(`/api/admin/statistics?scope=current&initData=${encodeURIComponent(initData())}`);
+      const seasonQuery = seasonId ? `&seasonId=${encodeURIComponent(seasonId)}` : "";
+      const data = await fetch(`/api/admin/statistics?scope=current${seasonQuery}&initData=${encodeURIComponent(initData())}`);
       const parsed = await data.json() as StatsResponse;
       if (data.ok && parsed.ok && parsed.metrics) setStats({ participants: Number(parsed.metrics.participants ?? 0), spins: Number(parsed.metrics.spins ?? 0), wins: Number(parsed.metrics.wins ?? 0) });
     } finally { setStatsLoading(false); }
@@ -137,7 +138,8 @@ function AdminDashboard() {
     finally { setPrizesLoading(false); }
   }
 
-  useEffect(() => { void loadSeasons(); void loadStats(); }, []);
+  useEffect(() => { void loadSeasons(); }, []);
+  useEffect(() => { void loadStats(current?.id); }, [current?.id]);
   useEffect(() => { if (current?.id) void loadPrizes(current.id); }, [current?.id]);
 
   async function createSeason() {
