@@ -7,7 +7,7 @@ import { GlassCard } from "@/components/kit/GlassCard";
 export const Route=createFileRoute("/admin/balances")({head:()=>({meta:[{title:"Балансы — CRICKET BOX"}]}),component:BalancesScreen});
 
 type User={id:string;telegramId:string;username:string;name:string;balance:number;spins:number;wins:number;pendingStars:number;lastSeen:string};
-type Api={ok:boolean;users?:User[];summary?:{totalStars:number;usersWithBalance:number;usersTotal:number};result?:{kind:string;amount:number;balance:number;username:string};code?:string};
+type Api={ok:boolean;users?:User[];summary?:{totalStars:number;usersWithBalance:number;usersTotal:number;averageBalance:number};result?:{kind:string;amount:number;balance:number;username:string};code?:string};
 
 function initData(){return typeof window==="undefined"?"":(window as Window & {Telegram?:{WebApp?:{initData?:string}}}).Telegram?.WebApp?.initData?.trim()??"";}
 
@@ -22,7 +22,7 @@ async function copyText(value:string){try{await navigator.clipboard.writeText(va
 
 function BalancesScreen(){
   const [users,setUsers]=useState<User[]>([]);
-  const [summary,setSummary]=useState({totalStars:0,usersWithBalance:0,usersTotal:0});
+  const [summary,setSummary]=useState({totalStars:0,usersWithBalance:0,usersTotal:0,averageBalance:0});
   const [search,setSearch]=useState(""); const [filter,setFilter]=useState("all"); const [sort,setSort]=useState("balance_desc");
   const [selected,setSelected]=useState<User|null>(null); const [action,setAction]=useState<"stars"|"spins"|null>(null);
   const [amount,setAmount]=useState("5"); const [reason,setReason]=useState(""); const [busy,setBusy]=useState(false); const [loading,setLoading]=useState(true); const [error,setError]=useState(""); const [message,setMessage]=useState("");
@@ -31,7 +31,7 @@ function BalancesScreen(){
     setLoading(true);setError("");
     try{
       const data=await request("/api/admin/balances?initData="+encodeURIComponent(initData())+"&search="+encodeURIComponent(search)+"&filter="+encodeURIComponent(filter)+"&sort="+encodeURIComponent(sort));
-      setUsers(data.users??[]);setSummary(data.summary??{totalStars:0,usersWithBalance:0,usersTotal:0});
+      setUsers(data.users??[]);setSummary(data.summary??{totalStars:0,usersWithBalance:0,usersTotal:0,averageBalance:0});
     }catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить балансы.");}
     finally{setLoading(false);}
   }
