@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { cricketApi, type SpinOptions } from "@/services/cricket-api";
-import type { Reward, ServiceError, SeasonState, SessionSnapshot } from "@/lib/types";
+import type { DailyStreakSnapshot, Reward, ServiceError, SeasonState, SessionSnapshot } from "@/lib/types";
 
 interface SessionContextValue {
   snapshot: SessionSnapshot | null;
@@ -18,6 +18,7 @@ interface SessionContextValue {
   refresh: () => Promise<void>;
   spin: (options?: SpinOptions) => Promise<Reward | ServiceError>;
   claimGift: () => Promise<Reward | ServiceError>;
+  claimStreakChoice: (choice: NonNullable<DailyStreakSnapshot["day7Choices"]>[number]["type"]) => Promise<{ amount:number; choice:string } | ServiceError>;
   requestWithdrawal: (amount: number) => Promise<true | ServiceError>;
   setSeasonState: (state: SeasonState) => Promise<void>;
   setSubscribed: (value: boolean) => Promise<void>;
@@ -79,6 +80,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return result.data.reward;
   }, []);
 
+  const claimStreakChoice = useCallback<SessionContextValue["claimStreakChoice"]>(async (choice) => {
+    const result = await cricketApi.claimStreakChoice(choice);
+    if (!result.ok) return result.error;
+    await refresh();
+    return result.data;
+  }, [refresh]);
+
   const requestWithdrawal = useCallback<SessionContextValue["requestWithdrawal"]>(async (amount) => {
     const result = await cricketApi.requestWithdrawal(amount);
     if (!result.ok) return result.error;
@@ -122,7 +130,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (result.ok) setSnapshot(result.data);
   }, [refresh]);
 
-  const value = useMemo(() => ({ snapshot, loading, error, refresh, spin, claimGift, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession }), [snapshot, loading, error, refresh, spin, claimGift, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession]);
+  const value = useMemo(() => ({ snapshot, loading, error, refresh, spin, claimGift, claimStreakChoice, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession }), [snapshot, loading, error, refresh, spin, claimGift, claimStreakChoice, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
