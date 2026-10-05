@@ -164,10 +164,10 @@ try {
   await db.query(`INSERT INTO star_transactions (user_id,amount,status,payload) VALUES ($1,100,'PENDING',$2)`, [userA, JSON.stringify({ payload: `paidspin:v1:${userA}:${seasonA}:ci-${suffix}-2`, type: "PAID_SPIN", seasonId: seasonA, userId: userA })]);
 
   const spin1 = await db.query(
-    `INSERT INTO spins (user_id,season_id,type,price_stars,status,completed_at)
-     VALUES ($1,$3,'FREE',0,'COMPLETED',now()),($1,$3,'FREE',0,'COMPLETED',now()),($2,$3,'FREE',0,'COMPLETED',now())
+    `INSERT INTO spins (user_id,season_id,type,price_stars,prize_id,status,completed_at)
+     VALUES ($1,$3,'FREE',0,$4,'COMPLETED',now()),($1,$3,'FREE',0,NULL,'COMPLETED',now()),($2,$3,'FREE',0,NULL,'COMPLETED',now())
      RETURNING id,user_id`,
-    [userA, userB, seasonA],
+    [userA, userB, seasonA, starsPrize.rows[0].id],
   );
   await db.query(`INSERT INTO payouts (spin_id,user_id,prize_id,kind,amount,currency,status) VALUES ($1,$2,$3,'STARS',137,'XTR','PAID')`, [spin1.rows[0].id, userA, starsPrize.rows[0].id]);
   const board = await db.query(`SELECT u.username,l.season_id,l.spins_count,l.wins_count,l.stars_won,l.rank FROM season_leaderboard l JOIN users u ON u.id=l.user_id WHERE l.season_id=$1 ORDER BY l.rank`, [seasonA]);
