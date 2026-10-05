@@ -151,10 +151,10 @@ function AdminDashboard() {
     setSaving(true); setError(""); setMessage("");
     try {
       const isLive = current.state === "ACTIVE" || current.state === "ENDING";
-      const startForSave = isLive ? (current.startsAt ?? new Date().toISOString()) : (current.startsAt ?? new Date().toISOString());
+      const startForSave = isLive ? (current.startsAt ?? new Date().toISOString()) : current.startsAt;
       const endForSave = isLive
-        ? (current.endsAt ?? new Date(new Date(startForSave).getTime() + Math.max(1, current.days) * 86400000).toISOString())
-        : new Date(Date.now() + Math.max(1, current.days) * 86400000).toISOString();
+        ? (current.endsAt ?? new Date(new Date(startForSave ?? new Date().toISOString()).getTime() + Math.max(1, current.days) * 86400000).toISOString())
+        : current.endsAt;
       const updated = await api<DbSeason>("/api/admin/seasons", "PATCH", {
         id: current.id,
         code: current.code.trim(),
@@ -163,7 +163,7 @@ function AdminDashboard() {
         paused: current.isPaused,
         paidSpinPrice: Math.max(1, current.paidPrice),
         dailyFreeSpin: current.dailyFree,
-        startsAt: isLive ? startForSave : current.startsAt ?? new Date().toISOString(),
+        startsAt: startForSave,
         endsAt: endForSave,
       });
       const next = mapSeason(updated.season!);
