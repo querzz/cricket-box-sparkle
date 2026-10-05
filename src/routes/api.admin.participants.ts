@@ -23,7 +23,19 @@ export const Route = createFileRoute("/api/admin/participants")({
             spins: number; free_spins: number; paid_spins: number; rewards: number; stars_balance: number; last_activity: string | null;
           }>(
             `WITH current_season AS (
-               SELECT COALESCE($3::uuid, (SELECT id FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1)) AS id
+               SELECT COALESCE($3::uuid, (
+                 SELECT id FROM seasons
+                  WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')
+                  ORDER BY CASE
+                    WHEN state='ACTIVE' THEN 0
+                    WHEN state='ENDING' THEN 1
+                    WHEN state='PAYOUT' THEN 2
+                    WHEN state='CLOSED' THEN 3
+                    WHEN state='ARCHIVED' THEN 4
+                    ELSE 5
+                  END, created_at DESC
+                  LIMIT 1
+               )) AS id
              ),
              spin_stats AS (
                SELECT user_id,
