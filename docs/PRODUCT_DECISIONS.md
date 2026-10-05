@@ -242,3 +242,50 @@ Future coding work must:
 6. inspect the current code;
 7. preserve approved decisions;
 8. label new ideas as PROPOSED until approved.
+
+
+## 18. 2026-10-05 approved repair addendum
+
+This section overrides older MVP notes where they conflict with the currently approved product behavior.
+
+### Stars reward and withdrawal model
+- A Stars prize won by a user in any completed spin is an immediate internal CRICKET BOX Stars balance credit using the append-only Stars ledger.
+- The internal balance is the user's accrued season entitlement and remains capped at 500 ⭐. Any overflow above the cap is explicitly recorded as capped overflow and is not added to the balance.
+- A normal Stars prize is **not** an admin payout item anymore and must not wait for manual Stars fulfillment.
+- Admin manual Stars adjustment remains OWNER-only and is a correction/gift tool, not the normal spin reward path.
+- A user may request withdrawal of accrued Stars only after the current season has ended and entered CLOSED/PAYOUT. Withdrawal remains subject to the minimum of 50 ⭐ and one pending withdrawal per user.
+- Admin Payouts handles the user's withdrawal request / external payout status, not the initial Stars reward credit.
+
+### Daily Streak — explicitly approved for implementation
+- Daily Streak is now approved for production implementation despite older V2/deferred notes.
+- The core visible cycle is 7 days.
+- Day 1: +1 ⭐.
+- Day 2: +1 ⭐.
+- Day 3: +1 ⭐.
+- Day 4: +2 ⭐.
+- Day 5: +2 ⭐.
+- Day 6: +3 ⭐.
+- Total for days 1–6: 10 ⭐.
+- Day 7 is a user choice and grants exactly one of:
+  - ⭐ +5 Stars;
+  - 🎟️ +1 bonus spin;
+  - 🍀 +20% Daily Gift reward chance modifier;
+  - ⚡ one boost applied to the next eligible spin.
+- A streak is bound to a season. Closing a season immediately freezes the streak and removes any future planned days from the active UI.
+- The 7-day choice can be claimed only once per user per season and is idempotent.
+- The UI should resemble the approved screenshot direction: horizontal day cards, completed days marked, current day emphasized, day 7 visually special, followed by the available reward choices.
+
+### Actual season duration
+- For a closed season, actual duration is calculated from starts_at to the recorded close timestamp, not from the originally planned ends_at.
+- A live season may display the planned end as a future estimate.
+- Reports, streak totals, dashboards and other season-scoped views must not continue to show future planned days after early close.
+
+### Admin readability and operational integrity
+- Audit pages must show human-readable user/admin/season/prize labels first. Raw UUIDs are secondary and copyable.
+- Owner Gifts must apply real Stars/Free Spin/XP effects transactionally and expose the applied state.
+- Admin Spins must load real seasons reliably and support Free/Paid/Bonus filtering.
+- Entertainment mechanics must have an explicit runtime contract; configuration-only toggles are not considered implemented.
+
+### Cross-season carryover
+- No automatic transfer of unused Spins.
+- Stars balance behavior is now defined explicitly by the current app: accrued Stars remain in the user's internal balance after season close and can be withdrawn only during CLOSED/PAYOUT. Any later reset/expiry policy requires a separate approved decision.
