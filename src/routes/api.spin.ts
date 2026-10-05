@@ -16,7 +16,35 @@ import { appendStarsLedger } from "@/server/stars-ledger";
 type PrizeKind="STARS"|"PREMIUM"|"MONEY"|"NFT"|"PHYSICAL"|"CUSTOM"|"FREE_SPIN"|"EMPTY";
 type Body={initData?:unknown;paid?:unknown;idempotencyKey?:unknown};
 type Prize={id:string;kind:PrizeKind;title:string;subtitle:string|null;amount:string;currency:string|null;quantity_total:number;quantity_remaining:number;metadata:Record<string,unknown>|null};
-const rewardResponse=(result:{spinId:string;payoutId:string|null;createdAt:string;prize:Prize;credited:number;rewardStars:number;spinType:string;duplicate:boolean})=>{const prize=result.prize;const manual=prize.kind!=="EMPTY"&&prize.kind!=="STARS";const payoutNote=prize.kind==="EMPTY"?"В этот раз без награды.":prize.kind==="STARS"?(result.credited<result.rewardStars?"Зачислено на баланс: "+result.credited+" ⭐ из "+result.rewardStars+" ⭐":"+result.credited+" ⭐ зачислено на баланс."):"Приз получен в розыгрыше и ожидает ручной выдачи администрацией.";return{ok:true,duplicate:result.duplicate,spin:{id:result.spinId,type:result.spinType,priceStars:0,status:"COMPLETED",createdAt:result.createdAt},reward:{id:result.payoutId??result.spinId,kind:prize.kind,title:prize.title,subtitle:prize.subtitle,amount:Number(prize.amount)||undefined,wonAt:result.createdAt,status:!manual?"RECEIVED":"PENDING",payoutNote,creditedAmount:prize.kind==="STARS"?result.credited:undefined,uncreditedAmount:prize.kind==="STARS"?Math.max(0,result.rewardStars-result.credited):0}};};
+const rewardResponse=(result:{spinId:string;payoutId:string|null;createdAt:string;prize:Prize;credited:number;rewardStars:number;spinType:string;duplicate:boolean})=>{
+  const prize=result.prize;
+  const manual=prize.kind!=="EMPTY"&&prize.kind!=="STARS";
+  let payoutNote="В этот раз без награды.";
+  if(prize.kind==="STARS"){
+    payoutNote=result.credited<result.rewardStars
+      ? "Зачислено на баланс: "+result.credited+" Stars из "+result.rewardStars+"."
+      : result.credited+" Stars зачислено на баланс.";
+  }else if(manual){
+    payoutNote="Приз получен в розыгрыше и ожидает ручной выдачи администрацией.";
+  }
+  return {
+    ok:true,
+    duplicate:result.duplicate,
+    spin:{id:result.spinId,type:result.spinType,priceStars:0,status:"COMPLETED",createdAt:result.createdAt},
+    reward:{
+      id:result.payoutId??result.spinId,
+      kind:prize.kind,
+      title:prize.title,
+      subtitle:prize.subtitle,
+      amount:Number(prize.amount)||undefined,
+      wonAt:result.createdAt,
+      status:!manual?"RECEIVED":"PENDING",
+      payoutNote,
+      creditedAmount:prize.kind==="STARS"?result.credited:undefined,
+      uncreditedAmount:prize.kind==="STARS"?Math.max(0,result.rewardStars-result.credited):0
+    }
+  };
+};
 export const Route=createFileRoute("/api/spin")({server:{handlers:{POST:async({request})=>{try{
  const body=await request.json() as Body;const initData=typeof body.initData==="string"?body.initData.trim():"";const paid=body.paid===true;if(!initData)return Response.json({ok:false,code:"INIT_DATA_MISSING"},{status:400});if(paid)return Response.json({ok:false,code:"PAYMENT_REQUIRED"},{status:402});const suppliedKey=typeof body.idempotencyKey==="string"?body.idempotencyKey.trim():"";const idempotencyKey=suppliedKey||crypto.randomUUID().replaceAll("-","");if(idempotencyKey.length>100||!/^[A-Za-z0-9:_-]+$/.test(idempotencyKey))return Response.json({ok:false,code:"INVALID_IDEMPOTENCY_KEY"},{status:400});
  const validated=await validateTelegramInitData(initData,requireBotToken());const telegramId=validated.user?.id;if(!telegramId)return Response.json({ok:false,code:"TELEGRAM_USER_MISSING"},{status:400});await enforceRateLimit(`spin:${telegramId}`,10);const membership=await getTelegramChannelMembership(telegramId);
