@@ -27,6 +27,9 @@
     "rolldown": "1.2.1"
   },
   "dependencies": {
+    "@tanstack/react-router": "1.170.40",
+    "@tanstack/react-start": "1.168.59",
+    "@tanstack/router-generator": "1.167.39",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -78,7 +81,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@lovable.dev/vite-tanstack-config": "^2.20.0",
+    "@lovable.dev/vite-tanstack-config": "2.25.1",
     "@types/node": "^22.16.5",
     "@types/pg": "^8.15.5",
     "@types/react": "^19.2.0",
