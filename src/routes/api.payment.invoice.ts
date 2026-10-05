@@ -90,7 +90,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
 
         const context = await withTransaction(async client => {
           const seasonResult = await client.query<{ id: string; code: string; state: string; paid_spin_price: number; paid_spin_enabled: boolean }>(
-            `SELECT id::text,code,state,paid_spin_price,paid_spin_enabled
+            `SELECT id::text,code,state,is_paused,paid_spin_price,paid_spin_enabled
                FROM seasons
               WHERE state IN ('ACTIVE','ENDING')
               ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC
@@ -99,6 +99,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
           );
           const current = seasonResult.rows[0];
           if (!current) throw new Error("SEASON_NOT_ACTIVE");
+          if (current.is_paused) throw new Error("SEASON_PAUSED");
           if (!current.paid_spin_enabled) throw new Error("PAID_SPIN_DISABLED");
 
           const seasonId = current.id;
@@ -202,7 +203,7 @@ export const Route = createFileRoute("/api/payment/invoice")({
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok: false, code: "RATE_LIMITED" }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "INVOICE_FAILED";
-        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" || code === "SEASON_NOT_ACTIVE" || code === "PAYMENT_NOT_PENDING" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
+        const status = code === "NO_PRIZES" || code === "PAYMENT_PROCESSING" || code === "PAYMENT_REFUND_PENDING" || code === "PAID_SPIN_DISABLED" || code === "SEASON_NOT_ACTIVE" || code === "SEASON_PAUSED" || code === "PAYMENT_NOT_PENDING" ? 409 : code === "NOT_SUBSCRIBED" || code === "NOT_PARTICIPANT" ? 403 : code === "USER_NOT_FOUND" ? 404 : code === "INVOICE_CREATE_FAILED" || code === "INVOICE_PERSIST_FAILED" ? 502 : 400;
         console.error("Payment invoice failed:", code);
         return Response.json({ ok: false, code }, { status });
       }
