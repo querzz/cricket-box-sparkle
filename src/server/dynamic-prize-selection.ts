@@ -12,6 +12,7 @@ export type DynamicSelectionContext = {
   elapsedFraction?: number;
   emptyStreak?: number;
   recentKinds?: string[];
+  paidSpin?: boolean;
 };
 
 export type DynamicSelectionDiagnostics = {
@@ -20,6 +21,7 @@ export type DynamicSelectionDiagnostics = {
   globalMultiplier: number;
   pityMultiplier: number;
   antiStreakMultiplier: number;
+  paidSpinMultiplier: number;
   finalWeight: number;
 };
 
@@ -67,7 +69,9 @@ function getAntiStreakMultiplier(emptyStreak: number, kind: string) {
  * 4. A player who has gone through a long EMPTY streak gets a pity boost on
  *    non-empty prizes. EMPTY receives the inverse anti-streak adjustment.
  *
- * Paid and free spins use the same selector. No online-user-count modifier is used.
+ * Paid spins receive a modest reward-quality multiplier on non-EMPTY outcomes. The
+ * multiplier is applied only when paidSpin=true; free spins keep the baseline pool.
+ * No online-user-count modifier is used.
  */
 export function buildDynamicWeights<T extends DynamicPrize>(
   prizes: T[],
@@ -75,6 +79,7 @@ export function buildDynamicWeights<T extends DynamicPrize>(
 ): Array<{ prize: T; diagnostics: DynamicSelectionDiagnostics }> {
   const elapsedFraction = clamp(Number(context.elapsedFraction) || 0, 0, 1);
   const emptyStreak = Math.max(0, Math.floor(Number(context.emptyStreak) || 0));
+  const paidSpin = context.paidSpin === true;
 
   return prizes.map((prize) => {
     const baseWeight = configuredWeight(prize);
@@ -86,7 +91,8 @@ export function buildDynamicWeights<T extends DynamicPrize>(
     });
     const pityMultiplier = getPityMultiplier(emptyStreak, prize.kind);
     const antiStreakMultiplier = getAntiStreakMultiplier(emptyStreak, prize.kind);
-    const finalWeight = baseWeight * inventoryPressure * globalMultiplier * pityMultiplier * antiStreakMultiplier;
+    const paidSpinMultiplier = paidSpin && prize.kind !== "EMPTY" ? 1.25 : 1;
+    const finalWeight = baseWeight * inventoryPressure * globalMultiplier * pityMultiplier * antiStreakMultiplier * paidSpinMultiplier;
 
     return {
       prize,
@@ -96,6 +102,7 @@ export function buildDynamicWeights<T extends DynamicPrize>(
         globalMultiplier,
         pityMultiplier,
         antiStreakMultiplier,
+        paidSpinMultiplier,
         finalWeight,
       },
     };
