@@ -25,6 +25,7 @@ export const Route = createFileRoute("/api/admin/spins")({
           const initData = (url.searchParams.get("initData") ?? "").trim();
           const search = (url.searchParams.get("search") ?? "").trim();
           const type = url.searchParams.get("type") ?? "";
+          const seasonId = (url.searchParams.get("seasonId") ?? "").trim();
           const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
           if (!initData) return Response.json({ ok: false, code: "INIT_DATA_MISSING" }, { status: 400 });
 
@@ -44,9 +45,10 @@ export const Route = createFileRoute("/api/admin/spins")({
              LEFT JOIN prizes p ON p.id = s.prize_id
              WHERE ($2 = '' OR s.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1)
                AND ($3 = '' OR s.type = $3)
+               AND ($4 = '' OR s.season_id = $4::uuid)
              ORDER BY s.created_at DESC
-             LIMIT $4`,
-            [pattern, search, type, limit],
+             LIMIT $5`,
+            [pattern, search, type, seasonId, limit],
           );
 
           return Response.json({
