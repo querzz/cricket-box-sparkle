@@ -95,6 +95,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_file_id TEXT;
 ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_season_id UUID;
 ALTER TABLE user_state ADD COLUMN IF NOT EXISTS activity_bonus_spins_issued INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE user_state ADD COLUMN IF NOT EXISTS daily_gift_chance_boost_pct INTEGER NOT NULL DEFAULT 0 CHECK (daily_gift_chance_boost_pct >= 0 AND daily_gift_chance_boost_pct <= 100);
+ALTER TABLE user_state ADD COLUMN IF NOT EXISTS daily_gift_boost_season_id UUID REFERENCES seasons(id) ON DELETE SET NULL;
 ALTER TABLE user_state ADD COLUMN IF NOT EXISTS next_spin_boosts INTEGER NOT NULL DEFAULT 0 CHECK (next_spin_boosts >= 0 AND next_spin_boosts <= 10);
 ALTER TABLE seasons ADD COLUMN IF NOT EXISTS paid_spin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE prizes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
