@@ -37,9 +37,10 @@ export const Route = createFileRoute("/api/gift")({
           if (membership !== null && membership !== current?.is_subscribed) await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.rows[0].id, membership]);
           if (!current?.is_participant || !subscribed) throw new Error("GIFT_UNAVAILABLE");
 
-          const season = await client.query<{ id:string; state:string }>(`SELECT id::text,state FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
+          const season = await client.query<{ id:string; state:string }>(`SELECT id::text,state,is_paused FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE`);
           const currentSeason = season.rows[0];
           if (!currentSeason) throw new Error("GIFT_UNAVAILABLE");
+          if (currentSeason.is_paused) throw new Error("SEASON_PAUSED");
           if (current.daily_gift_claimed_at) {
             const claimedAt = new Date(current.daily_gift_claimed_at).getTime();
             if (Number.isFinite(claimedAt) && Date.now() - claimedAt < GIFT_COOLDOWN_MS) throw new Error("GIFT_COOLDOWN");
@@ -83,7 +84,7 @@ export const Route = createFileRoute("/api/gift")({
       } catch (error) {
         if (error instanceof RateLimitError) return Response.json({ ok:false, code:"RATE_LIMITED" }, { status:429, headers:{ "Retry-After":String(error.retryAfterSeconds) } });
         const code = error instanceof Error ? error.message : "GIFT_FAILED";
-        const status = code === "GIFT_UNAVAILABLE" || code === "GIFT_COOLDOWN" ? 409 : code === "USER_NOT_FOUND" ? 404 : 400;
+        const status = code === "GIFT_UNAVAILABLE" || code === "GIFT_COOLDOWN" || code === "SEASON_PAUSED" ? 409 : code === "USER_NOT_FOUND" ? 404 : 400;
         console.error("[CRICKET BOX] gift failed", { code });
         return Response.json({ ok:false, code, detail:code }, { status });
       }
