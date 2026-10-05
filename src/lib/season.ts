@@ -38,7 +38,6 @@ export function seasonUi(snapshot: SessionSnapshot): SeasonUi {
   const state = snapshot.season.state;
   const live = state === "ACTIVE" || state === "ENDING";
   const paused = live && snapshot.season.isPaused;
-  const paused = live && snapshot.season.isPaused;
   const finished = state === "CLOSED" || state === "PAYOUT" || state === "ARCHIVED";
   const waiting = state === "DRAFT" || state === "SCHEDULED";
   const subscribed = snapshot.user.isSubscribed;
@@ -78,7 +77,6 @@ export function errorCopy(code: string): string {
     case "GIFT_BALANCE_FULL": return "Подарок сейчас не может зачислить Stars из-за лимита баланса.";
     case "SEASON_CLOSED": return "Сезон завершён: новые прокрутки недоступны.";
     case "SEASON_NOT_ACTIVE": return "Сейчас нет активного сезона.";
-    case "SEASON_PAUSED": return "Сезон временно приостановлен. Попробуй позже.";
     case "SEASON_PAUSED": return "Сезон временно приостановлен. Попробуй позже.";
     case "SEASON_NOT_STARTED": return "Сезон ещё не начался.";
     case "NOT_SUBSCRIBED": return "Подпишись на канал, чтобы участвовать.";
