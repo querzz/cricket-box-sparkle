@@ -1,0 +1,112 @@
+# CRICKET BOX — Production Code Audit
+Date: 2026-10-05
+Repository checkpoint reviewed: `main` at `8733a3cfa4acd857ac8e6f994bd7450350004c97`.
+
+This is a code/read-model audit, not a claim that every item below is currently reproducible in production. Findings are limited to behavior visible in the repository.
+
+## Priority
+
+### CRITICAL
+
+1. **Clean database bootstrap ordering**
+   `db/schema.sql` contains `ALTER TABLE seasons ...` statements before the `seasons` table is created. A truly clean PostgreSQL bootstrap can therefore fail before the table exists. Existing databases may hide this because the table is already present.
+
+2. **Season Report mixes test users into multiple metrics**
+   The Season Report filters `is_test=FALSE` for some sections, but not consistently. The inconsistency can pollute participants, spins, rewards, payments, payouts, gifts, streak, engagement, retention, prize usage, daily activity and repeat-player metrics.
+
+## HIGH
+
+3. **Season Report veteran history counts spins, not seasons**
+   The report's historical tier query uses `COUNT(*)` over completed spins. It should count distinct completed season IDs per user.
+
+4. **Admin Spins includes test users**
+   `/api/admin/spins` joins users but has no `u.is_test=FALSE` predicate.
+
+5. **Admin Payouts includes test users**
+   `/api/admin/payouts` does not exclude test users in either the payout list or aggregate counters.
+
+6. **Admin Economics can include test spins**
+   The economics view uses season/spin data without a consistent test-user exclusion.
+
+7. **Admin Statistics has inconsistent test filtering**
+   Headline aggregates use test-user filtering in several places, while the daily spin series and retention paths are not consistently filtered the same way.
+
+8. **Admin dashboard selected-season mismatch**
+   The dashboard statistics request does not consistently pass the selected historical season, so headline statistics can describe the current season while a historical season is selected.
+
+9. **GET /api/admin/seasons has a write side effect**
+   The read endpoint calls live-season repair logic that can mutate the database by closing duplicate active/ending seasons.
+
+10. **Channel Activity ingestion is operationally fragile**
+    Activity depends on the Telegram bot receiving the right update types and resolving the linked discussion chat. Historical discussion messages cannot be backfilled through the Bot API. The admin activity API also performs live Telegram API calls on page load.
+
+11. **Channel Activity season attribution is only time-window based**
+    `channel_activity` has no `season_id`, so historical season reports infer activity by timestamps rather than exact season ownership.
+
+12. **Prize editor writes are not atomic**
+    The admin UI saves prize rows through separate requests. A partial failure can leave only some edits applied.
+
+13. **Prize economic override is backend/frontend asymmetric**
+    The backend supports an economics override/reason, but the current prize editor does not expose that capability.
+
+14. **Free-spin campaign schedule fields are not fully enforced**
+    Campaigns have start/end fields in the data/UI, but the runtime grant path primarily checks campaign enabled/season state; the displayed schedule is therefore not a complete enforcement boundary.
+
+15. **Owner-gifts settings update has a race window**
+    The personal-gift configuration path uses read/modify/write of app settings without a transaction/lock, so concurrent admins can overwrite one another.
+
+16. **Manual free-spin grant can silently do nothing without user_state**
+    The balance admin free-spin branch can update zero rows when a user has no `user_state` yet instead of first creating that state.
+
+17. **Channel Activity aggregates can include test users**
+    Aggregate counters in the activity admin API do not consistently apply the same test-user exclusion as the per-user list.
+
+18. **Participants “All seasons” is not truly all seasons**
+    The empty season filter resolves to the latest/current season rather than a true cross-season union.
+
+## MEDIUM
+
+19. **Season display codes are generated positionally**
+    Some admin/public display code paths derive the visible ordinal from list position rather than always using the persisted database code.
+
+20. **Season Report activity metrics are timestamp proxies**
+    Because activity rows lack `season_id`, a report can only attribute them by date range.
+
+21. **Historical withdrawal attribution can be incomplete**
+    The report relies on `stars_ledger.season_id` for withdrawal attribution, so older withdrawal entries that lack a season ID can disappear from historical season totals.
+
+22. **Retention logic is duplicated**
+    Season Report and Admin Statistics calculate retention independently, which creates a risk of future drift.
+
+23. **Economy planner path may be stale/unused**
+    The repository contains an economics planner and a persisted economy-snapshot flow; the live selection engine and report are the more important runtime sources of truth.
+
+24. **Implementation status documentation can lag code**
+    `docs/IMPLEMENTATION_STATUS.md` contains historical checkpoints and must be treated as handoff documentation, not an authoritative proof of the current Git head.
+
+## Fix plan
+
+### Block 1 — reporting/data correctness
+- normalize Season Report to exclude test users everywhere it represents player-facing/operational production metrics;
+- count distinct completed previous seasons for veteran/elite history;
+- keep the report season-specific.
+
+### Block 2 — admin read models
+- exclude test users from Spins, Payouts and Economics;
+- align Statistics daily/retention filters with headline filters;
+- fix dashboard selected-season statistics;
+- remove database mutation from season GET.
+
+### Block 3 — operational/reliability
+- enforce campaign start/end windows in the actual grant path;
+- harden Channel Activity configuration/aggregation and document the no-backfill limitation;
+- fix clean-schema ordering.
+
+### Block 4 — mutation safety
+- make prize saves atomic;
+- close the economics-override UI/backend gap;
+- make owner-gift settings updates concurrency-safe;
+- initialize user state before manual free-spin grants;
+- make historical “all seasons” semantics explicit.
+
+Do not rewrite working features solely for style. Each change should be small, verified against the existing data model, and committed separately or in a tightly scoped batch.
