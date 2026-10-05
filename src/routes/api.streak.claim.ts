@@ -61,7 +61,7 @@ export const Route=createFileRoute('/api/streak/claim')({server:{handlers:{
           return {choice,amount:credited,requestedAmount:cfg.amount,duplicate:false};
         }
         if(choice==='FREE_SPIN') await client.query("UPDATE user_state SET bonus_free_spins=LEAST(1000,bonus_free_spins+$2),updated_at=now() WHERE user_id=$1::uuid",[user.rows[0].id,cfg.amount]);
-        if(choice==='DAILY_GIFT_BOOST') await client.query("UPDATE user_state SET daily_gift_chance_boost_pct=LEAST(100,daily_gift_chance_boost_pct+$2),updated_at=now() WHERE user_id=$1::uuid",[user.rows[0].id,cfg.amount]);
+        if(choice==='DAILY_GIFT_BOOST') await client.query("UPDATE user_state SET daily_gift_chance_boost_pct=LEAST(100,CASE WHEN daily_gift_boost_season_id=$3::uuid THEN daily_gift_chance_boost_pct+$2 ELSE $2 END),daily_gift_boost_season_id=$3::uuid,updated_at=now() WHERE user_id=$1::uuid",[user.rows[0].id,cfg.amount,s.id]);
         if(choice==='NEXT_SPIN_BOOST') await client.query("UPDATE user_state SET next_spin_boosts=LEAST(10,next_spin_boosts+$2),updated_at=now() WHERE user_id=$1::uuid",[user.rows[0].id,cfg.amount]);
         await client.query("INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('DAILY_STREAK_REWARD_CLAIMED','season_streak_reward',$1,$2::jsonb)",[reward.rows[0].id,JSON.stringify({userId:user.rows[0].id,seasonId:s.id,cycleNo:info.cycleNo,choice,amount:cfg.amount})]);
         return {choice,amount:cfg.amount,requestedAmount:cfg.amount,duplicate:false};
