@@ -167,7 +167,7 @@ assert(!prizeAdmin.includes("Картинка URL"), "prize editor does not expo
 assert(prizeAdmin.includes("Себестоимость") && prizeAdmin.includes("не для определения шанса"), "prize economics field is clearly separated from probability");
 assert(bot.includes("countedComments >= 20") && bot.includes("(countedComments + 1) % 2 === 0"), "channel activity enforces 20 counted comments/day and 2 comments per point");
 assert(session.includes("const activityEnabled") && session.indexOf("grantActiveFreeSpinCampaigns") < session.indexOf("if (activityEnabled)"), "global free-spin campaign grant stays independent of activity accrual");
-assert(dailyGiftApi.includes("rewardChanceByTier") && adminSettings.includes("Шанс получить награду в Daily Gift"), "Daily Gift exposes one configurable chance per rank");
+assert(dailyGiftApi.includes("parseDailyGiftConfig") && adminSettings.includes("Шанс получить награду в Daily Gift") && adminSettings.includes("rewardChanceByTier"), "Daily Gift exposes one configurable chance per rank");
 assert(streakService.includes("DAILY_STREAK_REWARDS") && streakService.includes("DAILY_STREAK_TOTAL_DAYS = 7"), "daily streak uses the approved 7-day reward cycle");
 assert(session.includes("season_daily_checkins") && session.includes("dailyStreak"), "session records and returns daily streak");
 assert(home.includes("snapshot.streak.currentStreak") && home.includes("дней подряд"), "player home shows streak flame/progress");
