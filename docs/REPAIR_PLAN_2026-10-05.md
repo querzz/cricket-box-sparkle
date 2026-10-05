@@ -189,3 +189,29 @@ Before calling the batch complete:
 ## Known compatibility note
 
 There is existing historical data produced by the older Stars-manual-fulfillment model. The migration must preserve already paid withdrawals/prizes and must not duplicate any previously credited Stars. Any ambiguous historical record must be surfaced in audit rather than silently credited twice.
+
+
+## Live execution status — 2026-10-05
+
+### Implemented in repository
+- Admin dashboard SSR guard fixed after the first discoverability patch.
+- Stars won by Free/Bonus/Paid spins are now credited to the internal Stars balance immediately through the append-only ledger, capped at 500 ⭐.
+- Historical pending Stars prize rows have a safe idempotent backfill in DB init.
+- Normal Stars prizes are no longer a manual Payout item; Payouts are reserved for post-season withdrawal requests and non-Stars fulfillment.
+- Withdrawal remains CLOSED/PAYOUT-only with a 50 ⭐ minimum and one pending request per user.
+- Season close timestamp is persisted in `seasons.closed_at` and LiveOps/manual close paths populate it.
+- Daily Streak has the approved 7-day structure, day 1–6 automatic Stars rewards, day-7 choices, one-time claim endpoint, and early-close freeze behavior.
+- Daily Gift supports the +20% Streak chance modifier and one-time next-spin boost is wired into the prize engine.
+- Admin Spins has a real Bonus filter and repaired season loading.
+- Participants have a direct Free Spin grant action.
+- Admin Audit resolves human-readable target labels and hides raw UUIDs behind a technical-ID disclosure.
+- Owner Gifts use the relational PostgreSQL table transactionally, with real Stars/Free Spin/XP effects and a user claim endpoint/card.
+- Entertainment events now have persistent PostgreSQL state, admin event creation, user claim/pass runtime, and a user-facing event card.
+- Season Report uses actual close time for closed seasons and separates Stars balance rewards from withdrawal requests.
+
+### Still in the repair queue
+- Full production QA on every changed route after deployment.
+- Refine and verify Owner Gift notification/open state and Gift-or-Pass transfer UX.
+- Verify the exact Payouts/Balances/Spins runtime queries against the current production DB.
+- Complete remaining Season Report UI cleanup and historical edge-case checks.
+- Add/finish any remaining entertainment event administration/history and guardrails.
