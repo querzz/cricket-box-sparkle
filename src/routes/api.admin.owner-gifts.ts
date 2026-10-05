@@ -3,7 +3,6 @@ import { authenticateAdmin } from '@/server/auth/access';
 import { query, withTransaction } from '@/server/db';
 import { appendStarsLedger, STARS_MAX_BALANCE } from '@/server/stars-ledger';
 import { sendTelegramNotification } from '@/server/telegram-notify';
-import { serverConfig } from '@/server/config';
 type RewardType='STARS'|'FREE_SPIN'|'XP'|'NOTE';
 type GiftStatus='Подготовлен'|'Выдан'|'Отменён';
 type GiftRow={id:string;username:string;telegramId:string;userId:string;gift:string;status:GiftStatus;message:string;createdAt:string;issuedAt:string|null;rewardType:RewardType;amount:number;rewardApplied:boolean};
@@ -34,21 +33,25 @@ POST:async({request})=>{try{
   await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'OWNER_GIFT_CREATED','user',$2,$3::jsonb)`,[admin.id,user.rows[0].id,JSON.stringify({giftId:row.rows[0].id,telegramId,gift,rewardType,amount})]);
   return row.rows[0];
  });
-
+ const openUrl=process.env.APP_URL?.replace(/\/$/,'')??'';
+ void sendTelegramNotification(
+   telegramId,
+   '🎁 ТЕБЕ ПОДАРОК ОТ CRICKET BOX!\\n\\n'+gift+(message?'\\n'+message:'')+(rewardType==='STARS'?'\\n\\n⭐ '+amount+' Stars':rewardType==='FREE_SPIN'?'\\n\\n🎟️ '+amount+' бонусных прокруток':rewardType==='XP'?'\\n\\n✨ +'+amount+' XP':'')+'\\n\\nОткрой CRICKET BOX и забери свой подарок.',
+   /^https:\/\//i.test(openUrl)?{inline_keyboard:[[{text:'🎁 Открыть подарок',web_app:{url:openUrl}}]]}:undefined,
+ );
  return Response.json({ok:true,gift:{id:result.id,username:body.username||'—',telegramId,gift,status:'Подготовлен',message,createdAt:result.created_at,issuedAt:null,rewardType,amount:rewardType==='NOTE'?0:amount,rewardApplied:false},gifts:await readGifts()});
 }catch(error){const code=error instanceof Error?error.message:'OWNER_GIFT_CREATE_FAILED';return Response.json({ok:false,code},{status:code==='USER_NOT_FOUND'?404:400});}},
 PATCH:async({request})=>{try{
  const body=await request.json() as {initData?:unknown;id?:unknown;status?:unknown};
  const admin=await authenticateAdmin(typeof body.initData==='string'?body.initData:'');const id=String(body.id??'');const status=String(body.status??'');
  if(!id||!['Выдан','Отменён','Подготовлен'].includes(status))return Response.json({ok:false,code:'INVALID_UPDATE'},{status:400});
- const result=await withTransaction(async client=>{
-  const row=await client.query<{id:string;user_id:string;status:string;rewards:Record<string,unknown>[];claimed_at:string|null;title:string;message:string|null}>(`SELECT id::text,user_id::text,status,rewards,claimed_at::text,title,message FROM owner_gifts WHERE id=$1::uuid FOR UPDATE`,[id]);
+ await withTransaction(async client=>{
+  const row=await client.query<{id:string;user_id:string;status:string;rewards:Record<string,unknown>[];claimed_at:string|null}>(`SELECT id::text,user_id::text,status,rewards,claimed_at::text FROM owner_gifts WHERE id=$1::uuid FOR UPDATE`,[id]);
   if(!row.rows[0])throw new Error('GIFT_NOT_FOUND');const current=row.rows[0];
   const dbStatus=status==='Выдан'?'CLAIMED':status==='Отменён'?'CANCELLED':'SENT';
-  let notification:null|{telegramId:string;title:string;message:string|null;rewardType:string;amount:number}=null;
   if(dbStatus==='CLAIMED'&&current.status!=='CLAIMED'){
    const reward=(current.rewards[0]??{}) as Record<string,unknown>;const type=String(reward.type??'NOTE') as RewardType;const value=Math.max(0,Math.floor(Number(reward.amount??0)));
-   const user=await client.query<{id:string;xp:number;telegram_id:string}>(`SELECT id::text,xp,telegram_id::text FROM users WHERE id=$1::uuid FOR UPDATE`,[current.user_id]);if(!user.rows[0])throw new Error('USER_NOT_FOUND');
+   const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid FOR UPDATE`,[current.user_id]);if(!user.rows[0])throw new Error('USER_NOT_FOUND');
    if(type==='STARS'&&value>0){
     const state=await client.query<{stars_balance:number}>(`SELECT stars_balance FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,[current.user_id]);const balance=Number(state.rows[0]?.stars_balance??0);const credited=Math.min(value,Math.max(0,STARS_MAX_BALANCE-balance));
     await appendStarsLedger(client,{userId:current.user_id,type:'ADMIN_CORRECTION',amount:value,balanceDelta:credited,seasonId:null,referenceId:id,idempotencyKey:'owner-gift:'+id,metadata:{source:'PERSONAL_GIFT',giftId:id,creditedAmount:credited,overflowAmount:value-credited}});
@@ -56,17 +59,9 @@ PATCH:async({request})=>{try{
    }else if(type==='FREE_SPIN'&&value>0)await client.query(`INSERT INTO user_state(user_id,bonus_free_spins) VALUES($1::uuid,$2) ON CONFLICT(user_id) DO UPDATE SET bonus_free_spins=LEAST(1000,user_state.bonus_free_spins+$2),updated_at=now()`,[current.user_id,value]);
    else if(type==='XP'&&value>0){const xp=Number(user.rows[0].xp??0)+value;await client.query(`UPDATE users SET xp=$2,level=$3,updated_at=now() WHERE id=$1::uuid`,[current.user_id,xp,Math.max(1,Math.floor(xp/100)+1)]);}
    await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'PERSONAL_GIFT_REWARD_APPLIED','user',$2,$3::jsonb)`,[admin.id,current.user_id,JSON.stringify({giftId:id,rewardType:type,amount:value})]);
-   notification={telegramId:user.rows[0].telegram_id,title:current.title,message:current.message,rewardType:type,amount:value};
   }
   await client.query(`UPDATE owner_gifts SET status=$2,claimed_at=CASE WHEN $2='CLAIMED' THEN COALESCE(claimed_at,now()) ELSE claimed_at END,updated_at=now() WHERE id=$1::uuid`,[id,dbStatus]);
-  return notification;
  });
- if(result){
-   const rewardLabel=result.rewardType==='STARS'?'⭐ '+result.amount+' Stars':result.rewardType==='FREE_SPIN'?'🎟️ '+result.amount+' бонусных прокруток':result.rewardType==='XP'?'✨ +'+result.amount+' XP':null;
-   const notification='🎁 ТЕБЕ ВЫДАЛИ ЛИЧНЫЙ ПОДАРОК!\\n\\n'+result.title+(result.message?'\\n'+result.message:'')+(rewardLabel?'\\n\\n'+rewardLabel:'')+'\\n\\nОткрой CRICKET BOX, чтобы забрать его.';
-   const openUrl=serverConfig.appUrl.replace(/\\/$/,'');
-   await sendTelegramNotification(result.telegramId,notification,/^https:\\/\\//i.test(openUrl)?{inline_keyboard:[[{text:'🎁 Забрать подарок',web_app:{url:openUrl}}]]}:undefined);
- }
  return Response.json({ok:true,gifts:await readGifts()});
 }catch(error){const code=error instanceof Error?error.message:'OWNER_GIFT_UPDATE_FAILED';return Response.json({ok:false,code},{status:code==='GIFT_NOT_FOUND'||code==='USER_NOT_FOUND'?404:400});}}
 }}});
