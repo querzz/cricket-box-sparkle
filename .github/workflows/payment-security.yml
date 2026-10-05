@@ -1,10 +1,6 @@
 name: CRICKET BOX Payment Security
 
 on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
 
 # Payment checks should also converge on the latest revision.
