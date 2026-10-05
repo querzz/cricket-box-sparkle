@@ -57,7 +57,7 @@ POST:async({request})=>{
     const good=(payload.good??{type:'STARS',amount:5,title:'Хороший подарок'}) as Reward;const bad=(payload.bad??{type:'NOTE',amount:0,title:'Неудачный подарок'}) as Reward;reward=secureRandomUnit()<0.5?good:bad;resultTitle=reward.title??title;
    }else{reward=(payload.reward??{type:'NOTE',amount:0}) as Reward;}
    const applied=await applyReward(client,user.rows[0].id,event.season_id,reward,event.id,'ENTERTAINMENT_'+event.type);
-   await client.query('UPDATE entertainment_events SET status=\'CLAIMED\',acted_at=now(),payload=jsonb_set(payload,\'{result\}',$2::jsonb,true) WHERE id=$1::uuid',[event.id,JSON.stringify({type:reward.type,amount:reward.amount,title:resultTitle,credited:applied.credited})]);
+   await client.query("UPDATE entertainment_events SET status='CLAIMED',acted_at=now(),payload=jsonb_set(payload,'{result}',$2::jsonb,true) WHERE id=$1::uuid",[event.id,JSON.stringify({type:reward.type,amount:reward.amount,title:resultTitle,credited:applied.credited})]);
    await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('ENTERTAINMENT_EVENT_CLAIMED','user',$1,$2::jsonb)`,[user.rows[0].id,JSON.stringify({eventId:event.id,eventType:event.type,rewardType:reward.type,amount:reward.amount,title:resultTitle,credited:applied.credited})]);
    return {action:'CLAIM',eventType:event.type,title:resultTitle,rewardType:reward.type,amount:Number(reward.amount??0),credited:Number(applied.credited??0)};
   });
