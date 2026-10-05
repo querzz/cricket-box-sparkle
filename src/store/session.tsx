@@ -18,6 +18,7 @@ interface SessionContextValue {
   refresh: () => Promise<void>;
   spin: (options?: SpinOptions) => Promise<Reward | ServiceError>;
   claimGift: () => Promise<Reward | ServiceError>;
+  claimOwnerGift: (id: string) => Promise<{ amount:number; rewardType:string; title?:string } | ServiceError>;
   claimStreakChoice: (choice: NonNullable<DailyStreakSnapshot["day7Choices"]>[number]["type"]) => Promise<{ amount:number; choice:string } | ServiceError>;
   requestWithdrawal: (amount: number) => Promise<true | ServiceError>;
   setSeasonState: (state: SeasonState) => Promise<void>;
@@ -80,6 +81,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return result.data.reward;
   }, []);
 
+  const claimOwnerGift = useCallback<SessionContextValue["claimOwnerGift"]>(async (id) => {
+    const result = await cricketApi.claimOwnerGift(id);
+    if (!result.ok) return result.error;
+    await refresh();
+    return result.data;
+  }, [refresh]);
+
   const claimStreakChoice = useCallback<SessionContextValue["claimStreakChoice"]>(async (choice) => {
     const result = await cricketApi.claimStreakChoice(choice);
     if (!result.ok) return result.error;
@@ -130,7 +138,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (result.ok) setSnapshot(result.data);
   }, [refresh]);
 
-  const value = useMemo(() => ({ snapshot, loading, error, refresh, spin, claimGift, claimStreakChoice, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession }), [snapshot, loading, error, refresh, spin, claimGift, claimStreakChoice, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession]);
+  const value = useMemo(() => ({ snapshot, loading, error, refresh, spin, claimGift, claimOwnerGift, claimStreakChoice, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession }), [snapshot, loading, error, refresh, spin, claimGift, claimOwnerGift, claimStreakChoice, requestWithdrawal, setSeasonState, setSubscribed, setStarsAmount, setSimulateNetworkError, resetDailyFreeSpin, resetSession]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
