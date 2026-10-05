@@ -110,3 +110,65 @@ This is a code/read-model audit, not a claim that every item below is currently 
 - make historical “all seasons” semantics explicit.
 
 Do not rewrite working features solely for style. Each change should be small, verified against the existing data model, and committed separately or in a tightly scoped batch.
+
+
+## Fix status — 2026-10-05
+
+### Block 1 — reporting/data correctness ✅
+Implemented:
+- Season Report production metrics now exclude `users.is_test=TRUE`.
+- Historical Veteran/Elite calculation now counts distinct previous seasons, not completed spins.
+Commit: `86def1b03910849a91bba53f2d0387e57b361aa3`.
+
+### Block 2 — admin read models ✅
+Implemented:
+- Admin Spins excludes test users.
+- Admin Payouts excludes test users in list and aggregates.
+- Admin Economics spin counters exclude test users.
+- Admin Statistics aligns test-user filtering for payout, withdrawal, daily-spin and retention paths.
+- Statistics can target an explicitly selected season.
+- Admin dashboard passes the selected season to statistics.
+- Season list GET no longer repairs/mutates live seasons.
+Commits:
+`24dd2fe8e813dd90dbb415790ac7159ea6df4f24`
+`f89009f82bd4589794b1f1487aa8c4ea92d6fd2e`
+`298692defaaed9ba1090269f6381bd9b6b1a4d59`
+`53a57d8e03a376071d53857d4fcf8c6bafcf0099`
+`1e736815194c742fcbad910a723f7a158e3e36e9`
+`6288a151c24529af8a0543babc330c8730a85db2`
+`85752de05bced944d3e8996f09750deed12b8e64`
+`753749838c7383a0be7ef754419b563959f20cad`.
+
+### Block 3 — operational/reliability ✅
+Implemented:
+- Free-spin campaign grants now respect their configured start/end window, including the current-participant grant path.
+- Channel Activity aggregate counters exclude test users consistently.
+- Clean schema bootstrap no longer references `seasons` before the table exists.
+Commits:
+`43a2ad3cf597c3c5df0b28d8b972f8b959e9e44d`
+`69849c1b5eb4cf0b9961006e0a4f70cc54d8fd24`
+`9a83666441ce11abfb0b6ebca1f5c64534260d80`.
+
+### Block 4 — mutation safety / semantics ✅ (targeted fixes)
+Implemented:
+- Manual free-spin grants initialize `user_state` before updating it.
+- Personal owner-gift creation now reads/modifies/writes the settings row inside a transaction.
+- Participants “Все сезоны” is now a real cross-season query rather than silently falling back to the current season.
+Commits:
+`82d82a272d3a5cd9cdc639564b462087b4df4b25`
+`01e3a699c06a71acc000af2325014b91d874e8eb`
+`e9580d39159d94fc10e744ba372b4c3f1362dcd5`
+`52f1f5de2fea1e2082ff26a341f08a5da8fcfc6c`.
+
+### Remaining audit items
+The following are intentionally not marked fixed yet:
+- atomic multi-prize editor save;
+- economics-override UI/backend parity;
+- deeper Channel Activity ingestion/runtime validation and no-backfill limitation;
+- historical withdrawal attribution gaps;
+- duplicated retention implementation;
+- positional season display codes;
+- stale implementation-status documentation;
+- any issue that still needs real Telegram/browser/PostgreSQL runtime verification.
+
+The code changes above are repository-level fixes. They do not by themselves prove production deployment or end-to-end runtime success.
