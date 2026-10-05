@@ -166,3 +166,42 @@ SELECT season_id,user_id,spins_count,wins_count,stars_won,RANK() OVER(PARTITION 
 
 ALTER TABLE star_transactions DROP CONSTRAINT IF EXISTS star_transactions_status_check;
 ALTER TABLE star_transactions ADD CONSTRAINT star_transactions_status_check CHECK (status IN ('PENDING','REFUND_PENDING','SUCCESS','REFUNDED','FAILED'));
+
+
+-- 2026-10-05 historical Stars reward backfill
+DO $$
+DECLARE r RECORD; current_balance INTEGER; requested INTEGER; credited INTEGER; overflow INTEGER;
+BEGIN
+  FOR r IN
+    SELECT s.id AS spin_id,s.user_id,s.season_id,LEAST(500,GREATEST(0,FLOOR(p.amount)))::int AS reward
+    FROM spins s
+    JOIN prizes p ON p.id=s.prize_id AND p.kind='STARS'
+    WHERE s.status='COMPLETED'
+      AND NOT EXISTS (SELECT 1 FROM stars_ledger sl WHERE sl.spin_id=s.id AND sl.type='REWARD')
+      AND EXISTS (
+        SELECT 1 FROM payouts py
+        WHERE py.spin_id=s.id AND py.kind='STARS' AND py.status IN ('PENDING','REVIEW')
+      )
+  LOOP
+    requested := r.reward;
+    INSERT INTO user_state(user_id) VALUES(r.user_id) ON CONFLICT(user_id) DO NOTHING;
+    SELECT stars_balance INTO current_balance FROM user_state WHERE user_id=r.user_id FOR UPDATE;
+    credited := LEAST(requested,GREATEST(0,500-current_balance));
+    overflow := requested-credited;
+    INSERT INTO stars_ledger(user_id,season_id,spin_id,type,amount,reference_id,idempotency_key,metadata)
+    VALUES(r.user_id,r.season_id,r.spin_id,'REWARD',requested,r.spin_id::text,'historical-spin-stars:'||r.spin_id::text,
+           jsonb_build_object('source','HISTORICAL_BACKFILL','requestedAmount',requested,'creditedAmount',credited,'overflowAmount',overflow))
+    ON CONFLICT(idempotency_key) DO NOTHING;
+    IF credited>0 THEN
+      UPDATE user_state SET stars_balance=current_balance+credited,updated_at=now() WHERE user_id=r.user_id;
+    ELSE
+      UPDATE user_state SET updated_at=now() WHERE user_id=r.user_id;
+    END IF;
+    IF overflow>0 THEN
+      INSERT INTO stars_ledger(user_id,season_id,spin_id,type,amount,reference_id,idempotency_key,metadata)
+      VALUES(r.user_id,r.season_id,r.spin_id,'CAPPED_OVERFLOW_BURNED',-overflow,r.spin_id::text,'historical-spin-stars-overflow:'||r.spin_id::text,
+             jsonb_build_object('source','HISTORICAL_BACKFILL','requestedAmount',requested,'creditedAmount',credited,'overflowAmount',overflow))
+      ON CONFLICT(idempotency_key) DO NOTHING;
+    END IF;
+  END LOOP;
+END $$;
