@@ -4,6 +4,7 @@ import { ChevronRight, Flame, Trophy, ScrollText, HelpCircle, History, LifeBuoy,
 import { AppShell } from "@/components/kit/AppShell";
 import { DailyStreakCard } from "@/components/kit/DailyStreakCard";
 import { GlassCard } from "@/components/kit/GlassCard";
+import { OwnerGiftCard } from "@/components/kit/OwnerGiftCard";
 import { ProfileHeader } from "@/components/kit/ProfileHeader";
 import { ErrorState, LoadingState } from "@/components/kit/States";
 import { StarsBalance } from "@/components/kit/StarsBalance";
@@ -38,6 +39,7 @@ function ProfileScreen() {
     <AppShell title="Профиль" action={<Link to="/settings" aria-label="Настройки" className="press grid size-9 place-items-center rounded-full bg-muted/50"><Settings className="size-4" /></Link>}>
       <ProfileHeader user={snapshot.user} />
       <DailyStreakCard streak={snapshot.streak} />
+      <OwnerGiftCard gift={snapshot.ownerGift} />
       <GlassCard glow className="mt-5 px-4 py-4">
         <p className="relative text-[10px] uppercase tracking-[0.24em] text-muted-foreground">⭐ Баланс CRICKET BOX</p>
         <div className="relative mt-2.5"><StarsBalance balance={snapshot.stars} size="lg" showProgress /></div>
