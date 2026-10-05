@@ -14,7 +14,17 @@ export const Route=createFileRoute("/api/admin/daily-streak")({server:{handlers:
       const seasonResult=await query<SeasonRow>(
         requested
           ? "SELECT id::text,code,name,state,starts_at::text,ends_at::text FROM seasons WHERE id=$1::uuid"
-          : "SELECT id::text,code,name,state,starts_at::text,ends_at::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 WHEN state='SCHEDULED' THEN 2 ELSE 3 END,created_at DESC LIMIT 1",
+          : "SELECT id::text,code,name,state,starts_at::text,ends_at::text
+             FROM seasons
+            WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')
+            ORDER BY CASE
+              WHEN state='ACTIVE' THEN 0
+              WHEN state='ENDING' THEN 1
+              WHEN state='PAYOUT' THEN 2
+              WHEN state='CLOSED' THEN 3
+              WHEN state='ARCHIVED' THEN 4
+              ELSE 5
+            END,created_at DESC LIMIT 1",
         requested?[requested]:[],
       );
       const season=seasonResult.rows[0];
