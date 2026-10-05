@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { authenticateAdmin } from "@/server/auth/access";
 import { query, withTransaction } from "@/server/db";
+import { sendTelegramNotification } from "@/server/telegram-notify";
 
 const DEFAULTS = {
   enabled: { "gift-or-pass": true, "good-or-bad": false, "owner-special": true },
@@ -88,7 +89,7 @@ export const Route = createFileRoute("/api/admin/mechanics")({ server:{ handlers
         await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'ENTERTAINMENT_EVENT_CREATED','user',$2,$3::jsonb)`, [admin.id,user.rows[0].id,JSON.stringify({eventId:event.rows[0].id,type,telegramId,rewardType,amount,passCount,goodAmount})]);
         return {id:event.rows[0].id,username:user.rows[0].username?('@'+user.rows[0].username.replace(/^@/,'')):'—',telegramId,type,status:'OFFERED',createdAt:event.rows[0].created_at,payload};
       });
-      return Response.json({ok:true,event:result});
+      const eventLabel = type==="GIFT_OR_PASS" ? "🎁 Подарок, который можно передать" : type==="GOOD_OR_BAD" ? "🎲 Хороший или неудачный подарок" : "✨ Особый подарок владельца";\n      void sendTelegramNotification(telegramId, `<b>${eventLabel}</b>\n\nОткрой CRICKET BOX — для тебя появилось новое событие.`);\n      return Response.json({ok:true,event:result});
     } catch(error) {
       const code=error instanceof Error?error.message:'ENTERTAINMENT_CREATE_FAILED';
       const status=['INVALID_EVENT_TYPE','INVALID_REWARD_TYPE','INVALID_REWARD_AMOUNT','TELEGRAM_ID_REQUIRED','MECHANIC_DISABLED'].includes(code)?400:code==='USER_NOT_FOUND'?404:code==='ADMIN_ACCESS_DENIED'?401:500;
