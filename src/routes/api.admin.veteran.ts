@@ -8,7 +8,7 @@ export const Route = createFileRoute("/api/admin/veteran")({
     GET: async ({ request }) => {
       try {
         const admin = await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
-        const enabledResult = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, FALSE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
+        const enabledResult = await query<{ enabled: boolean }>(`SELECT COALESCE((value->>'enabled')::boolean, TRUE) AS enabled FROM app_settings WHERE key='veteran_bonus'`);
         const enabled = enabledResult.rows[0]?.enabled === true;
         const users = await query<{ id:string;telegram_id:string;username:string|null;first_name:string;last_name:string|null;veteran_tier_override:VeteranTier|null;seasons:string;spins:string;wins:string;tier:VeteranTier;bonus_issued:string;bonus_used:string }>(
           `WITH current_season AS (
@@ -31,7 +31,13 @@ export const Route = createFileRoute("/api/admin/veteran")({
                   COALESCE(h.seasons,'0') AS seasons,COALESCE(h.spins,'0') AS spins,COALESCE(h.wins,'0') AS wins,
                   CASE WHEN u.veteran_tier_override IS NOT NULL THEN u.veteran_tier_override ELSE CASE WHEN COALESCE(h.seasons::int,0)>=5 THEN 'ELITE'::text WHEN COALESCE(h.seasons::int,0)>=3 THEN 'VETERAN'::text ELSE 'ROOKIE'::text END END AS tier,
                   COALESCE(us.veteran_bonus_spins_issued,0)::text AS bonus_issued,
-                  COALESCE((SELECT COUNT(*) FROM spins vb WHERE vb.user_id=u.id AND vb.type='VETERAN_BONUS' AND vb.status='COMPLETED'),0)::text AS bonus_used
+                  COALESCE((
+                    SELECT COUNT(*) FROM spins vb
+                     WHERE vb.user_id=u.id
+                       AND vb.type='VETERAN_BONUS'
+                       AND vb.status='COMPLETED'
+                       AND EXISTS (SELECT 1 FROM current_season cs2 WHERE cs2.id=vb.season_id)
+                  ),0)::text AS bonus_used
              FROM users u
              LEFT JOIN history h ON h.user_id=u.id
              LEFT JOIN user_state us ON us.user_id=u.id
