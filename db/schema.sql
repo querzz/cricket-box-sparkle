@@ -235,3 +235,19 @@ BEGIN
 END $$;
 
 ALTER TABLE owner_gifts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+
+CREATE TABLE IF NOT EXISTS entertainment_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season_id UUID REFERENCES seasons(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('GIFT_OR_PASS','GOOD_OR_BAD','OWNER_SPECIAL')),
+  status TEXT NOT NULL DEFAULT 'OFFERED' CHECK (status IN ('OFFERED','CLAIMED','PASSED','CANCELLED','EXPIRED')),
+  pass_remaining INTEGER NOT NULL DEFAULT 0 CHECK (pass_remaining >= 0 AND pass_remaining <= 20),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  acted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_entertainment_events_user ON entertainment_events(user_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entertainment_events_season ON entertainment_events(season_id,type,status,created_at DESC);
