@@ -29,5 +29,4 @@ POST:async({request})=>{
    return{duplicate:false,amount:credited,rewardType:type,title:gift.title};
   });
   return Response.json({ok:true,...result});
- }catch(error){const code=error instanceof Error?error.message:'OWNER_GIFT_CLAIM_FAILED';return Response.json({ok:false,code},{status:code==='GIFT_NOT_FOUND'?404:code==='GIFT_NOT_AVAILABLE'?409:400});}
-}}});
+ }catch(error){const code=error instanceof Error?error.message:'OWNER_GIFT_CLAIM_FAILED';return Response.json({ok:false,code},{status:code==='GIFT_NOT_FOUND'?404:code==='GIFT_NOT_AVAILABLE'?409:400});}}}}});
