@@ -14,7 +14,17 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const seriesStart = days === 1 ? "current_date" : "current_date - interval '" + String(days - 1) + " days'";
         let seasonId: string | null = null;
         if (scope === "current") {
-          const season = await query<{ id: string }>(`SELECT id::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`);
+          const season = await query<{ id: string }>(`SELECT id::text FROM seasons
+           WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED')
+           ORDER BY CASE
+             WHEN state='ACTIVE' THEN 0
+             WHEN state='ENDING' THEN 1
+             WHEN state='PAYOUT' THEN 2
+             WHEN state='CLOSED' THEN 3
+             WHEN state='ARCHIVED' THEN 4
+             ELSE 5
+           END, created_at DESC
+           LIMIT 1`);
           seasonId = season.rows[0]?.id ?? null;
         }
         const seasonFilter = seasonId ? `AND s.season_id = $1::uuid` : "";
