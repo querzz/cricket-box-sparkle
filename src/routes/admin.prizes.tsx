@@ -155,7 +155,7 @@ function AdminPrizes() {
   const totals = useMemo(() => {
     const winning = drafts.reduce((sum, prize) => sum + (prize.kind === "EMPTY" ? 0 : Math.max(0, prize.quantity)), 0);
     const available = drafts.reduce((sum, prize) => sum + remaining(prize), 0);
-    const stars = drafts.filter((p) => p.kind === "STARS").reduce((sum, p) => sum + p.amount * p.quantity, 0);
+    const stars = drafts.filter((p) => p.kind === "STARS" || p.kind === "NFT").reduce((sum, p) => sum + p.amount * p.quantity, 0);
     const premium = drafts.filter((p) => p.kind === "PREMIUM").reduce((sum, p) => sum + Math.max(0, p.quantity), 0);
     const premiumCost = drafts.filter((p) => p.kind === "PREMIUM").reduce((sum, p) => sum + p.unitCost * Math.max(0, p.quantity), 0);
     const moneyCost = drafts.filter((p) => p.kind === "MONEY").reduce((sum, p) => sum + p.unitCost * Math.max(0, p.quantity), 0);
@@ -209,7 +209,7 @@ function AdminPrizes() {
             <SummaryMetric label="Выигрышных" value={String(totals.winning)} icon={Trophy} />
             <SummaryMetric label="Доступно" value={String(totals.available)} icon={WalletCards} />
             <SummaryMetric label="Пустых" value={String(totals.empty)} icon={Gift} />
-            <SummaryMetric label="Stars" value={`${totals.stars} ⭐`} icon={Star} />
+            <SummaryMetric label="Обязательства Stars" value={`${totals.stars} ⭐`} icon={Star} />
           </div>
         </GlassCard>
 
@@ -252,7 +252,7 @@ function AdminPrizes() {
         <GlassCard className="admin-pool-summary space-y-2.5 px-3.5 py-3.5">
           <div className="flex items-center justify-between"><div><p className="eyebrow">Контроль фонда</p><p className="mt-1 text-xs font-semibold">Перед сохранением проверь доступный остаток</p></div><Trophy className="size-5 text-primary-glow" /></div>
           <div className="grid grid-cols-2 gap-2 text-[10px]"><LineMetric label="Premium" value={`${totals.premium} шт.`}/><LineMetric label="Стоимость Premium" value={`${totals.premiumCost} CHF`}/><LineMetric label="Затраты на деньги" value={`${totals.moneyCost} грн`}/><LineMetric label="Обязательства Stars" value={`${totals.stars} ⭐`}/></div>
-          <p className="text-[9px] leading-relaxed text-muted-foreground">Вес выпадения — относительный шанс: 2 примерно вдвое выше 1 при одинаковом остатке. Итоговый шанс также зависит от количества оставшихся призов. После первой выдачи экономические параметры награды блокируются.</p>
+          <p className="text-[9px] leading-relaxed text-muted-foreground">Стоимость NFT в ⭐ тоже входит в обязательства Stars. Вес выпадения — относительный шанс: 2 примерно вдвое выше 1 при одинаковом остатке. Итоговый шанс также зависит от количества оставшихся призов. После первой выдачи экономические параметры награды блокируются.</p>
         </GlassCard>
 
         <PrimaryButton fullWidth disabled={loading || saving || !!removing || !seasonId} onClick={() => void save()}><Save className="size-4" />{saving ? "Сохраняем…" : "Сохранить призовой фонд"}</PrimaryButton>
