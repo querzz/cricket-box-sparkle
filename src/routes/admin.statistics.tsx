@@ -214,7 +214,7 @@ function AdminStatistics() {
                     : "rounded-full border border-glass-border bg-muted/10 px-2.5 py-1.5 text-[10px] text-muted-foreground"
                 }
               >
-                {value === 1 ? "Сегодня" : `${value} дн.`}
+                {value === 1 ? "Сегодня" : `${value} дней`}
               </button>
             ))}
           </div>
@@ -247,7 +247,7 @@ function AdminStatistics() {
                   <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                     Данные PostgreSQL
                   </p>
-                  <h1 className="mt-1 font-display text-xl uppercase">Статистика</h1>
+                  <h1 className="mt-1 font-display text-xl uppercase">Статистика</h1><p className="mt-1 text-[10px] text-primary-glow">Основные цифры считаются за выбранный период: {days === 1 ? "сегодня" : `последние ${days} дней`}.</p>
                 </div>
                 <BarChart3 className="size-5 text-primary-glow" />
               </div>
