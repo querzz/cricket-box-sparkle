@@ -169,7 +169,11 @@ try {
      RETURNING id,user_id`,
     [userA, userB, seasonA, starsPrize.rows[0].id],
   );
-  await db.query(`INSERT INTO payouts (spin_id,user_id,prize_id,kind,amount,currency,status) VALUES ($1,$2,$3,'STARS',137,'XTR','PAID')`, [spin1.rows[0].id, userA, starsPrize.rows[0].id]);
+  await db.query(
+    `INSERT INTO stars_ledger (user_id,season_id,spin_id,type,amount,idempotency_key,metadata)
+     VALUES ($1,$2,$3,'REWARD',137,$4,$5::jsonb)`,
+    [userA, seasonA, spin1.rows[0].id, `ci-leaderboard-reward:${suffix}`, JSON.stringify({ requestedAmount: 137, creditedAmount: 0, overflowAmount: 137, source: "CI_FIXTURE" })],
+  );
   const board = await db.query(`SELECT u.username,l.season_id,l.spins_count,l.wins_count,l.stars_won,l.rank FROM season_leaderboard l JOIN users u ON u.id=l.user_id WHERE l.season_id=$1 ORDER BY l.rank`, [seasonA]);
   assert(board.rowCount === 2, "leaderboard contains only users with completed spins in season");
   assert(board.rows[0].username === `ci_a_${suffix}`, "leaderboard ranks top user correctly");
