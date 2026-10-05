@@ -167,12 +167,12 @@ assert(prizeAdmin.includes("Себестоимость") && prizeAdmin.includes(
 assert(bot.includes("countedComments >= 20") && bot.includes("(countedComments + 1) % 2 === 0"), "channel activity enforces 20 counted comments/day and 2 comments per point");
 assert(session.includes("const activityEnabled") && session.indexOf("grantActiveFreeSpinCampaigns") < session.indexOf("if (activityEnabled)"), "global free-spin campaign grant stays independent of activity accrual");
 assert(dailyGiftApi.includes("rewardChanceByTier") && adminSettings.includes("Шанс получить награду в Daily Gift"), "Daily Gift exposes one configurable chance per rank");
-assert(streakService.includes("getSeasonDayCount") && streakService.includes("getCurrentSeasonDay"), "daily streak duration is derived from season dates");
-assert(session.includes("recordSeasonCheckin") && session.includes("dailyStreak"), "session records and returns daily streak");
+assert(streakService.includes("DAILY_STREAK_REWARDS") && streakService.includes("DAILY_STREAK_TOTAL_DAYS = 7"), "daily streak uses the approved 7-day reward cycle");
+assert(session.includes("season_daily_checkins") && session.includes("dailyStreak"), "session records and returns daily streak");
 assert(home.includes("snapshot.streak.currentStreak") && home.includes("дней подряд"), "player home shows streak flame/progress");
-assert(streakUi.includes("Daily Streak") && streakUi.includes("Без пропусков") && streakUi.includes("Готовы к 15"), "admin daily streak dashboard exposes key metrics");
+assert(streakUi.includes("Daily Streak") && streakUi.includes("Без пропусков") && streakUi.includes("Готовы к дню 7"), "admin daily streak dashboard exposes key metrics");
 assert(streakApi.includes("season_daily_checkins") && streakApi.includes("eligibleForReward"), "admin daily streak API reads real season check-ins");
-assert(streakService.includes("eligibleForReward") && streakService.includes("rewardStars = 15"), "full season check-in eligibility is tracked for the 15 Stars reward");
+assert(streakService.includes("eligibleForReward") && streakService.includes("rewardStars = 10"), "7-day streak eligibility and 10 Stars reward schedule are tracked");
 
 console.log("✅ Product UX/Admin/Bot static QA passed");
 console.log(`Checked user routes: ${userRoutes.length}, admin views: ${adminRoutes.length}, admin APIs: ${adminApis.length}`);
