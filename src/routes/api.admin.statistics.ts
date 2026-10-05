@@ -9,6 +9,9 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const url = new URL(request.url);
         await authenticateAdmin(url.searchParams.get("initData") ?? "");
         const scope = url.searchParams.get("scope") === "all" ? "all" : "current";
+        const rawDays = Number(url.searchParams.get("days") ?? 7);
+        const days = rawDays === 1 || rawDays === 30 ? rawDays : 7;
+        const seriesStart = days === 1 ? "current_date" : "current_date - interval '" + String(days - 1) + " days'";
         let seasonId: string | null = null;
         if (scope === "current") {
           const season = await query<{ id: string }>(`SELECT id::text FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`);
@@ -27,8 +30,8 @@ export const Route = createFileRoute("/api/admin/statistics")({
         const withdrawalFilter = seasonId ? `WHERE EXISTS (SELECT 1 FROM spins sp WHERE sp.id=p.spin_id AND sp.season_id=$1::uuid) OR p.note='WITHDRAWAL_REQUEST'` : "";
         const withdrawals = await query<{ total: string; paid: string }>(`SELECT COUNT(*) FILTER (WHERE p.note='WITHDRAWAL_REQUEST')::text AS total, COUNT(*) FILTER (WHERE p.note='WITHDRAWAL_REQUEST' AND p.status='PAID')::text AS paid FROM payouts p ${withdrawalFilter}`, params);
         const revenue = await query<{ value: string }>(`SELECT COALESCE(SUM(amount),0)::text AS value FROM star_transactions ${seasonId ? `WHERE status='SUCCESS' AND payload->>'seasonId'=$1` : `WHERE status='SUCCESS'`}`, params);
-        const newUsers = await query<{ day: string; value: string }>(`SELECT to_char(d.day,'DD.MM') AS day, COUNT(u.id)::text AS value FROM generate_series(current_date - interval '6 days', current_date, interval '1 day') d(day) LEFT JOIN users u ON u.created_at >= d.day AND u.created_at < d.day + interval '1 day' GROUP BY d.day ORDER BY d.day`);
-        const spinDays = await query<{ day: string; value: string }>(`SELECT to_char(d.day,'DD.MM') AS day, COUNT(s.id)::text AS value FROM generate_series(current_date - interval '6 days', current_date, interval '1 day') d(day) LEFT JOIN spins s ON s.created_at >= d.day AND s.created_at < d.day + interval '1 day' AND s.status='COMPLETED' ${seasonId ? `AND s.season_id=$1::uuid` : ""} GROUP BY d.day ORDER BY d.day`, params);
+        const newUsers = await query<{ day: string; value: string }>("SELECT to_char(d.day,'DD.MM') AS day, COUNT(u.id)::text AS value FROM generate_series(" + seriesStart + ", current_date, interval '1 day') d(day) LEFT JOIN users u ON u.created_at >= d.day AND u.created_at < d.day + interval '1 day' GROUP BY d.day ORDER BY d.day");
+        const spinDays = await query<{ day: string; value: string; free: string; paid: string; bonus: string }>("SELECT to_char(d.day,'DD.MM') AS day, COUNT(s.id) FILTER (WHERE s.status='COMPLETED')::text AS value, COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type='FREE')::text AS free, COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type='PAID')::text AS paid, COUNT(s.id) FILTER (WHERE s.status='COMPLETED' AND s.type IN ('ACTIVITY_BONUS','VETERAN_BONUS','OWNER_GIFT'))::text AS bonus FROM generate_series(" + seriesStart + ", current_date, interval '1 day') d(day) LEFT JOIN spins s ON s.created_at >= d.day AND s.created_at < d.day + interval '1 day' AND s.status='COMPLETED' " + (seasonId ? "AND s.season_id=$1::uuid" : "") + " GROUP BY d.day ORDER BY d.day", params);
         const participantsToday = await query<{ value: string }>(`SELECT COUNT(DISTINCT user_id)::text AS value FROM spins WHERE status='COMPLETED' AND created_at >= current_date ${seasonId ? `AND season_id=$1::uuid` : ""}`, params);
 
         const registered = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM users`);
@@ -106,10 +109,14 @@ export const Route = createFileRoute("/api/admin/statistics")({
               d7Rate: eligibleD7 ? retainedD7 / eligibleD7 : 0,
             },
           },
+          days,
           daily: {
             users: newUsers.rows.map((r) => Number(r.value)),
             userLabels: newUsers.rows.map((r) => r.day),
             spins: spinDays.rows.map((r) => Number(r.value)),
+            freeSpins: spinDays.rows.map((r) => Number(r.free)),
+            paidSpins: spinDays.rows.map((r) => Number(r.paid)),
+            bonusSpins: spinDays.rows.map((r) => Number(r.bonus)),
           },
         });
       } catch (error) {
