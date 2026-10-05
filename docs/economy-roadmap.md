@@ -2,6 +2,14 @@
 
 This document records agreed future economy ideas plus the current admin/product worklist. Features in the backlog are not considered implemented until explicitly completed and verified in production.
 
+
+
+### End-of-season reporting
+
+A dedicated **Season Report** is planned as the final analytics view for a closed/ending season. It should consolidate season-level performance into one operator-friendly report: core KPIs, completed/failed/refunded spins, free vs paid activity, Stars revenue, payout liability and completed payouts, withdrawals, Daily Gift, bonus-spin sources, Daily Streak completion, prize-pool consumption, daily activity, top players, rank distribution and next-season decision metrics.
+
+The report is intentionally season-specific and can be opened for historical seasons from the admin panel. It is a live calculation from PostgreSQL so payout sections can be refreshed after manual fulfillment.
+
 ### Current implementation notes — 2026-10-05
 
 The agreed admin/economy batch is now tracked as the active implementation scope. The repository currently contains the corresponding code changes, but production deployment/verification is still required before calling them live.
