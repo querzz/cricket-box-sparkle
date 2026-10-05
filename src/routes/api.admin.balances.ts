@@ -94,7 +94,7 @@ export const Route = createFileRoute("/api/admin/balances")({
         const result = await withTransaction(async client => {
           const user = await client.query<{id:string;telegram_id:string;username:string|null}>(
             "SELECT id::text,telegram_id::text,username FROM users " +
-            "WHERE is_test=FALSE AND (($1<>'' AND id=$1::uuid) OR ($2<>'' AND telegram_id::text=$2)) " +
+            "WHERE is_test=FALSE AND ((NULLIF($1,'')::uuid IS NOT NULL AND id=NULLIF($1,'')::uuid) OR ($2<>'' AND telegram_id::text=$2)) " +
             "LIMIT 1 FOR UPDATE",
             [userId,telegramId],
           );
