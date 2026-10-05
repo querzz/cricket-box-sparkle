@@ -173,3 +173,18 @@ The following are intentionally not marked fixed yet:
 - any issue that still needs real Telegram/browser/PostgreSQL runtime verification.
 
 The code changes above are repository-level fixes. They do not by themselves prove production deployment or end-to-end runtime success.
+
+
+## 2026-10-05 repair findings and implementation target
+
+The latest deployed QA pass exposed several real runtime gaps that were not covered by the earlier green static/integration checks:
+
+- Stars spin rewards were still modeled as manual payout rows instead of immediate user-balance credits.
+- The Payouts list has a PostgreSQL parameter-binding bug in its counts query.
+- Admin Spins season loading needs a runtime-safe season list path and Bonus filtering.
+- Daily Streak derives its horizon from planned end dates and therefore survives an early close visually.
+- Season Report also derives duration from the planned end instead of the actual close.
+- Audit still exposes raw entity UUIDs prominently.
+- Owner Gifts and Entertainment Mechanics need end-to-end behavior, not just forms/settings.
+
+The accepted repair sequence is documented in docs/REPAIR_PLAN_2026-10-05.md.
