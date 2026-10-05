@@ -205,3 +205,31 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+
+-- Migrate legacy owner gifts JSON into relational owner_gifts
+DO $$
+DECLARE g JSONB; uid UUID; aid UUID; reward_type TEXT; reward_amount INTEGER; status_text TEXT;
+BEGIN
+  FOR g IN
+    SELECT value FROM app_settings WHERE key='owner_gifts' AND jsonb_typeof(value)='array'
+  LOOP
+    -- Legacy records are migrated only when a matching relational row is not already present.
+    IF jsonb_typeof(g)='array' THEN
+      PERFORM 1;
+    END IF;
+  END LOOP;
+  FOR g IN SELECT jsonb_array_elements(value) FROM app_settings WHERE key='owner_gifts' AND jsonb_typeof(value)='array'
+  LOOP
+    SELECT id INTO uid FROM users WHERE telegram_id::text=(g->>'telegramId') AND is_test=FALSE LIMIT 1;
+    IF uid IS NULL THEN CONTINUE; END IF;
+    IF EXISTS (SELECT 1 FROM owner_gifts WHERE user_id=uid AND title=COALESCE(g->>'gift','Личный подарок') AND created_at BETWEEN COALESCE((g->>'createdAt')::timestamptz,now())-interval '1 minute' AND COALESCE((g->>'createdAt')::timestamptz,now())+interval '1 minute') THEN CONTINUE; END IF;
+    reward_type:=COALESCE(g->>'rewardType','NOTE');
+    reward_amount:=GREATEST(0,COALESCE((g->>'amount')::int,0));
+    status_text:=CASE WHEN g->>'status'='Выдан' THEN 'CLAIMED' WHEN g->>'status'='Отменён' THEN 'CANCELLED' ELSE 'SENT' END;
+    INSERT INTO owner_gifts(user_id,title,message,status,rewards,created_at,claimed_at)
+      VALUES(uid,COALESCE(g->>'gift','Личный подарок'),NULLIF(g->>'message',''),status_text,
+             CASE WHEN reward_type='NOTE' THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object('type',reward_type,'amount',reward_amount)) END,
+             COALESCE((g->>'createdAt')::timestamptz,now()),CASE WHEN status_text='CLAIMED' THEN COALESCE((g->>'issuedAt')::timestamptz,now()) ELSE NULL END);
+  END LOOP;
+END $$;
