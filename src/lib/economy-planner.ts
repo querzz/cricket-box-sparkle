@@ -96,7 +96,7 @@ export function calculateEconomyPlan(input: EconomyPlannerInput): EconomyPlanner
     currentRemainingOutcomes += quantityRemaining;
     if (prize.kind !== "EMPTY") meaningfulPrizeUnits += quantityTotal;
 
-    if (prize.kind === "STARS") {
+    if (prize.kind === "STARS" || prize.kind === "NFT") {
       starsPrizeLiability += nonNegative(prize.amount) * quantityTotal;
       continue;
     }
@@ -125,14 +125,14 @@ export function calculateEconomyPlan(input: EconomyPlannerInput): EconomyPlanner
 
   const warnings: string[] = [];
   if (input.participants > maxParticipants) warnings.push(`Участники ограничены максимумом ${maxParticipants}.`);
-  if (!input.paidEnabled && input.paidConversionPercent > 0) warnings.push("Платные прокрутки выключены, поэтому paid conversion в расчёте обнулена.");
+  if (!input.paidEnabled && input.paidConversionPercent > 0) warnings.push("Платные прокрутки выключены, поэтому конверсия в оплату в расчёте обнулена.");
   if (starsUsdPer1000 <= 0 && grossStarsCharged > 0) warnings.push("Не задана сценарная стоимость вывода Telegram Stars: revenue и break-even не рассчитаны корректно.");
-  if (planningSpins > totalConfiguredOutcomes && totalConfiguredOutcomes > 0) warnings.push("Плановый объём превышает весь конечный призовой пул: часть попыток неизбежно останется без finite-награды.");
-  if (totalConfiguredOutcomes === 0) warnings.push("Для сезона пока не настроен конечный призовой фонд.");
+  if (planningSpins > totalConfiguredOutcomes && totalConfiguredOutcomes > 0) warnings.push("Плановый объём превышает весь призовой фонд: часть попыток неизбежно останется без доступной награды.");
+  if (totalConfiguredOutcomes === 0) warnings.push("Для сезона пока не настроен призовой фонд.");
   if (Object.keys(materialCostByCurrency).some((currency) => currency !== "USD")) {
-    warnings.push("В фонде есть затраты не в USD. Они показаны отдельно и не включены в USD-маржу без отдельного FX-предположения.");
+    warnings.push("В фонде есть затраты не в долларах. Они показаны отдельно и не включены в маржу в долларах без отдельного курса валюты.");
   }
-  if (input.paidEnabled && paidPriceStars <= 0) warnings.push("Цена paid spin должна быть больше нуля.");
+  if (input.paidEnabled && paidPriceStars <= 0) warnings.push("Цена платной прокрутки должна быть больше нуля.");
   if (freeSpinsPerDay > 1) warnings.push("Текущая базовая продуктовая модель предусматривает 1 free spin в день; дополнительные значения оставлены только для сценарного моделирования.");
 
   let status: EconomyPlannerResult["status"] = "HEALTHY";
