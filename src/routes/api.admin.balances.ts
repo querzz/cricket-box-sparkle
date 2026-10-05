@@ -36,7 +36,7 @@ export const Route = createFileRoute("/api/admin/balances")({
           "LEFT JOIN (SELECT s.user_id,COUNT(*) FILTER (WHERE s.status='COMPLETED')::int AS spins," +
           "COUNT(*) FILTER (WHERE s.status='COMPLETED' AND p.prize_id IS NOT NULL AND p.kind<>'EMPTY')::int AS wins " +
           "FROM spins s LEFT JOIN payouts p ON p.spin_id=s.id GROUP BY s.user_id) sp ON sp.user_id=u.id " +
-          "LEFT JOIN (SELECT user_id,COALESCE(SUM(amount) FILTER (WHERE kind='STARS' AND status IN ('PENDING','REVIEW')),0) AS pending_stars " +
+          "LEFT JOIN (SELECT user_id,COALESCE(SUM(amount) FILTER (WHERE kind='STARS' AND status IN ('PENDING','REVIEW') AND note LIKE 'WITHDRAWAL_REQUEST%'),0) AS pending_stars " +
           "FROM payouts GROUP BY user_id) pp ON pp.user_id=u.id " +
           "WHERE u.is_test=FALSE " + filterSql +
           " AND ($2='' OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR u.first_name ILIKE $1 OR COALESCE(u.last_name,'') ILIKE $1) " +
