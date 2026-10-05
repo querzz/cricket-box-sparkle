@@ -20,6 +20,24 @@ jobs:
     name: Build, typecheck & lint
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cricket
+          POSTGRES_PASSWORD: cricket
+          POSTGRES_DB: cricket_box_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U cricket -d cricket_box_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: postgresql://cricket:cricket@localhost:5432/cricket_box_test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,3 +64,21 @@ jobs:
 
       - name: Telegram bot regression
         run: npm run test:bot
+
+      - name: Apply database schema
+        run: node scripts/init-db.mjs
+
+      - name: PostgreSQL integration regression
+        run: npm run test:db
+
+      - name: LiveOps lifecycle regression
+        run: npm run test:liveops
+
+      - name: Spin idempotency regression
+        run: npm run test:spin-idempotency
+
+      - name: Prize probability regression
+        run: npm run test:prize-probabilities
+
+      - name: Payment security regression
+        run: npm run test:payment-security
