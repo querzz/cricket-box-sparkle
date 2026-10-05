@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/kit/AppShell";
 import { GlassCard } from "@/components/kit/GlassCard";
+import { ExportListButton } from "@/components/kit/ExportListButton";
 
 export const Route=createFileRoute("/admin/channel-activity")({
   head:()=>({meta:[{title:"Активность канала — CRICKET BOX"}]}),
@@ -168,7 +169,7 @@ function ChannelActivity(){
       </GlassCard>
 
       <section>
-        <div className="mb-2 flex items-center justify-between"><h2 className="section-label">Пользователи канала</h2><span className="text-[10px] text-muted-foreground">{filtered.length}</span></div>
+        <div className="mb-2 flex items-center justify-between gap-2"><h2 className="section-label">Пользователи канала</h2><div className="flex items-center gap-2"><ExportListButton filename="aktivnost-kanala" title="Активность канала" headers={["Имя","Username","Telegram ID","Дней","Реакций","Комментов","Очков","Бонусов осталось","Уровень"]} rows={filtered.map(r=>[r.name,r.username,r.telegramId,r.activeDays,r.reactions,r.comments,r.score,r.activityBonusRemaining,r.level])}/><span className="text-[10px] text-muted-foreground">{filtered.length}</span></div></div>
         {loading?<GlassCard className="px-4 py-8 text-center text-xs text-muted-foreground">Загружаем активность…</GlassCard>:<div className="space-y-2.5">
           {filtered.map(row=><GlassCard key={row.id} className="px-3.5 py-3.5">
             <div className="flex items-start gap-3">
