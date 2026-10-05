@@ -169,6 +169,77 @@ async function getLinkedDiscussionChatId() {
   }
 }
 
+function isMemberStatus(member) {
+  const status = member?.status;
+  if (status === "member" || status === "administrator" || status === "creator") return true;
+  return status === "restricted" && member?.is_member === true;
+}
+
+function hasCommentContent(message) {
+  return Boolean(
+    message?.text?.trim() ||
+    message?.caption?.trim() ||
+    message?.photo ||
+    message?.video ||
+    message?.animation ||
+    message?.document ||
+    message?.audio ||
+    message?.voice ||
+    message?.video_note ||
+    message?.sticker ||
+    message?.poll ||
+    message?.location ||
+    message?.venue ||
+    message?.contact
+  );
+}
+
+async function handleActivityUpdate(update) {
+  const reaction = update?.message_reaction;
+  if (
+    reaction &&
+    channelId &&
+    String(reaction.chat?.id ?? "") === String(channelId) &&
+    reaction.user?.id &&
+    !reaction.user?.is_bot &&
+    Array.isArray(reaction.new_reaction) &&
+    reaction.new_reaction.length > 0
+  ) {
+    await recordChannelActivity({
+      telegramUserId: reaction.user.id,
+      eventType: "REACTION",
+      eventKey: `reaction:${String(update.update_id)}`,
+      points: 0,
+      metadata: {
+        chatId: reaction.chat.id,
+        messageId: reaction.message_id,
+        reactionCount: reaction.new_reaction.length,
+      },
+    });
+  }
+
+  const memberUpdate = update?.chat_member;
+  if (
+    memberUpdate &&
+    channelId &&
+    String(memberUpdate.chat?.id ?? "") === String(channelId) &&
+    memberUpdate.from?.id &&
+    memberUpdate.new_chat_member?.user?.id &&
+    !memberUpdate.new_chat_member.user.is_bot &&
+    isMemberStatus(memberUpdate.new_chat_member) &&
+    !isMemberStatus(memberUpdate.old_chat_member)
+  ) {
+    const telegramUserId = memberUpdate.new_chat_member.user.id;
+    await recordChannelActivity({
+      telegramUserId,
+      eventType: "JOIN",
+      eventKey: `join:${String(update.update_id)}`,
+      points: 0,
+      metadata: { chatId: memberUpdate.chat.id },
+    });
+  }
+}
+
 async function validatePreCheckout(query) {
   const payload = typeof query.invoice_payload === "string" ? query.invoice_payload : "";
   const amount = Number(query.total_amount);
@@ -282,13 +353,22 @@ async function sendMessage(chatId, text, replyMarkup) {
 }
 
 async function handleMessage(message) {
-  if (linkedDiscussionChatId && message?.chat?.id === linkedDiscussionChatId && message?.from?.id && typeof message.text === "string" && message.text.trim()) {
+  if (
+    linkedDiscussionChatId &&
+    message?.chat?.id === linkedDiscussionChatId &&
+    message?.from?.id &&
+    !message.from.is_bot &&
+    hasCommentContent(message)
+  ) {
     await recordChannelActivity({
       telegramUserId: message.from.id,
       eventType: "COMMENT",
-      eventKey: String(message.message_id),
+      eventKey: `comment:${String(message.chat.id)}:${String(message.message_id)}`,
       points: 0,
-      metadata: { chatId: message.chat.id, textLength: message.text.trim().length },
+      metadata: {
+        chatId: message.chat.id,
+        textLength: typeof message.text === "string" ? message.text.trim().length : 0,
+      },
     });
     return;
   }
@@ -380,6 +460,9 @@ async function handleUpdate(update) {
   if (update?.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
   }
+  if (update?.message_reaction || update?.chat_member) {
+    await handleActivityUpdate(update);
+  }
 }
 
 async function processMessageBatch(messages) {
@@ -412,6 +495,11 @@ async function pollTelegramUpdates() {
   });
 
   linkedDiscussionChatId = await getLinkedDiscussionChatId();
+  const discussionRefreshTimer = setInterval(async () => {
+    linkedDiscussionChatId = await getLinkedDiscussionChatId();
+  }, 5 * 60 * 1000);
+  discussionRefreshTimer.unref?.();
+
   await api("setMyCommands", {
     commands: [
       { command: "start", description: "Открыть CRICKET BOX" },
@@ -428,15 +516,19 @@ async function pollTelegramUpdates() {
       const updates = await api("getUpdates", {
         offset,
         timeout: 25,
-        allowed_updates: ["message", "pre_checkout_query"],
+        allowed_updates: ["message", "message_reaction", "chat_member", "pre_checkout_query"],
       });
       const batch = Array.isArray(updates) ? updates : [];
       const messageUpdates = batch.filter((update) => update?.message).map((update) => update.message);
+      const activityTasks = batch
+        .filter((update) => update?.message_reaction || update?.chat_member)
+        .map((update) => handleUpdate(update)
+          .catch((error) => console.error(`Telegram activity update ${update.update_id} failed:`, error)));
       const preCheckoutTasks = batch
         .filter((update) => update?.pre_checkout_query)
         .map((update) => handleUpdate({ pre_checkout_query: update.pre_checkout_query })
           .catch((error) => console.error(`Telegram pre-checkout ${update.update_id} failed:`, error)));
-      await Promise.all(preCheckoutTasks);
+      await Promise.all([...preCheckoutTasks, ...activityTasks]);
       await processMessageBatch(messageUpdates);
       if (batch.length) offset = Math.max(offset, ...batch.map((update) => Number(update.update_id) + 1));
     } catch (error) {
