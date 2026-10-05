@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/gift")({
           const user = await client.query<{ id: string; xp: number; level: number; veteran_tier_override: "ROOKIE" | "VETERAN" | "ELITE" | null }>(`SELECT id::text, xp, level, veteran_tier_override FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
           if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
           await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [user.rows[0].id]);
-          const state = await client.query<{ is_participant:boolean; is_subscribed:boolean; daily_gift_claimed_at:string|null; stars_balance:number; bonus_free_spins:number; daily_gift_chance_boost_pct:number }>(`SELECT is_participant,is_subscribed,daily_gift_claimed_at::text,stars_balance,bonus_free_spins,daily_gift_chance_boost_pct FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [user.rows[0].id]);
+          const state = await client.query<{ is_participant:boolean; is_subscribed:boolean; daily_gift_claimed_at:string|null; stars_balance:number; bonus_free_spins:number; daily_gift_chance_boost_pct:number; daily_gift_boost_season_id:string|null }>(`SELECT is_participant,is_subscribed,daily_gift_claimed_at::text,stars_balance,bonus_free_spins,daily_gift_chance_boost_pct,daily_gift_boost_season_id::text FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [user.rows[0].id]);
           const current = state.rows[0];
           const subscribed = membership ?? current?.is_subscribed ?? false;
           if (membership !== null && membership !== current?.is_subscribed) await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.rows[0].id, membership]);
@@ -49,7 +49,7 @@ export const Route = createFileRoute("/api/gift")({
           const balance = Number(current.stars_balance ?? 0);
           const config = await getDailyGiftConfig(client);
           const tierInfo = await getDailyGiftTier(client, user.rows[0].id, user.rows[0].veteran_tier_override, currentSeason.id);
-          const chanceBoost = Math.max(0,Number(current.daily_gift_chance_boost_pct??0));
+          const chanceBoost = current.daily_gift_boost_season_id===currentSeason.id ? Math.max(0,Number(current.daily_gift_chance_boost_pct??0)) : 0;
           const boostedConfig = {
             ...config,
             rewardChanceByTier: {...config.rewardChanceByTier,[tierInfo.tier]:Math.min(100,config.rewardChanceByTier[tierInfo.tier]+chanceBoost)},
