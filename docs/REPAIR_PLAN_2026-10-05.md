@@ -211,7 +211,13 @@ There is existing historical data produced by the older Stars-manual-fulfillment
 
 ### Still in the repair queue
 - Full production QA on every changed route after deployment.
-- Refine and verify Owner Gift notification/open state and Gift-or-Pass transfer UX.
-- Verify the exact Payouts/Balances/Spins runtime queries against the current production DB.
-- Complete remaining Season Report UI cleanup and historical edge-case checks.
-- Add/finish any remaining entertainment event administration/history and guardrails.
+- Refine Gift-or-Pass transfer UX (replace raw Telegram ID prompt with participant picker) and verify notifications in Telegram.
+- Verify the exact Payouts/Balances/Spins runtime queries against the current production DB and test one CLOSED withdrawal end-to-end.
+- Verify historical Stars backfill against real rows and inspect any ambiguous legacy records before release.
+- Complete remaining Season Report edge-case checks and confirm actual close timestamps for previously closed seasons.
+- Add event history/expiry administration for entertainment mechanics after the current claim/pass runtime path is verified.
+
+
+### Latest implementation checkpoint
+
+Repository implementation has now covered the main runtime path for Blocks 1–7: immediate Stars balance credits, post-season withdrawal gating, actual season close timestamps, fixed 7-day Streak with day-7 choice, repaired admin Payouts/Balances/Spins paths, transactional Owner Gifts, human-readable Audit, and persistent entertainment events. The repository has not been production-built from this interface; deployment/runtime QA remains the release gate.
