@@ -192,7 +192,9 @@ export const Route=createFileRoute("/api/admin/channel-activity")({server:{handl
                   )
                 )::text AS bonus_ready
            FROM channel_activity ca
+           LEFT JOIN users u ON u.telegram_id=ca.telegram_user_id
           WHERE ca.channel_id=$1::bigint
+            AND (u.id IS NULL OR u.is_test=FALSE)
             AND ($3::timestamptz IS NULL OR ca.occurred_at >= $3::timestamptz)
             AND ($4::timestamptz IS NULL OR ca.occurred_at <= $4::timestamptz)`,
         [databaseChannelId,selected.id,selected.starts_at,selected.ends_at],
