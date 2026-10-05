@@ -27,7 +27,18 @@ export const Route = createFileRoute("/api/admin/balances")({
             ? "AND COALESCE(us.stars_balance,0) = 0"
             : "";
 
-        const rows = await query(
+        const rows = await query<{
+          id: string;
+          telegram_id: string;
+          username: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          stars_balance: number;
+          spins: number;
+          wins: number;
+          pending_stars: string;
+          last_seen_at: string | null;
+        }>(
           "SELECT u.id::text,u.telegram_id::text,u.username,u.first_name,u.last_name," +
           "COALESCE(us.stars_balance,0)::int AS stars_balance,COALESCE(sp.spins,0)::int AS spins," +
           "COALESCE(sp.wins,0)::int AS wins,COALESCE(pp.pending_stars,0)::text AS pending_stars,u.last_seen_at::text " +
@@ -53,7 +64,7 @@ export const Route = createFileRoute("/api/admin/balances")({
 
         return Response.json({
           ok: true,
-          users: rows.rows.map((row: any) => ({
+          users: rows.rows.map((row) => ({
             id: row.id,
             telegramId: row.telegram_id,
             username: row.username ? "@" + row.username.replace(/^@/,"") : "—",
