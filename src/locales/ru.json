@@ -14,7 +14,15 @@
       "economics": "Экономика",
       "settings": "Настройки",
       "access": "Админы",
-      "audit": "Логи"
+      "audit": "Логи",
+      "dailyStreak": "Streak",
+      "channelActivity": "Активность",
+      "veteran": "Ветераны",
+      "bonuses": "Бонусы",
+      "balances": "Балансы",
+      "ownerGifts": "Подарки",
+      "mechanics": "Механики",
+      "seasonReport": "Отчёт"
     }
   },
   "common": {
