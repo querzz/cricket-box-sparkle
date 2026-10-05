@@ -62,7 +62,7 @@ export const Route = createFileRoute("/api/admin/statistics")({
 
         const registered = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM users WHERE is_test=FALSE`);
         const repeatUsers = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM (SELECT s.user_id FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND u.is_test=FALSE ${spinSeasonPredicate} ${spinDateFilter} GROUP BY s.user_id HAVING COUNT(*)>=2) x`, params);
-        const paidUsers = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND s.type='PAID' AND u.is_test=FALSE ${spinSeasonPredicate}`, params);
+        const paidUsers = await query<{ value: string }>(`SELECT COUNT(DISTINCT s.user_id)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='COMPLETED' AND s.type='PAID' AND u.is_test=FALSE ${spinSeasonPredicate} ${spinDateFilter}`, params);
         const failedSpins = await query<{ value: string }>(`SELECT COUNT(*)::text AS value FROM spins s JOIN users u ON u.id=s.user_id WHERE s.status='FAILED' AND u.is_test=FALSE ${seasonFilter} ${spinDateFilter}`, params);
         const cohortRetention = await query<{ eligible_d1: string; retained_d1: string; eligible_d7: string; retained_d7: string }>(`
           WITH first_spins AS (
