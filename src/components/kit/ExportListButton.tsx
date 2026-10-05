@@ -26,7 +26,7 @@ function buildTxt(title: string, headers: string[], rows: Cell[][]) {
     `Экспорт: ${stamp}`,
     `Записей: ${rows.length}`,
     "",
-    headers.join(" | "),
+    ["#", ...headers].join(" | "),
     ...rows.map((row, index) => [String(index + 1), ...row.map(valueOf)].join(" | ")),
   ];
   return lines.join("\n");
@@ -34,7 +34,7 @@ function buildTxt(title: string, headers: string[], rows: Cell[][]) {
 
 function buildCsv(headers: string[], rows: Cell[][]) {
   return "\uFEFF" + [
-    headers.map(csvCell).join(","),
+    ["#", ...headers].map(csvCell).join(","),
     ...rows.map((row) => row.map((cell) => csvCell(valueOf(cell))).join(",")),
   ].join("\n");
 }
