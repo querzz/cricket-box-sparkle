@@ -51,7 +51,7 @@ export const Route = createFileRoute("/api/admin/economy")({
         const seasonResult = await query<SeasonRow>(`SELECT id::text,code,name,state,starts_at::text,ends_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin FROM seasons WHERE id=$1::uuid`, [seasonId]);
         const season = seasonResult.rows[0];
         if (!season) return Response.json({ ok: false, code: "SEASON_NOT_FOUND" }, { status: 404 });
-        const counts = await query<{ hour: string; day: string; week: string; season: string }>(`SELECT COUNT(*) FILTER (WHERE created_at>=now()-interval '1 hour')::text AS hour,COUNT(*) FILTER (WHERE created_at>=now()-interval '1 day')::text AS day,COUNT(*) FILTER (WHERE created_at>=now()-interval '7 days')::text AS week,COUNT(*)::text AS season FROM spins WHERE season_id=$1::uuid AND status='COMPLETED'`, [seasonId]);
+        const counts = await query<{ hour: string; day: string; week: string; season: string }>(`SELECT COUNT(*) FILTER (WHERE s.created_at>=now()-interval '1 hour')::text AS hour,COUNT(*) FILTER (WHERE s.created_at>=now()-interval '1 day')::text AS day,COUNT(*) FILTER (WHERE s.created_at>=now()-interval '7 days')::text AS week,COUNT(*)::text AS season FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid AND s.status='COMPLETED'`, [seasonId]);
         const row = counts.rows[0];
         const spins: SpinCounts = { hour: Number(row?.hour ?? 0), day: Number(row?.day ?? 0), week: Number(row?.week ?? 0), season: Number(row?.season ?? 0) };
         const metrics = buildEconomyMetrics({ startsAt: season.starts_at, endsAt: season.ends_at, spins });
