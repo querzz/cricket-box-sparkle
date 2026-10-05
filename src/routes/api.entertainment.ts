@@ -53,7 +53,7 @@ POST:async({request})=>{
     await client.query(`INSERT INTO audit_logs(action,entity_type,entity_id,after_data) VALUES('ENTERTAINMENT_EVENT_PASSED','user',$1,$2::jsonb)`,[user.rows[0].id,JSON.stringify({eventId:event.id,toUserId:target.rows[0].id,newEventId:newEvent.rows[0].id,passRemaining:nextPass})]);
     return {action:'PASS',target:targetLabel(target.rows[0]),newEventId:newEvent.rows[0].id};
    }
-   const payload=event.payload??{};let reward:Reward={type:'NOTE',amount:0};let title=String(payload.title??'Развлекательное событие');let resultTitle=title;
+   const payload=event.payload??{};let reward:Reward={type:'NOTE',amount:0};const title=String(payload.title??'Развлекательное событие');let resultTitle=title;
    if(event.type==='GOOD_OR_BAD'){
     const good=(payload.good??{type:'STARS',amount:5,title:'Хороший подарок'}) as Reward;const bad=(payload.bad??{type:'NOTE',amount:0,title:'Неудачный подарок'}) as Reward;reward=secureRandomUnit()<0.5?good:bad;resultTitle=reward.title??title;
    }else{reward=(payload.reward??{type:'NOTE',amount:0}) as Reward;}
