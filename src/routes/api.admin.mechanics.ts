@@ -55,6 +55,42 @@ export const Route = createFileRoute("/api/admin/mechanics")({ server:{ handlers
       return Response.json({ok:false,code},{status:500});
     }
   },
+  POST: async ({request}) => {
+    try {
+      const body = await request.json() as {initData?:unknown;telegramId?:unknown;type?:unknown;title?:unknown;message?:unknown;rewardType?:unknown;amount?:unknown;passCount?:unknown;goodAmount?:unknown};
+      const admin = await authenticateAdmin(typeof body.initData === 'string' ? body.initData : '');
+      const type = String(body.type ?? '');
+      if (!['GIFT_OR_PASS','GOOD_OR_BAD','OWNER_SPECIAL'].includes(type)) throw new Error('INVALID_EVENT_TYPE');
+      const telegramId = String(body.telegramId ?? '').replace(/\D/g,'');
+      if (!telegramId) throw new Error('TELEGRAM_ID_REQUIRED');
+      const rewardType = String(body.rewardType ?? 'NOTE');
+      if (!['STARS','FREE_SPIN','XP','NOTE'].includes(rewardType)) throw new Error('INVALID_REWARD_TYPE');
+      const amount = Math.floor(Number(body.amount ?? 0));
+      if (rewardType !== 'NOTE' && (!Number.isSafeInteger(amount) || amount < 1 || amount > 100)) throw new Error('INVALID_REWARD_AMOUNT');
+      const passCount = Math.max(0, Math.min(20, Math.floor(Number(body.passCount ?? 0))));
+      const goodAmount = Math.max(0, Math.min(100, Math.floor(Number(body.goodAmount ?? 5))));
+      const result = await withTransaction(async client => {
+        const user = await client.query<{id:string;username:string|null}>(`SELECT id::text,username FROM users WHERE telegram_id=$1 AND is_test=FALSE FOR UPDATE`, [telegramId]);
+        if (!user.rows[0]) throw new Error('USER_NOT_FOUND');
+        const season = await client.query<{id:string}>(`SELECT id::text FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1`);
+        const seasonId = season.rows[0]?.id ?? null;
+        const defaultTitle = type==='GIFT_OR_PASS' ? 'Подарок, который можно передать' : type==='GOOD_OR_BAD' ? 'Хороший или неудачный подарок' : 'Особый подарок владельца';
+        const title = String(body.title ?? defaultTitle).trim().slice(0,160);
+        const message = String(body.message ?? '').trim().slice(0,1000);
+        let payload:Record<string,unknown>={title,message};
+        if(type==='GOOD_OR_BAD') payload={...payload,good:{type:'STARS',amount:goodAmount,title:'Хороший подарок'},bad:{type:'NOTE',amount:0,title:'Неудачный подарок'}};
+        else payload={...payload,reward:{type:rewardType,amount:rewardType==='NOTE'?0:amount},passCount};
+        const event = await client.query<{id:string;created_at:string}>(`INSERT INTO entertainment_events(season_id,created_by,user_id,type,status,pass_remaining,payload) VALUES($1::uuid,$2::uuid,$3::uuid,$4,'OFFERED',$5,$6::jsonb) RETURNING id::text,created_at::text`, [seasonId,admin.id,user.rows[0].id,type,type==='GIFT_OR_PASS'?passCount:0,JSON.stringify(payload)]);
+        await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'ENTERTAINMENT_EVENT_CREATED','user',$2,$3::jsonb)`, [admin.id,user.rows[0].id,JSON.stringify({eventId:event.rows[0].id,type,telegramId,rewardType,amount,passCount,goodAmount})]);
+        return {id:event.rows[0].id,username:user.rows[0].username?('@'+user.rows[0].username.replace(/^@/,'')):'—',telegramId,type,status:'OFFERED',createdAt:event.rows[0].created_at,payload};
+      });
+      return Response.json({ok:true,event:result});
+    } catch(error) {
+      const code=error instanceof Error?error.message:'ENTERTAINMENT_CREATE_FAILED';
+      const status=['INVALID_EVENT_TYPE','INVALID_REWARD_TYPE','INVALID_REWARD_AMOUNT','TELEGRAM_ID_REQUIRED'].includes(code)?400:code==='USER_NOT_FOUND'?404:code==='ADMIN_ACCESS_DENIED'?401:500;
+      return Response.json({ok:false,code},{status});
+    }
+  },
   PATCH: async ({request}) => {
     try {
       const body = await request.json() as {initData?:unknown;settings?:Partial<Settings>};
