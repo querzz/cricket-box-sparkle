@@ -34,8 +34,8 @@ export const Route = createFileRoute("/api/withdraw")({
           const userRow = user.rows[0];
           if (!userRow) throw new Error("USER_NOT_FOUND");
 
-          const season = await client.query<{ state: string }>(
-            `SELECT state FROM seasons
+          const season = await client.query<{ id: string; state: string }>(
+            `SELECT id::text,state FROM seasons
              ORDER BY CASE
                WHEN state = 'ACTIVE' THEN 0 WHEN state = 'ENDING' THEN 1
                WHEN state = 'PAYOUT' THEN 2 WHEN state = 'CLOSED' THEN 3
@@ -83,6 +83,7 @@ export const Route = createFileRoute("/api/withdraw")({
             balanceDelta: -amount,
             referenceId: payoutRow.id,
             idempotencyKey: `withdrawal:${payoutRow.id}`,
+            seasonId: season.rows[0]?.id ?? null,
             metadata: { amount, seasonState },
           });
           await client.query(
