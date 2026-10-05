@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken, isProductionApp } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
+import { appendStarsLedger } from "@/server/stars-ledger";
 import { getLevelInfo } from "@/lib/levels";
 import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { grantActiveFreeSpinCampaigns } from "@/server/free-spin-campaigns";
@@ -34,6 +35,7 @@ type SeasonRow = {
   state: "DRAFT" | "SCHEDULED" | "ACTIVE" | "ENDING" | "CLOSED" | "PAYOUT" | "ARCHIVED";
   starts_at: string | null;
   ends_at: string | null;
+  closed_at: string | null;
   is_paused: boolean;
   paused_at: string | null;
   paid_spin_price: number;
@@ -86,7 +88,7 @@ export const Route = createFileRoute("/api/session")({
         if (membership !== null && membership !== storedState.is_subscribed) await query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.id, membership]);
 
         const seasonResult = await query<SeasonRow>(
-          `SELECT id::text,code,name,state,starts_at::text,ends_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin
+          `SELECT id::text,code,name,state,starts_at::text,ends_at::text,closed_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled,daily_free_spin
              FROM seasons ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,
         );
         const season = seasonResult.rows[0];
@@ -104,22 +106,8 @@ export const Route = createFileRoute("/api/session")({
         const veteranTier = user.veteran_tier_override ?? getVeteranTier(completedVeteranSeasons);
 
         const liveSeason = season.state === "ACTIVE" || season.state === "ENDING";
-        if (liveSeason && !season.is_paused && isSubscribed && storedState.is_participant) {
-          await recordSeasonCheckin(season.id, user.id, season.starts_at, season.ends_at);
-        }
-
-        const streakTotalDays = getSeasonDayCount(season.starts_at, season.ends_at);
-        const streakCurrentDay = getCurrentSeasonDay(season.starts_at, season.ends_at);
-        const streakDaysResult = await query<{day_index:number}>(
-          `SELECT day_index FROM season_daily_checkins WHERE season_id=$1::uuid AND user_id=$2::uuid ORDER BY day_index ASC`,
-          [season.id, user.id],
-        );
-        const dailyStreak = summarizeCheckins(
-          streakDaysResult.rows.map((row) => Number(row.day_index)),
-          streakTotalDays,
-          streakCurrentDay,
-          15,
-        );
+        const closedSeason = ["CLOSED","PAYOUT","ARCHIVED"].includes(season.state);
+        const effectiveEnd = closedSeason && season.closed_at ? season.closed_at : season.ends_at;
 
         const activityResult = await query<{ points:string; reactions:string; comments:string; joins:string; active_days:string }>(
           `SELECT COALESCE(SUM(activity_points),0)::text AS points,
@@ -157,7 +145,37 @@ export const Route = createFileRoute("/api/session")({
             await client.query(`UPDATE user_state SET activity_bonus_season_id=$2::uuid,activity_bonus_spins_issued=0,updated_at=now() WHERE user_id=$1::uuid`, [user.id, season.id]);
           }
 
-          if ((season.state === "ACTIVE" || season.state === "ENDING") && isSubscribed && current.is_participant) {
+          if (liveSeason && !season.is_paused && isSubscribed && current.is_participant) {
+            const streakDay = getCurrentSeasonDay(season.starts_at, effectiveEnd);
+            if (streakDay > 0) {
+              const insertedCheckin = await client.query<{id:string}>(
+                "INSERT INTO season_daily_checkins (season_id,user_id,day_index) VALUES ($1::uuid,$2::uuid,$3) ON CONFLICT (season_id,user_id,day_index) DO NOTHING RETURNING id::text",
+                [season.id,user.id,streakDay],
+              );
+              const checkins = await client.query<{day_index:number}>(
+                "SELECT day_index FROM season_daily_checkins WHERE season_id=$1::uuid AND user_id=$2::uuid ORDER BY day_index ASC",
+                [season.id,user.id],
+              );
+              const info = getStreakCycleInfo(checkins.rows.map((row)=>Number(row.day_index)),streakDay);
+              if (insertedCheckin.rows[0] && info.currentStreak>=1 && info.currentStreak<=6) {
+                const rewardAmount = STREAK_DAY_STARS[info.currentStreak] ?? 0;
+                if (rewardAmount > 0) {
+                  const rewardRow = await client.query<{id:string}>(
+                    "INSERT INTO season_streak_rewards(season_id,user_id,cycle_no,day_index,reward_type,amount,metadata) VALUES($1::uuid,$2::uuid,$3,$4,'STARS',$5,$6::jsonb) ON CONFLICT(season_id,user_id,cycle_no,day_index) DO NOTHING RETURNING id::text",
+                    [season.id,user.id,info.cycleNo,info.currentStreak,rewardAmount,JSON.stringify({source:"DAILY_STREAK"})],
+                  );
+                  if (rewardRow.rows[0]) {
+                    const room = Math.max(0,500-Number(current.stars_balance??0));
+                    const credited = Math.min(rewardAmount,room);
+                    await appendStarsLedger(client,{userId:user.id,type:"REWARD",amount:rewardAmount,balanceDelta:credited,seasonId:season.id,referenceId:rewardRow.rows[0].id,idempotencyKey:"streak-stars:"+rewardRow.rows[0].id,metadata:{source:"DAILY_STREAK",dayIndex:info.currentStreak,cycleNo:info.cycleNo,requestedAmount:rewardAmount,creditedAmount:credited,overflowAmount:rewardAmount-credited}});
+                    if (rewardAmount>credited) await appendStarsLedger(client,{userId:user.id,type:"CAPPED_OVERFLOW_BURNED",amount:-(rewardAmount-credited),balanceDelta:0,seasonId:season.id,referenceId:rewardRow.rows[0].id,idempotencyKey:"streak-stars-overflow:"+rewardRow.rows[0].id,metadata:{source:"DAILY_STREAK",dayIndex:info.currentStreak,cycleNo:info.cycleNo,requestedAmount:rewardAmount,creditedAmount:credited,overflowAmount:rewardAmount-credited}});
+                  }
+                }
+              }
+            }
+          }
+
+          if (liveSeason && !season.is_paused && isSubscribed && current.is_participant) {
             // Grant the veteran bonus on season entry so the rank perk is visible immediately.
             const veteranBonus = await grantVeteranBonusIfDue(client, user.id, season.id);
             bonusFreeSpins += Number(veteranBonus.granted ?? 0);
@@ -187,6 +205,32 @@ export const Route = createFileRoute("/api/session")({
         const isParticipant = activityState.isParticipant;
         const activityIssued = activityState.activityIssued;
         let bonusFreeSpins = activityState.bonusFreeSpins;
+
+        const streakDaysResult = await query<{day_index:number}>(
+          "SELECT day_index FROM season_daily_checkins WHERE season_id=$1::uuid AND user_id=$2::uuid ORDER BY day_index ASC",
+          [season.id,user.id],
+        );
+        const streakDays = streakDaysResult.rows.map((row)=>Number(row.day_index));
+        const streakTotalDays = getSeasonDayCount(season.starts_at,effectiveEnd);
+        const streakCurrentDay = getCurrentSeasonDay(season.starts_at,effectiveEnd);
+        const streakInfo = getStreakCycleInfo(streakDays,streakCurrentDay);
+        const dailyStreak = {
+          ...summarizeCheckins(streakDays,streakTotalDays,streakCurrentDay,10),
+          cycleNo: streakInfo.cycleNo,
+          dayRewards: [1,1,1,2,2,3],
+          day7Choices: [
+            {type:"STARS",title:"+5 Stars",amount:5},
+            {type:"FREE_SPIN",title:"+1 бонусная попытка",amount:1},
+            {type:"DAILY_GIFT_BOOST",title:"+20% к шансу Daily Gift",amount:20},
+            {type:"NEXT_SPIN_BOOST",title:"Буст на следующую прокрутку",amount:1},
+          ],
+          day7ChoiceAvailable: liveSeason && streakInfo.currentStreak>=7 && !(await query<{exists:boolean}>(
+            "SELECT EXISTS(SELECT 1 FROM season_streak_rewards WHERE season_id=$1::uuid AND user_id=$2::uuid AND cycle_no=$3 AND day_index=7) AS exists",
+            [season.id,user.id,streakInfo.cycleNo],
+          )).rows[0]?.exists,
+          closed: closedSeason,
+          stoppedReason: closedSeason ? "Сезон завершён — серия остановлена." : undefined,
+        };
 
         const activitySpinUsage = await query<{ used:string }>(
           `SELECT COUNT(*)::text AS used FROM spins WHERE user_id=$1::uuid AND season_id=$2::uuid AND type='ACTIVITY_BONUS' AND status='COMPLETED'`,
@@ -223,11 +267,11 @@ export const Route = createFileRoute("/api/session")({
 
         return Response.json({ ok:true, snapshot:{
           user:{id:user.id,veteranTier,username:user.username?`@${user.username.replace(/^@/,"")}`:"@username",avatarUrl,isParticipant,isSubscribed,xp:Number(user.xp??0),level:levelInfo.level,levelTitle:levelInfo.title,levelProgress:levelInfo.progressPercent,nextLevelXp:levelInfo.nextLevelXp,levelBenefit:levelInfo.benefit},
-          season:{id:season.id,code:season.code,title:displaySeasonTitle(season.code,season.name),state:season.state,startsAt:season.starts_at??new Date().toISOString(),endsAt:season.ends_at??new Date(Date.now()+14*86400000).toISOString(),isPaused:Boolean(season.is_paused),pausedAt:season.paused_at??undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null},
+          season:{id:season.id,code:season.code,title:displaySeasonTitle(season.code,season.name),state:season.state,startsAt:season.starts_at??new Date().toISOString(),endsAt:(closedSeason&&season.closed_at?season.closed_at:season.ends_at)??new Date(Date.now()+14*86400000).toISOString(),isPaused:Boolean(season.is_paused),pausedAt:season.paused_at??undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null},
           stars:{amount:Math.max(0,Math.min(MAX_STARS,activityState.starsBalance)),max:MAX_STARS},
           spin:{freeSpins,bonusFreeSpins,freeSpinDate:freeToday.rows[0]?.exists?new Date().toISOString():undefined,paidSpinPrice:season.paid_spin_enabled?season.paid_spin_price:null,totalSpins:Number(spinStats.rows[0]?.total??0)},
           gift:{state:giftedRecently?"COOLDOWN":live&&!season.is_paused&&isSubscribed&&isParticipant?"AVAILABLE":"LOCKED",availableAt:nextGift.toISOString()},
-          streak:{...dailyStreak},
+          streak:dailyStreak,
           activity:{enabled:activityEnabled,points:activityPoints,pointsPerBonus:ACTIVITY_POINTS_PER_SPIN,pointsToNext:activityPointsToNext,progressPercent:activityPercent,reactions:Number(activityResult.rows[0]?.reactions??0),comments:Number(activityResult.rows[0]?.comments??0),joins:Number(activityResult.rows[0]?.joins??0),activeDays:Number(activityResult.rows[0]?.active_days??0),bonusSpinsGranted:Math.min(MAX_ACTIVITY_BONUS_SPINS,Math.max(activityIssued,targetActivityBonusSpins)),bonusSpinsRemaining:currentActivityRemaining,maxBonusSpins:MAX_ACTIVITY_BONUS_SPINS},
           prizes:prizeResult.rows.map((p)=>({id:p.id,kind:p.kind==="FREE_SPIN"?"FREE_SPIN":p.kind,title:p.title,subtitle:p.subtitle??undefined,remaining:p.quantity_remaining,total:p.quantity_total,weight:Number(p.metadata?.weight??1),active:true,imageUrl:p.image_url??undefined})),
           rewards,
