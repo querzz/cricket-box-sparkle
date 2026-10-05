@@ -233,3 +233,5 @@ BEGIN
              COALESCE((g->>'createdAt')::timestamptz,now()),CASE WHEN status_text='CLAIMED' THEN COALESCE((g->>'issuedAt')::timestamptz,now()) ELSE NULL END);
   END LOOP;
 END $$;
+
+ALTER TABLE owner_gifts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
