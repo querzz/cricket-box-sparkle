@@ -9,7 +9,7 @@ export const WITHDRAWAL_MINIMUM = 50;
 export function createInitialSnapshot(): SessionSnapshot {
   return {
     user: { id: "u_1", username: "@username", isParticipant: true, isSubscribed: true, xp: 0, level: 1 },
-    season: { id: "s_001", code: "CRICKET BOX #001", title: "Founder Season", state: "ACTIVE", startsAt: new Date(now - 2 * day).toISOString(), endsAt: new Date(now + 12 * day).toISOString(), paidSpinPrice: 100 },
+    season: { id: "s_001", code: "CRICKET BOX #001", title: "Founder Season", state: "ACTIVE", startsAt: new Date(now - 2 * day).toISOString(), endsAt: new Date(now + 12 * day).toISOString(), isPaused: false, paidSpinPrice: 100 },
     stars: { amount: 125, max: STARS_MAX },
     spin: { freeSpins: 1, paidSpinPrice: 100, totalSpins: 0 },
     gift: { state: "AVAILABLE", availableAt: new Date(now).toISOString() },
