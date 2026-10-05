@@ -9,7 +9,7 @@ export const Route = createFileRoute("/api/admin/balances")({
   server: { handlers: {
     GET: async ({ request }) => {
       try {
-        await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
+        const admin = await authenticateAdmin(new URL(request.url).searchParams.get("initData") ?? "");
         const url = new URL(request.url);
         const search = (url.searchParams.get("search") ?? "").trim();
         const filter = url.searchParams.get("filter") ?? "all";
@@ -64,10 +64,12 @@ export const Route = createFileRoute("/api/admin/balances")({
             pendingStars: Number(row.pending_stars) || 0,
             lastSeen: row.last_seen_at,
           })),
+          role: admin.role,
           summary: {
             totalStars: Number(summary.rows[0]?.total_stars ?? 0),
             usersWithBalance: Number(summary.rows[0]?.users_with_balance ?? 0),
-            usersTotal: Number(summary.rows[0]?.users_total ?? 0), averageBalance: Number(summary.rows[0]?.average_balance ?? 0),
+            usersTotal: Number(summary.rows[0]?.users_total ?? 0),
+            averageBalance: Number(summary.rows[0]?.average_balance ?? 0),
           },
         });
       } catch (error) {
@@ -88,6 +90,7 @@ export const Route = createFileRoute("/api/admin/balances")({
         const random = body.random === true;
 
         if (!["STAR_ADJUST","FREE_SPIN_GRANT"].includes(action)) return Response.json({ok:false,code:"INVALID_ACTION"},{status:400});
+        if (action === "STAR_ADJUST" && admin.role !== "OWNER") return Response.json({ok:false,code:"OWNER_ONLY"},{status:403});
         if (!reason) return Response.json({ok:false,code:"REASON_REQUIRED"},{status:400});
         if (action === "FREE_SPIN_GRANT" && random) amount = 1 + Math.floor(Math.random() * 5);
 
