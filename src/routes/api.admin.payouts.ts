@@ -44,7 +44,7 @@ async function changePayout(client: PoolClient, adminId: string, id: string, nex
   if (!payout.rows[0]) throw new Error("NOT_FOUND");
   const before = payout.rows[0];
   if (before.status === nextStatus) return false;
-  const valid = (before.status === "PENDING" && ["REVIEW", "FAILED", "CANCELLED"].includes(nextStatus)) || (before.status === "REVIEW" && ["PAID", "FAILED", "CANCELLED"].includes(nextStatus));
+  const valid = (before.status === "PENDING" && ["REVIEW", "PAID", "FAILED", "CANCELLED"].includes(nextStatus)) || (before.status === "REVIEW" && ["PAID", "FAILED", "CANCELLED"].includes(nextStatus));
   if (!valid) throw new Error("INVALID_TRANSITION");
 
   const reference = typeof fulfillmentReference === "string" ? fulfillmentReference.trim().slice(0, 500) : "";
