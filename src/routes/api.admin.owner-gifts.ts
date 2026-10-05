@@ -64,6 +64,7 @@ export const Route=createFileRoute("/api/admin/owner-gifts")({server:{handlers:{
           if(type==="STARS"){
             await appendStarsLedger(client,{userId:user.rows[0].id,type:"ADMIN_CORRECTION",amount,balanceDelta:amount,idempotencyKey:"owner-gift:"+id,referenceId:admin.id,metadata:{source:"PERSONAL_GIFT",giftId:id,reason:current.gift}});
           }else if(type==="FREE_SPIN"){
+            await client.query("INSERT INTO user_state(user_id) VALUES($1::uuid) ON CONFLICT(user_id) DO NOTHING",[user.rows[0].id]);
             const state=await client.query<{bonus_free_spins:number}>(`SELECT bonus_free_spins FROM user_state WHERE user_id=$1::uuid FOR UPDATE`,[user.rows[0].id]);
             const currentBonus=Number(state.rows[0]?.bonus_free_spins??0);if(currentBonus+amount>1000)throw new Error("BONUS_SPIN_LIMIT");
             await client.query(`UPDATE user_state SET bonus_free_spins=bonus_free_spins+$2,updated_at=now() WHERE user_id=$1::uuid`,[user.rows[0].id,amount]);
