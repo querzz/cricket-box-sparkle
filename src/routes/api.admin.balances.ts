@@ -133,6 +133,10 @@ export const Route = createFileRoute("/api/admin/balances")({
           }
 
           if (!Number.isSafeInteger(amount) || amount < 1 || amount > 20) throw new Error("INVALID_FREE_SPIN_AMOUNT");
+          await client.query(
+            "INSERT INTO user_state(user_id) VALUES($1::uuid) ON CONFLICT(user_id) DO NOTHING",
+            [user.rows[0].id],
+          );
           const state = await client.query<{bonus_free_spins:number}>(
             "SELECT bonus_free_spins FROM user_state WHERE user_id=$1::uuid FOR UPDATE",
             [user.rows[0].id],
