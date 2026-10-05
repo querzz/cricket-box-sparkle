@@ -33,7 +33,8 @@ POST:async({request})=>{try{
   await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'OWNER_GIFT_CREATED','user',$2,$3::jsonb)`,[admin.id,user.rows[0].id,JSON.stringify({giftId:row.rows[0].id,telegramId,gift,rewardType,amount})]);
   return row.rows[0];
  });
- void sendTelegramNotification(telegramId, `🎁 Личный подарок от CRICKET BOX\n\n${gift}${message ? `\n${message}` : ""}\n\nОткрой CRICKET BOX, чтобы получить подарок.`);\n return Response.json({ok:true,gift:{id:result.id,username:body.username||'—',telegramId,gift,status:'Подготовлен',message,createdAt:result.created_at,issuedAt:null,rewardType,amount:rewardType==='NOTE'?0:amount,rewardApplied:false},gifts:await readGifts()});
+ void sendTelegramNotification(telegramId, `🎁 Личный подарок от CRICKET BOX\n\n${gift}${message ? `\n${message}` : ""}\n\nОткрой CRICKET BOX, чтобы получить подарок.`);
+ return Response.json({ok:true,gift:{id:result.id,username:body.username||'—',telegramId,gift,status:'Подготовлен',message,createdAt:result.created_at,issuedAt:null,rewardType,amount:rewardType==='NOTE'?0:amount,rewardApplied:false},gifts:await readGifts()});
 }catch(error){const code=error instanceof Error?error.message:'OWNER_GIFT_CREATE_FAILED';return Response.json({ok:false,code},{status:code==='USER_NOT_FOUND'?404:400});}},
 PATCH:async({request})=>{try{
  const body=await request.json() as {initData?:unknown;id?:unknown;status?:unknown};
