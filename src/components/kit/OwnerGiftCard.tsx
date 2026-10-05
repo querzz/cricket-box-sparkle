@@ -58,7 +58,7 @@ export function OwnerGiftCard({ gift }: { gift: OwnerGift | null }) {
       <GlassCard glow className="w-full max-w-sm overflow-hidden border-primary/40 bg-background/95 px-5 py-5 shadow-2xl" onClick={(event)=>event.stopPropagation()}>
         <div className="relative">
           <button type="button" aria-label="Закрыть" onClick={()=>setShowPopup(false)} className="absolute right-0 top-0 grid size-8 place-items-center rounded-full border border-glass-border bg-muted/20"><X className="size-4"/></button>
-          <div className="mx-auto grid size-16 place-items-center rounded-[1.4rem] border border-primary/35 bg-primary/10 shadow-[0_0_34px_color-mix(in_oklab,var(--color-primary)_24%,transparent)]"><Icon className="size-8 text-primary-glow"/></div>
+          <div className="mx-auto grid size-16 place-items-center rounded-[1.4rem] border border-primary/35 bg-primary/10"><Icon className="size-8 text-primary-glow"/></div>
           <p className="mt-4 text-center text-[9px] uppercase tracking-[0.24em] text-primary-glow">🎁 Тебе что-то дали</p>
           <h2 className="mt-2 text-center font-display text-2xl uppercase leading-tight">Личный подарок</h2>
           <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3.5 text-center">
@@ -67,7 +67,7 @@ export function OwnerGiftCard({ gift }: { gift: OwnerGift | null }) {
             <p className="mt-3 text-sm font-semibold">{rewardLabel}</p>
           </div>
           {message&&<p className="mt-2 text-center text-[9px] text-destructive">{message}</p>}
-          <button type="button" disabled={busy} onClick={async()=>{const ok=await claim();if(ok)setShowPopup(false);}} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/35 bg-primary/15 px-4 py-3 text-xs font-bold shadow-[0_0_24px_color-mix(in_oklab,var(--color-primary)_18%,transparent)] disabled:opacity-50"><Gift className="size-4"/>{busy?"Получаем…":"Забрать подарок"}</button>
+          <button type="button" disabled={busy} onClick={async()=>{const ok=await claim();if(ok)setShowPopup(false);}} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary/35 bg-primary/15 px-4 py-3 text-xs font-bold disabled:opacity-50"><Gift className="size-4"/>{busy?"Получаем…":"Забрать подарок"}</button>
           <button type="button" onClick={()=>setShowPopup(false)} className="mt-2 w-full rounded-xl px-4 py-2 text-[10px] text-muted-foreground">Позже</button>
         </div>
       </GlassCard>
