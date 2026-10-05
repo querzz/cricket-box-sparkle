@@ -6,6 +6,7 @@ import { assets, rewardArt } from "@/components/assets";
 import { AppShell } from "@/components/kit/AppShell";
 import { Countdown } from "@/components/kit/Countdown";
 import { DailyStreakCard } from "@/components/kit/DailyStreakCard";
+import { EntertainmentEventCard } from "@/components/kit/EntertainmentEventCard";
 import { CricketBox } from "@/components/kit/CricketBox";
 import { GiftButton } from "@/components/kit/GiftCard";
 import { GlassCard } from "@/components/kit/GlassCard";
@@ -84,6 +85,7 @@ function HomeScreen() {
       </section>
 
       <DailyStreakCard streak={snapshot.streak} />
+      <EntertainmentEventCard />
       <OwnerGiftCard gift={snapshot.ownerGift} />
       <section className="mt-5 space-y-2.5"><div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t("home.possiblePrizes")}</h2><Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">{t("home.all")} <ChevronRight className="size-3.5" /></Link></div><PrizeStrip prizes={snapshot.prizes} /></section>
       <section className="mt-5 space-y-2.5"><div className="flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t("home.yourPrizes")}</h2><Link to="/prizes" className="flex items-center gap-0.5 text-[11px] text-muted-foreground">{t("home.all")} <ChevronRight className="size-3.5" /></Link></div><Link to="/prizes" className="block"><GlassCard className="press flex items-center gap-3 px-4 py-3.5">{latestReward ? <><img src={rewardArt[latestReward.kind]} alt="" width={512} height={512} className="size-12 shrink-0 object-contain" /><div className="min-w-0 flex-1"><p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">{t("home.latestPrize")}</p><p className="mt-1 truncate text-sm font-semibold">{latestReward.title}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{latestReward.status === "RECEIVED" ? t("home.received") : latestReward.status === "PROBLEM" ? t("home.problem") : t("home.pending")}</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></> : <><span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10"><Gift className="size-6 text-primary-glow" /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{t("home.emptyPrizes")}</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("home.emptyPrizesDescription")}</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></>}</GlassCard></Link></section>
