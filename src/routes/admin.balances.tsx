@@ -18,7 +18,7 @@ async function request(url:string,method:"GET"|"POST"="GET",body?:Record<string,
   return data;
 }
 
-async function copyText(value:string){try{await navigator.clipboard.writeText(value);}catch{}}
+async function copyText(value:string){try{await navigator.clipboard.writeText(value);}catch{/* Clipboard access is best-effort on Telegram/mobile. */}}
 
 function BalancesScreen(){
   const [users,setUsers]=useState<User[]>([]);
