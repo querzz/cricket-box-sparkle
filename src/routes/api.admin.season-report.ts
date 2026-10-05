@@ -15,7 +15,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
         const seasons = await query<{
           id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; is_paused:boolean; paused_at:string|null; paid_spin_price:number; paid_spin_enabled:boolean;
         }>(
-          "SELECT id::text,code,name,state,starts_at::text,ends_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled FROM seasons " +
+          "SELECT id::text,code,name,state,starts_at::text,ends_at::text,closed_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled FROM seasons " +
           (seasonId ? "WHERE id=$1::uuid" : "WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED') ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 WHEN state='PAYOUT' THEN 2 WHEN state='CLOSED' THEN 3 WHEN state='ARCHIVED' THEN 4 ELSE 5 END,created_at DESC LIMIT 1"),
           seasonId ? [seasonId] : [],
         );
@@ -81,20 +81,20 @@ export const Route = createFileRoute("/api/admin/season-report")({
 
         const streak = await query<NumRow>(
           "WITH season_days AS (" +
-          " SELECT GREATEST(1,CEIL(EXTRACT(EPOCH FROM (COALESCE(s.ends_at,s.starts_at+interval '1 day')-s.starts_at))/86400.0))::int AS total_days FROM seasons s WHERE s.id=$1::uuid" +
+          " SELECT 7::int AS total_days FROM seasons s WHERE s.id=$1::uuid" +
           "), by_user AS (" +
           " SELECT c.user_id,COUNT(DISTINCT c.day_index)::int AS visited,MAX(c.day_index)::int AS max_day " +
           " FROM season_daily_checkins c JOIN users u ON u.id=c.user_id AND u.is_test=FALSE WHERE c.season_id=$1::uuid GROUP BY c.user_id" +
           ") SELECT (SELECT total_days FROM season_days)::text AS total_days," +
           "COUNT(*)::text AS checkin_users," +
-          "COUNT(*) FILTER (WHERE visited=(SELECT total_days FROM season_days))::text AS perfect_users," +
+          "COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM season_streak_rewards sr WHERE sr.season_id=$1::uuid AND sr.user_id=by_user.user_id AND sr.day_index=7))::text AS perfect_users," +
           "COALESCE(SUM(visited),0)::text AS checkins FROM by_user", params);
 
         const activity = await query<NumRow>(
           "SELECT COUNT(DISTINCT telegram_user_id)::text AS users,COUNT(*)::text AS events,COALESCE(SUM(activity_points),0)::text AS points " +
           "FROM channel_activity a JOIN users u ON u.telegram_id=a.telegram_user_id " +
           "WHERE u.is_test=FALSE AND a.occurred_at >= COALESCE((SELECT starts_at FROM seasons WHERE id=$1::uuid),now()) " +
-          "AND a.occurred_at <= COALESCE((SELECT ends_at FROM seasons WHERE id=$1::uuid),now())", params);
+          "AND a.occurred_at <= COALESCE((SELECT COALESCE(closed_at,ends_at) FROM seasons WHERE id=$1::uuid),now())", params);
 
 
         const engagement = await query<NumRow>(
@@ -104,19 +104,19 @@ export const Route = createFileRoute("/api/admin/season-report")({
         const newUsers = await query<NumRow>(
           "SELECT COUNT(*)::text AS users FROM users WHERE is_test=FALSE " +
           "AND created_at>=COALESCE((SELECT starts_at FROM seasons WHERE id=$1::uuid),'epoch'::timestamptz) " +
-          "AND created_at<=COALESCE((SELECT ends_at FROM seasons WHERE id=$1::uuid),now())", params);
+          "AND created_at<=COALESCE((SELECT COALESCE(closed_at,ends_at) FROM seasons WHERE id=$1::uuid),now())", params);
 
         const retention = await query<NumRow>(
           "WITH first_spin AS (SELECT s.user_id,MIN(s.created_at::date) AS first_day FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid AND s.status='COMPLETED' GROUP BY s.user_id), " +
           "r AS (SELECT f.user_id,f.first_day,EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+1) AS d1, " +
           "EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+3) AS d3, " +
           "EXISTS(SELECT 1 FROM spins s WHERE s.user_id=f.user_id AND s.season_id=$1::uuid AND s.status='COMPLETED' AND s.created_at::date=f.first_day+7) AS d7 FROM first_spin f) " +
-          "SELECT COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-1 FROM seasons WHERE id=$1::uuid))::text AS d1_eligible, " +
-          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-1 FROM seasons WHERE id=$1::uuid) AND d1)::text AS d1_retained, " +
-          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-3 FROM seasons WHERE id=$1::uuid))::text AS d3_eligible, " +
-          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-3 FROM seasons WHERE id=$1::uuid) AND d3)::text AS d3_retained, " +
-          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid))::text AS d7_eligible, " +
-          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid) AND d7)::text AS d7_retained FROM r", params);
+          "SELECT COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(closed_at,ends_at,now())::date-1 FROM seasons WHERE id=$1::uuid))::text AS d1_eligible, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(closed_at,ends_at,now())::date-1 FROM seasons WHERE id=$1::uuid) AND d1)::text AS d1_retained, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(closed_at,ends_at,now())::date-3 FROM seasons WHERE id=$1::uuid))::text AS d3_eligible, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(closed_at,ends_at,now())::date-3 FROM seasons WHERE id=$1::uuid) AND d3)::text AS d3_retained, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(closed_at,ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid))::text AS d7_eligible, " +
+          "COUNT(*) FILTER (WHERE first_day<=(SELECT COALESCE(closed_at,ends_at,now())::date-7 FROM seasons WHERE id=$1::uuid) AND d7)::text AS d7_retained FROM r", params);
         const prizes = await query<NumRow>(
           "WITH won AS (" +
           " SELECT s.prize_id,COUNT(*)::int AS won FROM spins s JOIN users u ON u.id=s.user_id AND u.is_test=FALSE WHERE s.season_id=$1::uuid AND s.status='COMPLETED' AND s.prize_id IS NOT NULL GROUP BY s.prize_id" +
@@ -143,7 +143,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
           "COUNT(DISTINCT s.user_id) FILTER (WHERE s.status='COMPLETED')::text AS active_users " +
           "FROM generate_series(" +
           "COALESCE((SELECT date_trunc('day',starts_at) FROM seasons WHERE id=$1::uuid),current_date)," +
-          "COALESCE(date_trunc('day',(SELECT ends_at FROM seasons WHERE id=$1::uuid)),current_date)," +
+          "COALESCE(date_trunc('day',(SELECT COALESCE(closed_at,ends_at) FROM seasons WHERE id=$1::uuid)),current_date)," +
           "interval '1 day') d(day) " +
           "LEFT JOIN spins s ON s.season_id=$1::uuid AND s.created_at>=d.day AND s.created_at<d.day+interval '1 day' AND EXISTS (SELECT 1 FROM users u WHERE u.id=s.user_id AND u.is_test=FALSE) " +
           "GROUP BY d.day ORDER BY d.day", params);
@@ -171,14 +171,15 @@ export const Route = createFileRoute("/api/admin/season-report")({
         const paidPrizeStars = Number(payout.rows[0]?.paid_stars ?? 0);
         const avgSpins = Number(overview.rows[0]?.participants ?? 0) ? completed / Number(overview.rows[0]?.participants ?? 0) : 0;
         const avgPaid = paidUsers ? revenue / paidUsers : 0;
-        const durationHours = season.starts_at && season.ends_at ? Math.max(1, (new Date(season.ends_at).getTime()-new Date(season.starts_at).getTime())/3600000) : 0;
+        const durationEnd = (season.state==="CLOSED"||season.state==="PAYOUT"||season.state==="ARCHIVED") ? (season.closed_at ?? season.ends_at) : season.ends_at;
+        const durationHours = season.starts_at && durationEnd ? Math.max(0, (new Date(durationEnd).getTime()-new Date(season.starts_at).getTime())/3600000) : 0;
 
         return Response.json({
           ok:true,
           season:{
             id:season.id,code:season.code,name:season.name,state:season.state,startsAt:season.starts_at,endsAt:season.ends_at,
             isPaused:season.is_paused,pausedAt:season.paused_at,paidSpinPrice:Number(season.paid_spin_price),
-            durationDays:season.starts_at&&season.ends_at?Math.max(1,(new Date(season.ends_at).getTime()-new Date(season.starts_at).getTime())/86400000):null
+            durationDays:season.starts_at&&((season.state==='CLOSED'||season.state==='PAYOUT'||season.state==='ARCHIVED')?season.closed_at:season.ends_at)?Math.max(0,(new Date(((season.state==='CLOSED'||season.state==='PAYOUT'||season.state==='ARCHIVED')?season.closed_at:season.ends_at)!).getTime()-new Date(season.starts_at).getTime())/86400000):null
           },
           kpis:{
             participants:Number(overview.rows[0]?.participants??0),
