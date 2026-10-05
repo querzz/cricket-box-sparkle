@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { authenticateAdmin } from '@/server/auth/access';
 import { query, withTransaction } from '@/server/db';
 import { appendStarsLedger, STARS_MAX_BALANCE } from '@/server/stars-ledger';
+import { sendTelegramNotification } from '@/server/telegram-notify';
 type RewardType='STARS'|'FREE_SPIN'|'XP'|'NOTE';
 type GiftStatus='Подготовлен'|'Выдан'|'Отменён';
 type GiftRow={id:string;username:string;telegramId:string;userId:string;gift:string;status:GiftStatus;message:string;createdAt:string;issuedAt:string|null;rewardType:RewardType;amount:number;rewardApplied:boolean};
