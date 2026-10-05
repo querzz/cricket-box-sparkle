@@ -184,6 +184,7 @@ export const Route=createFileRoute("/api/admin/channel-activity")({server:{handl
                   WHERE EXISTS (
                     SELECT 1 FROM user_state us2 JOIN users u2 ON u2.id=us2.user_id
                     WHERE u2.telegram_id=ca.telegram_user_id
+                      AND us2.activity_bonus_season_id=$2::uuid
                       AND us2.activity_bonus_spins_issued>(
                         SELECT COUNT(*) FROM spins sb
                          WHERE sb.user_id=u2.id AND sb.season_id=$2::uuid AND sb.type='ACTIVITY_BONUS' AND sb.status='COMPLETED'
