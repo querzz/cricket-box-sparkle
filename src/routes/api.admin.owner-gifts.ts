@@ -37,9 +37,11 @@ export const Route=createFileRoute("/api/admin/owner-gifts")({server:{handlers:{
       if(!user.rows[0])return Response.json({ok:false,code:"USER_NOT_FOUND"},{status:404});
       const row:GiftRow={id:"og_"+Date.now()+"_"+Math.random().toString(36).slice(2,8),username:(typeof body.username==="string"&&body.username.trim()?("@"+body.username.trim().replace(/^@/,"")):user.rows[0].username?("@"+user.rows[0].username.replace(/^@/,"")):"—"),telegramId,gift,status:"Подготовлен",message,createdAt:new Date().toISOString(),issuedAt:null,rewardType,amount:rewardType==="NOTE"?0:amount,rewardApplied:false};
       const gifts=await withTransaction(async client=>{
-        const current=await readGifts(client);
+        await client.query(`INSERT INTO app_settings(key,value) VALUES('owner_gifts','[]'::jsonb) ON CONFLICT(key) DO NOTHING`);
+        const setting=await client.query<{value:GiftRow[]}>(`SELECT COALESCE(value,'[]'::jsonb) AS value FROM app_settings WHERE key='owner_gifts' FOR UPDATE`);
+        const current=(setting.rows[0]?.value??[]) as GiftRow[];
         current.unshift(row);
-        await client.query(`INSERT INTO app_settings(key,value) VALUES('owner_gifts',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,[JSON.stringify(current.slice(0,500))]);
+        await client.query(`UPDATE app_settings SET value=$1::jsonb,updated_at=now() WHERE key='owner_gifts'`,[JSON.stringify(current.slice(0,500))]);
         await client.query(`INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data) VALUES($1::uuid,'OWNER_GIFT_CREATED','setting','owner_gifts',$2::jsonb)`,[admin.id,JSON.stringify({giftId:row.id,userId:user.rows[0].id,telegramId,gift,rewardType,amount:row.amount})]);
         return current;
       });
