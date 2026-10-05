@@ -1,10 +1,7 @@
 name: CRICKET BOX PostgreSQL Integration
 
 on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+  workflow_dispatch:
 
 # Keep the queue focused on the newest main revision.
 concurrency:
