@@ -14,7 +14,7 @@ export const Route = createFileRoute("/admin/")({
 });
 
 type AdminSeason = { id: string; code: string; name: string; state: SeasonState; participants: number; spins: number; wins: number; days: number; paidPrice: number; dailyFree: boolean; isPaused: boolean; pausedAt: string | null; startsAt: string | null; endsAt: string | null };
-type DbSeason = { id: string; code: string; name: string; state: SeasonState; starts_at: string | null; ends_at: string | null; is_paused: boolean; paused_at: string | null; paid_spin_price: number; daily_free_spin: boolean };
+type DbSeason = { id: string; code: string; name: string; state: SeasonState; starts_at: string | null; ends_at: string | null; is_paused: boolean; paused_at: string | null; paid_spin_price: number; daily_free_spin: boolean; participants?: number; spins?: number; wins?: number };
 type DbPrize = { id: string; season_id: string; kind: string; amount: string | number; unit_cost: string | number; subtitle: string | null; quantity_total: number; quantity_remaining: number; metadata?: Record<string, unknown> | null };
 type StatsResponse = { ok: boolean; code?: string; metrics?: { participants: number; spins: number; wins: number } };
 type PrizeDraft = { id: string; dbId?: string; kind: "MONEY" | "PREMIUM" | "STARS" | "EMPTY"; title: string; subtitle: string; amount: number; quantity: number; unitCost: number; quantityTotal?: number };
@@ -102,7 +102,11 @@ function AdminDashboard() {
     setLoading(true); setError("");
     try {
       const data = await api<DbSeason[]>(`/api/admin/seasons?initData=${encodeURIComponent(initData())}`, "GET");
-      const mapped = (data.seasons ?? []).map((season) => mapSeason(season));
+      const mapped = (data.seasons ?? []).map((season) => mapSeason(season, {
+        participants: Number(season.participants ?? 0),
+        spins: Number(season.spins ?? 0),
+        wins: Number(season.wins ?? 0),
+      }));
       setSeasons(mapped);
       setSelectedId((id) => id && mapped.some((s) => s.id === id) ? id : mapped.find((s) => s.state === "ACTIVE")?.id ?? mapped[0]?.id ?? null);
     } catch (e) {
