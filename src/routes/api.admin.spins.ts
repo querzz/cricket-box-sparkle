@@ -45,7 +45,7 @@ export const Route = createFileRoute("/api/admin/spins")({
              LEFT JOIN prizes p ON p.id = s.prize_id
              WHERE ($2 = '' OR s.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1)
                AND ($3 = '' OR s.type = $3)
-               AND ($4 = '' OR s.season_id = $4::uuid)
+               AND ($4 = '' OR s.season_id = $4::uuid) AND u.is_test=FALSE
              ORDER BY s.created_at DESC
              LIMIT $5`,
             [pattern, search, type, seasonId, limit],
