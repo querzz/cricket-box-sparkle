@@ -16,7 +16,7 @@ export const Route = createFileRoute("/api/admin/season-report")({
           id:string; code:string; name:string; state:string; starts_at:string|null; ends_at:string|null; is_paused:boolean; paused_at:string|null; paid_spin_price:number; paid_spin_enabled:boolean;
         }>(
           "SELECT id::text,code,name,state,starts_at::text,ends_at::text,is_paused,paused_at::text,paid_spin_price,paid_spin_enabled FROM seasons " +
-          (seasonId ? "WHERE id=$1::uuid" : "ORDER BY created_at DESC LIMIT 1"),
+          (seasonId ? "WHERE id=$1::uuid" : "WHERE state IN ('ACTIVE','ENDING','CLOSED','PAYOUT','ARCHIVED') ORDER BY CASE WHEN state='ACTIVE' THEN 0 WHEN state='ENDING' THEN 1 WHEN state='PAYOUT' THEN 2 WHEN state='CLOSED' THEN 3 WHEN state='ARCHIVED' THEN 4 ELSE 5 END,created_at DESC LIMIT 1"),
           seasonId ? [seasonId] : [],
         );
         const season = seasons.rows[0];
