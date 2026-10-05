@@ -12,7 +12,7 @@ export async function grantActiveFreeSpinCampaigns(
   if (!isParticipant || !isSubscribed) return 0;
 
   const campaigns = await db.query<{ id:string; name:string; spins_per_user:number }>(
-    "SELECT c.id::text,c.name,c.spins_per_user FROM free_spin_campaigns c JOIN seasons s ON s.id=c.season_id WHERE c.season_id=$1::uuid AND c.enabled=TRUE AND s.state IN ('ACTIVE','ENDING') ORDER BY c.created_at ASC",
+    "SELECT c.id::text,c.name,c.spins_per_user FROM free_spin_campaigns c JOIN seasons s ON s.id=c.season_id WHERE c.season_id=$1::uuid AND c.enabled=TRUE AND c.starts_at<=now() AND c.ends_at>now() AND s.state IN ('ACTIVE','ENDING') ORDER BY c.created_at ASC",
     [seasonId],
   );
 
