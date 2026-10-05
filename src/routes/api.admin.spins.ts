@@ -44,7 +44,7 @@ export const Route = createFileRoute("/api/admin/spins")({
              JOIN users u ON u.id = s.user_id
              LEFT JOIN prizes p ON p.id = s.prize_id
              WHERE ($2 = '' OR s.id::text ILIKE $1 OR u.telegram_id::text ILIKE $1 OR COALESCE(u.username,'') ILIKE $1 OR COALESCE(p.title,'') ILIKE $1)
-               AND ($3 = '' OR s.type = $3)
+               AND ($3 = '' OR s.type = $3 OR ($3 = 'BONUS' AND s.type IN ('OWNER_GIFT','ACTIVITY_BONUS','VETERAN_BONUS')))
                AND ($4 = '' OR s.season_id = $4::uuid) AND u.is_test=FALSE
              ORDER BY s.created_at DESC
              LIMIT $5`,
@@ -58,7 +58,7 @@ export const Route = createFileRoute("/api/admin/spins")({
               time: row.created_at,
               username: row.username ? `@${row.username.replace(/^@/, "")}` : "—",
               telegramId: row.telegram_id,
-              type: row.type === "FREE" ? "Бесплатная" : row.type === "PAID" ? "Платная" : row.type,
+              type: row.type === "FREE" ? "Бесплатная" : row.type === "PAID" ? "Платная" : "Бонус",
               price: row.price_stars,
               result: row.prize_title ? [row.prize_title, row.prize_subtitle].filter(Boolean).join(" · ") : "Пусто",
               status: row.status === "COMPLETED" ? "Успешно" : row.status === "FAILED" ? "Пусто" : row.status,
