@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/gift")({
           const user = await client.query<{ id: string; xp: number; level: number; veteran_tier_override: "ROOKIE" | "VETERAN" | "ELITE" | null }>(`SELECT id::text, xp, level, veteran_tier_override FROM users WHERE telegram_id = $1 FOR UPDATE`, [telegramId]);
           if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
           await client.query(`INSERT INTO user_state (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`, [user.rows[0].id]);
-          const state = await client.query<{ is_participant:boolean; is_subscribed:boolean; daily_gift_claimed_at:string|null; stars_balance:number; bonus_free_spins:number }>(`SELECT is_participant,is_subscribed,daily_gift_claimed_at::text,stars_balance,bonus_free_spins FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [user.rows[0].id]);
+          const state = await client.query<{ is_participant:boolean; is_subscribed:boolean; daily_gift_claimed_at:string|null; stars_balance:number; bonus_free_spins:number; daily_gift_chance_boost_pct:number }>(`SELECT is_participant,is_subscribed,daily_gift_claimed_at::text,stars_balance,bonus_free_spins,daily_gift_chance_boost_pct FROM user_state WHERE user_id=$1::uuid FOR UPDATE`, [user.rows[0].id]);
           const current = state.rows[0];
           const subscribed = membership ?? current?.is_subscribed ?? false;
           if (membership !== null && membership !== current?.is_subscribed) await client.query(`UPDATE user_state SET is_subscribed=$2,updated_at=now() WHERE user_id=$1::uuid`, [user.rows[0].id, membership]);
@@ -49,7 +49,12 @@ export const Route = createFileRoute("/api/gift")({
           const balance = Number(current.stars_balance ?? 0);
           const config = await getDailyGiftConfig(client);
           const tierInfo = await getDailyGiftTier(client, user.rows[0].id, user.rows[0].veteran_tier_override, currentSeason.id);
-          const reward = pickDailyGift(tierInfo.tier, config, secureRandomUnit, balance);
+          const chanceBoost = Math.max(0,Number(current.daily_gift_chance_boost_pct??0));
+          const boostedConfig = {
+            ...config,
+            rewardChanceByTier: {...config.rewardChanceByTier,[tierInfo.tier]:Math.min(100,config.rewardChanceByTier[tierInfo.tier]+chanceBoost)},
+          };
+          const reward = pickDailyGift(tierInfo.tier, boostedConfig, secureRandomUnit, balance);
           const starsCredited = reward.kind === "STARS" ? Math.min(reward.amount, Math.max(0, MAX_STARS - balance)) : 0;
           const overflow = reward.kind === "STARS" ? Math.max(0, reward.amount - starsCredited) : 0;
           const bonusSpinGranted = reward.kind === "FREE_SPIN" ? Math.min(reward.amount, Math.max(0, MAX_BONUS_SPINS - Number(current.bonus_free_spins ?? 0))) : 0;
@@ -71,12 +76,12 @@ export const Route = createFileRoute("/api/gift")({
 
           const claim = await client.query<{ id:string; created_at:string }>(
             `INSERT INTO daily_gift_claims (user_id,season_id,kind,amount,title,metadata) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6::jsonb) RETURNING id::text,created_at::text`,
-            [user.rows[0].id,currentSeason.id,effectiveKind,effectiveKind === "STARS" ? starsCredited : effectiveKind === "FREE_SPIN" ? bonusSpinGranted : effectiveKind === "XP" ? xpGranted : 0,title,JSON.stringify({ tier:tierInfo.tier, tierSource:tierInfo.source, configuredRewardChance:config.rewardChanceByTier[tierInfo.tier], requestedKind:reward.kind, requestedAmount:reward.amount, weight:reward.weight, starsCredited, bonusSpinGranted, xpGranted, overflowStars:overflow })],
+            [user.rows[0].id,currentSeason.id,effectiveKind,effectiveKind === "STARS" ? starsCredited : effectiveKind === "FREE_SPIN" ? bonusSpinGranted : effectiveKind === "XP" ? xpGranted : 0,title,JSON.stringify({ tier:tierInfo.tier, tierSource:tierInfo.source, configuredRewardChance:boostedConfig.rewardChanceByTier[tierInfo.tier],baseRewardChance:config.rewardChanceByTier[tierInfo.tier],streakChanceBoost:chanceBoost, requestedKind:reward.kind, requestedAmount:reward.amount, weight:reward.weight, starsCredited, bonusSpinGranted, xpGranted, overflowStars:overflow })],
           );
 
           if (starsCredited > 0) await appendStarsLedger(client, { userId:user.rows[0].id, seasonId:currentSeason.id, type:"DAILY_GIFT", amount:reward.amount, balanceDelta:starsCredited, referenceId:claim.rows[0].id, idempotencyKey:`daily-gift:${claim.rows[0].id}:reward`, metadata:{ requestedAmount:reward.amount, creditedAmount:starsCredited, overflowAmount:overflow } });
           if (overflow > 0) await appendStarsLedger(client, { userId:user.rows[0].id, seasonId:currentSeason.id, type:"CAPPED_OVERFLOW_BURNED", amount:-overflow, balanceDelta:0, referenceId:claim.rows[0].id, idempotencyKey:`daily-gift:${claim.rows[0].id}:overflow`, metadata:{ requestedAmount:reward.amount, creditedAmount:starsCredited, overflowAmount:overflow } });
-          await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('DAILY_GIFT_CLAIMED','daily_gift',$1,$2::jsonb)`, [claim.rows[0].id, JSON.stringify({ userId:user.rows[0].id, seasonId:currentSeason.id, tier:tierInfo.tier, tierSource:tierInfo.source, configuredRewardChance:config.rewardChanceByTier[tierInfo.tier], kind:effectiveKind, requestedKind:reward.kind, amount:reward.amount, starsCredited, overflowStars:overflow, bonusSpinGranted, xpGranted })]);
+          await client.query(`INSERT INTO audit_logs (action,entity_type,entity_id,after_data) VALUES ('DAILY_GIFT_CLAIMED','daily_gift',$1,$2::jsonb)`, [claim.rows[0].id, JSON.stringify({ userId:user.rows[0].id, seasonId:currentSeason.id, tier:tierInfo.tier, tierSource:tierInfo.source, configuredRewardChance:boostedConfig.rewardChanceByTier[tierInfo.tier], baseRewardChance:config.rewardChanceByTier[tierInfo.tier], streakChanceBoost:chanceBoost, kind:effectiveKind, requestedKind:reward.kind, amount:reward.amount, starsCredited, overflowStars:overflow, bonusSpinGranted, xpGranted })]);
           return { claimId:claim.rows[0].id, claimedAt:claim.rows[0].created_at, reward, effectiveKind, title, subtitle, starsCredited, bonusSpinGranted, xpGranted, overflow };
         });
 
