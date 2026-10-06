@@ -166,12 +166,15 @@ assert(veteranUi.includes("rankError(") && veteranUi.includes("Проверь Te
 assert(adminSettings.includes('role?: "OWNER" | "ADMIN"') && adminSettings.includes('veteranRole !== "OWNER"'), "admin settings keeps veteran system toggle owner-only");
 assert(selector.includes("getAntiStreakMultiplier") && selector.includes("1 / pityMultiplier"), "EMPTY anti-streak multiplier counteracts long EMPTY streaks");
 const prizeAdmin = await read("src/routes/admin.prizes.tsx");
+const prizeAdminApi = await read("src/routes/api.admin.prizes.ts");
 assert(prizeAdmin.includes('draft.kind === "STARS" || p.kind === "NFT"') || prizeAdmin.includes('p.kind === "STARS" || p.kind === "NFT"'), "NFT value is included in Stars fund obligations");
 assert(prizeAdmin.includes('[5,10,15,20].map'), "prize editor exposes 5/10/15/20 chance presets");
 assert(prizeAdmin.includes('draft.kind === "EMPTY"') && prizeAdmin.includes("desiredEmptyMass"), "chance presets adjust EMPTY mass while preserving reward weights");
 assert(prizeAdmin.includes('label="NFT"') && prizeAdmin.includes('draft.kind === "NFT"'), "prize editor exposes dedicated NFT configuration");
 assert(!prizeAdmin.includes("Картинка URL"), "prize editor does not expose the legacy image URL field");
 assert(prizeAdmin.includes("Себестоимость") && prizeAdmin.includes("не для определения шанса"), "prize economics field is clearly separated from probability");
+assert(prizeAdmin.includes("items = drafts.map") && prizeAdmin.includes("body: JSON.stringify({ initData: initData(), items })"), "prize editor saves the full fund in one request");
+assert(prizeAdminApi.includes("Array.isArray(body.items)") && prizeAdminApi.includes("withTransaction(async (client)") && prizeAdminApi.includes("for (const item of body.items"), "prize API applies bulk fund saves atomically");
 assert(bot.includes("countedComments >= 20") && bot.includes("(countedComments + 1) % 2 === 0"), "channel activity enforces 20 counted comments/day and 2 comments per point");
 assert(session.includes("const activityEnabled") && session.indexOf("grantActiveFreeSpinCampaigns") < session.indexOf("if (activityEnabled)"), "global free-spin campaign grant stays independent of activity accrual");
 assert(dailyGiftApi.includes("parseDailyGiftConfig") && adminSettings.includes("Шанс получить награду в Daily Gift") && adminSettings.includes("rewardChanceByTier"), "Daily Gift exposes one configurable chance per rank");
