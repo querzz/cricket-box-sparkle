@@ -75,6 +75,10 @@ const seasonService = await read("src/server/season-service.ts");
 const bot = await read("scripts/telegram-bot.mjs");
 const seasonUi = await read("src/lib/season.ts");
 const spin = await read("src/routes/api.spin.ts");
+const paymentInvoice = await read("src/routes/api.payment.invoice.ts");
+const paymentComplete = await read("src/routes/api.payment.complete.ts");
+const ownerGiftApi = await read("src/routes/api.admin.owner-gifts.ts");
+const ownerGiftCard = await read("src/components/kit/OwnerGiftCard.tsx");
 const economics = await read("src/routes/admin.economics.tsx");
 const payouts = await read("src/routes/admin.payouts.tsx");
 const i18n = await read("src/lib/i18n.ts");
@@ -94,6 +98,8 @@ assert(seasonUi.includes("const finished = state === \"CLOSED\" || state === \"P
 assert(seasonUi.includes("canSpin: live && !paused && subscribed"), "spin access is disabled outside live, paused, or unsubscribed state");
 assert(spin.includes('throw new Error("NO_ATTEMPTS")'), "server rejects a user with no free/bonus attempts");
 assert(spin.includes('throw new Error("NO_PRIZES")'), "server rejects an exhausted prize pool");
+assert(paymentInvoice.includes("getTelegramChannelMembership") && paymentInvoice.includes("membership === false"), "paid checkout rechecks live Telegram channel membership");
+assert(paymentComplete.includes("getTelegramChannelMembership") && paymentComplete.includes("membership===false") && paymentComplete.includes("NOT_SUBSCRIBED"), "paid settlement rechecks live Telegram membership before awarding a paid spin");
 assert(draw.includes("starsFull"), "draw handles a full 500 Stars balance");
 assert(!economics.includes('label="Revenue"') && !economics.includes('label="Known cost"') && !economics.includes("Paid conversion") && !economics.includes("dry-run") && !economics.includes("LiveOps-дропы"), "economics UI no longer exposes obvious English operational labels");
 assert(!/(?:[>\"\'])Lifecycle:\s/.test(payouts) && !/(?:[>\"\'])method:\s/.test(payouts) && !/(?:[>\"\'])ref:\s/.test(payouts), "payout UI no longer exposes obvious English operational labels");
@@ -177,6 +183,8 @@ assert(streakApi.includes("season_daily_checkins") && streakApi.includes("eligib
 assert(streakService.includes("eligibleForReward") && streakService.includes("rewardStars = 10"), "7-day streak eligibility and 10 Stars reward schedule are tracked");
 assert(prizeAdmin.includes('p.kind === "STARS" || p.kind === "NFT"'), "NFT value is included in Stars fund totals");
 assert(economics.includes("Всё в норме") && economics.includes("Риск убытка") && !economics.includes("dry-run"), "economics admin is localized for non-technical admins");
+assert(ownerGiftApi.includes("sendTelegramNotification") && ownerGiftApi.includes("Открой CRICKET BOX и забери свой подарок"), "owner gift creation notifies the recipient through the bot");
+assert(ownerGiftCard.includes("Тебе что-то дали") && ownerGiftCard.includes("Забрать подарок") && ownerGiftCard.includes("showPopup"), "owner gift shows an in-app popup when a new gift appears");
 
 console.log("✅ Product UX/Admin/Bot static QA passed");
 console.log(`Checked user routes: ${userRoutes.length}, admin views: ${adminRoutes.length}, admin APIs: ${adminApis.length}`);
