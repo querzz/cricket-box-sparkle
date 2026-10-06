@@ -38,9 +38,50 @@ export const Route = createFileRoute("/api/admin/prizes")({
             imageUrl?: string | null;
             metadata?: Record<string, unknown>;
             economicOverride?: boolean;
+            items?: Array<{
+              id?: string; seasonId?: string; kind?: string; title?: string; subtitle?: string | null; amount?: unknown; unitCost?: unknown;
+              currency?: string | null; quantityTotal?: unknown; quantityRemaining?: unknown; active?: boolean; imageUrl?: string | null;
+              metadata?: Record<string, unknown>; economicOverride?: boolean; economicOverrideReason?: string;
+            }>;
             economicOverrideReason?: string;
           };
           const admin = await authenticateAdmin(body.initData ?? "");
+          if (Array.isArray(body.items)) {
+            if (body.items.length > 100) return Response.json({ ok: false, code: "TOO_MANY_PRIZES" }, { status: 400 });
+            const saved = await withTransaction(async (client) => {
+              const result = [];
+              for (const item of body.items ?? []) {
+                const seasonId = item.seasonId ?? "";
+                const title = item.title?.trim();
+                const quantityTotalNumber = Number(item.quantityTotal ?? 0);
+                const quantityRemainingNumber = item.quantityRemaining == null ? quantityTotalNumber : Number(item.quantityRemaining);
+                const amount = Number(item.amount ?? 0);
+                const unitCost = Number(item.unitCost ?? 0);
+                if (!seasonId || !title || !Number.isFinite(amount) || !Number.isFinite(unitCost) || !Number.isFinite(quantityTotalNumber) || !Number.isFinite(quantityRemainingNumber)) throw new Error("INVALID_INPUT");
+                const quantityTotal = Math.max(0, Math.floor(quantityTotalNumber));
+                const quantityRemaining = Math.max(0, Math.floor(quantityRemainingNumber));
+                const economicOverride = item.economicOverride === true;
+                if (economicOverride && admin.role !== "OWNER") throw new Error("OWNER_ONLY");
+                const economicOverrideReason = typeof item.economicOverrideReason === "string" ? item.economicOverrideReason.trim() : "";
+                if (economicOverride && (economicOverrideReason.length < 5 || economicOverrideReason.length > 500)) throw new Error("INVALID_OVERRIDE_REASON");
+                const nextPrize = await upsertPrize({
+                  id:item.id, seasonId, kind:item.kind ?? "CUSTOM", title, subtitle:item.subtitle,
+                  amount, unitCost, currency:item.currency, quantityTotal, quantityRemaining, active:item.active !== false,
+                  imageUrl:item.imageUrl, metadata:item.metadata, economicOverride,
+                  economicOverrideRole:admin.role === "OWNER" ? "OWNER" : undefined, economicOverrideReason,
+                }, client);
+                const action = economicOverride ? "PRIZE_ECONOMIC_OVERRIDE" : "PRIZE_UPDATED";
+                await client.query(
+                  `INSERT INTO audit_logs(admin_id,action,entity_type,entity_id,after_data)
+                   VALUES($1::uuid,$2,'prize',$3,$4::jsonb)`,
+                  [admin.id, action, nextPrize.id, JSON.stringify({ ...nextPrize, economicOverride, economicOverrideReason: economicOverride ? economicOverrideReason : undefined })],
+                );
+                result.push(nextPrize);
+              }
+              return result;
+            });
+            return Response.json({ ok:true, prizes:saved });
+          }
           const seasonId = body.seasonId;
           const title = body.title?.trim();
           if (!seasonId || !title) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
@@ -86,7 +127,7 @@ export const Route = createFileRoute("/api/admin/prizes")({
           return Response.json({ ok: true, prize });
         } catch (error) {
           const code = error instanceof Error ? error.message : "REQUEST_FAILED";
-          const status = ["INVALID_PRIZE_KIND","INVALID_PRIZE_TITLE","INVALID_PRIZE_AMOUNT","INVALID_PRIZE_COST","INVALID_PRIZE_QUANTITY","INVALID_PRIZE_WEIGHT","INVALID_INPUT","INVALID_SEASON","INVALID_OVERRIDE_REASON"].includes(code)
+          const status = ["INVALID_PRIZE_KIND","INVALID_PRIZE_TITLE","INVALID_PRIZE_AMOUNT","INVALID_PRIZE_COST","INVALID_PRIZE_QUANTITY","INVALID_PRIZE_WEIGHT","INVALID_INPUT","INVALID_SEASON","INVALID_OVERRIDE_REASON","TOO_MANY_PRIZES"].includes(code)
             ? 400
             : ["PRIZE_NOT_FOUND","PRIZE_SEASON_MISMATCH","SEASON_NOT_FOUND"].includes(code)
               ? 404
