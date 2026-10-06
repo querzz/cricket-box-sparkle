@@ -7,6 +7,7 @@ import { secureRandomUnit } from "@/server/secure-random";
 import { activateDueDrops } from "@/server/liveops";
 import { pickDynamicPrize } from "@/server/dynamic-prize-selection";
 import { appendStarsLedger } from "@/server/stars-ledger";
+import { getTelegramChannelMembership } from "@/server/telegram-channel";
 
 type Body = { payload?: unknown; telegramId?: unknown; chargeId?: unknown; currency?: unknown; totalAmount?: unknown };
 type PrizeRow = { id:string; kind:"STARS"|"PREMIUM"|"MONEY"|"NFT"|"PHYSICAL"|"CUSTOM"|"FREE_SPIN"|"EMPTY"; title:string; subtitle:string|null; amount:string; currency:string|null; quantity_total:number; quantity_remaining:number; metadata:Record<string,unknown>|null; is_active:boolean };
@@ -128,6 +129,7 @@ export const Route=createFileRoute("/api/payment/complete")({server:{handlers:{P
 
       refundState.current={userId,telegramId,chargeId,transactionId:tx.rows[0].id};
       const user=await client.query<{id:string;xp:number}>(`SELECT id::text,xp FROM users WHERE id=$1::uuid AND telegram_id=$2 FOR UPDATE`,[userId,telegramId]); if(!user.rows[0])throw new Error("USER_NOT_FOUND");
+      const membership=await getTelegramChannelMembership(telegramId); if(membership===false)throw new Error("NOT_SUBSCRIBED");
 
       await client.query("SAVEPOINT paid_spin_settlement");
       try{
