@@ -169,16 +169,18 @@ function AdminPrizes() {
     if (invalid) { setError("Проверь название, количество, сумму и вес выпадения у всех наград."); return; }
     setSaving(true); setError(""); setMessage("");
     try {
-      for (const draft of drafts) {
-        const payload = {
-          id: draft.id, seasonId, kind: draft.kind, title: draft.title.trim(), subtitle: draft.subtitle.trim() || null,
-          amount: draft.amount, unitCost: draft.unitCost,
-          currency: draft.kind === "MONEY" ? "UAH" : draft.kind === "STARS" ? "XTR" : draft.currency || null,
-          quantityTotal: Math.max(draft.quantity, draft.won), quantityRemaining: remaining(draft), active: draft.active,
-          imageUrl: draft.imageUrl.trim() || null, metadata: { weight: draft.weight },
-        };
-        await api("/api/admin/prizes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, initData: initData() }) });
-      }
+      const items = drafts.map((draft) => ({
+        id: draft.id, seasonId, kind: draft.kind, title: draft.title.trim(), subtitle: draft.subtitle.trim() || null,
+        amount: draft.amount, unitCost: draft.unitCost,
+        currency: draft.kind === "MONEY" ? "UAH" : draft.kind === "STARS" ? "XTR" : draft.currency || null,
+        quantityTotal: Math.max(draft.quantity, draft.won), quantityRemaining: remaining(draft), active: draft.active,
+        imageUrl: draft.imageUrl.trim() || null, metadata: { weight: draft.weight },
+      }));
+      await api("/api/admin/prizes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ initData: initData(), items }),
+      });
       await loadPrizes(seasonId);
       setMessage(`Призовой фонд ${selectedSeason?.code ?? "сезона"} сохранён.`);
     } catch (e) {
