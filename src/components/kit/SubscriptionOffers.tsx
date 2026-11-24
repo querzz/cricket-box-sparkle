@@ -49,7 +49,7 @@ export function SubscriptionOffers({ primarySubscribed, onClaimed }: { primarySu
       const response = await fetch("/api/subscription-offers", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ initData: initData(), offerId: offer.id, confirmedSubscription: true }),
+        body: JSON.stringify({ initData: initData(), offerId: offer.id }),
       });
       const data = await response.json() as Api;
       if (!response.ok || !data.ok) throw new Error(data.code ?? "REQUEST_FAILED");
@@ -60,12 +60,13 @@ export function SubscriptionOffers({ primarySubscribed, onClaimed }: { primarySu
       const code = error instanceof Error ? error.message : "";
       const messages: Record<string, string> = {
         NOT_SUBSCRIBED: "Сначала подпишись на основной канал CRICKET BOX.",
-        SUBSCRIPTION_CONFIRMATION_REQUIRED: "Подтверди, что подписался на рекламный канал.",
+        NOT_SUBSCRIBED_TO_OFFER: "Подписка на рекламный канал не найдена. Подпишись и нажми «Проверить и забрать» ещё раз.",
+        OFFER_MEMBERSHIP_CHECK_UNAVAILABLE: "Не удалось проверить канал. Попроси владельца добавить @CricketBoxBot администратором и проверить его права.",
         NOT_PARTICIPANT: "Сначала заверши регистрацию участника.",
         OFFER_NOT_AVAILABLE: "Это рекламное задание уже завершено.",
         BONUS_SPIN_CAP_REACHED: "У тебя слишком много накопленных бонусных прокруток. Используй часть и попробуй снова.",
       };
-      setMessage(messages[code] ?? "Не удалось получить бонус: " + code);
+      setMessage(messages[code] ?? "Не удалось проверить подписку: " + code);
     } finally {
       setCheckingId("");
     }
@@ -79,7 +80,7 @@ export function SubscriptionOffers({ primarySubscribed, onClaimed }: { primarySu
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Бесплатные прокрутки за подписку</h2>
       <span className="text-[9px] text-muted-foreground">до 3 заданий</span>
     </div>
-    <p className="text-[10px] leading-relaxed text-muted-foreground">Подписка на рекламный канал не проверяется автоматически. Нажимая кнопку, ты подтверждаешь, что подписался. За одно задание награда выдаётся только один раз.</p>
+    <p className="text-[10px] leading-relaxed text-muted-foreground">После подписки нажми «Проверить и забрать». CRICKET BOX проверит подписку через Telegram. За одно задание награда выдаётся только один раз.</p>
     <div className="space-y-2.5">
       {offers.map((offer) => <GlassCard key={offer.id} className="px-3.5 py-3.5">
         <div className="flex items-start gap-3">
@@ -90,7 +91,7 @@ export function SubscriptionOffers({ primarySubscribed, onClaimed }: { primarySu
             {offer.description && <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{offer.description}</p>}
             {offer.claimed ? <div className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[10px] font-semibold"><ShieldCheck className="size-3.5" /> Награда получена</div> : <div className="mt-3 flex flex-wrap gap-2">
               <button type="button" onClick={() => openTelegramLink(offer.channel_url)} className="inline-flex items-center gap-1.5 rounded-xl border border-glass-border px-3 py-2 text-[10px] font-semibold"><Send className="size-3.5" /> Подписаться</button>
-              <button type="button" disabled={checkingId === offer.id || !primarySubscribed} onClick={() => void claim(offer)} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-40">{checkingId === offer.id ? "Выдаём…" : "Я подписался — забрать"}</button>
+              <button type="button" disabled={checkingId === offer.id || !primarySubscribed} onClick={() => void claim(offer)} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[10px] font-semibold disabled:opacity-40">{checkingId === offer.id ? "Проверяем…" : "Проверить и забрать"}</button>
             </div>}
           </div>
         </div>
