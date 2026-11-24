@@ -3,6 +3,7 @@ import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
 import { getTelegramChannelMembership, getTelegramChatMembership } from "@/server/telegram-channel";
+import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 type OfferRow = {
   id: string;
@@ -59,6 +60,7 @@ export const Route = createFileRoute("/api/subscription-offers")({
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) throw new Error("TELEGRAM_USER_MISSING");
+        await enforceRateLimit("subscription-offer:" + telegramId, 8);
 
         const userResult = await query<{ id: string; is_test: boolean }>(
           "SELECT id::text,is_test FROM users WHERE telegram_id=$1 LIMIT 1",
@@ -134,11 +136,13 @@ export const Route = createFileRoute("/api/subscription-offers")({
         return Response.json({ ok: true, ...result });
       } catch (error) {
         const code = error instanceof Error ? error.message : "OFFER_CLAIM_FAILED";
-        const status = ["NOT_SUBSCRIBED", "NOT_SUBSCRIBED_TO_OFFER", "NOT_PARTICIPANT"].includes(code) ? 403
+        const status = error instanceof RateLimitError ? 429
+          : ["NOT_SUBSCRIBED", "NOT_SUBSCRIBED_TO_OFFER", "NOT_PARTICIPANT"].includes(code) ? 403
           : ["OFFER_NOT_AVAILABLE", "SEASON_NOT_ACTIVE", "SEASON_PAUSED", "ALREADY_CLAIMED", "BONUS_SPIN_CAP_REACHED"].includes(code) ? 409
           : code === "USER_NOT_FOUND" ? 404
           : 400;
-        return Response.json({ ok: false, code }, { status });
+        const headers = error instanceof RateLimitError ? { "Retry-After": String(error.retryAfterSeconds) } : undefined;
+        return Response.json({ ok: false, code }, { status, headers });
       }
     },
   } },
