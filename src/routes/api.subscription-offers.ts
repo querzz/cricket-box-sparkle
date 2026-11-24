@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
-import { getTelegramChannelMembership, getTelegramChatMembership } from "@/server/telegram-channel";
+import { getTelegramChannelMembership } from "@/server/telegram-channel";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 type OfferRow = {
@@ -53,10 +53,11 @@ export const Route = createFileRoute("/api/subscription-offers")({
     },
     POST: async ({ request }) => {
       try {
-        const body = await request.json() as { initData?: unknown; offerId?: unknown };
+        const body = await request.json() as { initData?: unknown; offerId?: unknown; confirmedSubscription?: unknown };
         const initData = typeof body.initData === "string" ? body.initData.trim() : "";
         const offerId = String(body.offerId ?? "").trim();
         if (!initData || !offerId) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
+        if (body.confirmedSubscription !== true) throw new Error("SUBSCRIPTION_CONFIRMATION_REQUIRED");
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) throw new Error("TELEGRAM_USER_MISSING");
@@ -78,10 +79,18 @@ export const Route = createFileRoute("/api/subscription-offers")({
         const offer = offerResult.rows[0];
         if (!offer) throw new Error("OFFER_NOT_AVAILABLE");
 
+        // Return the permanent claimed state before checking live subscriptions or season state.
+        // This keeps the "already claimed" response stable after an unsubscribe/resubscribe.
+        const previousClaim = await query(
+          "SELECT 1 FROM subscription_spin_offer_claims WHERE offer_id=$1::uuid AND user_id=$2::uuid LIMIT 1",
+          [offerId, user.id],
+        );
+        if (previousClaim.rows[0]) {
+          return Response.json({ ok: true, duplicate: true, addedSpins: 0 });
+        }
+
         const mainMembership = await getTelegramChannelMembership(telegramId);
         if (mainMembership === false) throw new Error("NOT_SUBSCRIBED");
-        const offerMembership = await getTelegramChatMembership(telegramId, "@" + offer.channel_username);
-        if (offerMembership !== true) throw new Error("NOT_SUBSCRIBED_TO_OFFER");
 
         const result = await withTransaction(async (client) => {
           const lockedUser = await client.query<{ id: string }>(
@@ -89,6 +98,14 @@ export const Route = createFileRoute("/api/subscription-offers")({
             [user.id],
           );
           if (!lockedUser.rows[0]) throw new Error("USER_NOT_FOUND");
+
+          const previousClaim = await client.query(
+            "SELECT 1 FROM subscription_spin_offer_claims WHERE offer_id=$1::uuid AND user_id=$2::uuid LIMIT 1",
+            [offerId, user.id],
+          );
+          if (previousClaim.rows[0]) {
+            return { duplicate: true, addedSpins: 0 };
+          }
 
           const stateResult = await client.query<{ is_subscribed: boolean; is_participant: boolean; bonus_free_spins: number }>(
             "SELECT is_subscribed,is_participant,bonus_free_spins FROM user_state WHERE user_id=$1::uuid FOR UPDATE",
@@ -137,7 +154,7 @@ export const Route = createFileRoute("/api/subscription-offers")({
       } catch (error) {
         const code = error instanceof Error ? error.message : "OFFER_CLAIM_FAILED";
         const status = error instanceof RateLimitError ? 429
-          : ["NOT_SUBSCRIBED", "NOT_SUBSCRIBED_TO_OFFER", "NOT_PARTICIPANT"].includes(code) ? 403
+          : ["NOT_SUBSCRIBED", "NOT_PARTICIPANT"].includes(code) ? 403
           : ["OFFER_NOT_AVAILABLE", "SEASON_NOT_ACTIVE", "SEASON_PAUSED", "ALREADY_CLAIMED", "BONUS_SPIN_CAP_REACHED"].includes(code) ? 409
           : code === "USER_NOT_FOUND" ? 404
           : 400;
