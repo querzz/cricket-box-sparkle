@@ -117,14 +117,14 @@ function SubscriptionOffersAdmin() {
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">LiveOps · реклама</p>
             <h1 className="mt-1 font-display text-xl uppercase">Подписка за прокрутку</h1>
-            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Добавляй каналы рекламодателей. Участник подписывается, нажимает «Проверить» и получает бонусные прокрутки. Одно задание можно выполнить только один раз.</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Добавляй каналы рекламодателей. Участник подписывается на канал и сам подтверждает подписку в приложении. Бот не проверяет подписку на рекламный канал автоматически. Одно задание можно выполнить только один раз.</p>
           </div>
         </div>
         <div className="mt-4 flex items-center justify-between rounded-xl border border-glass-border px-3 py-2.5">
           <span className="text-[11px] text-muted-foreground">Активные задания</span>
           <span className="text-sm font-semibold">{activeCount} / 3</span>
         </div>
-        <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">Важно: бот CRICKET BOX должен быть администратором каждого рекламного канала, иначе Telegram не позволит надёжно проверять подписку. Поддерживаются публичные каналы с @username.</p>
+        <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">Важно: добавлять бота CRICKET BOX администратором рекламного канала не нужно. Подписка на рекламный канал не проверяется автоматически: участник подтверждает её кнопкой в приложении. Награда за одно задание выдаётся только один раз. Поддерживаются публичные каналы с @username.</p>
       </GlassCard>
 
       {message && <GlassCard className="border-primary/25 bg-primary/5 px-4 py-3 text-[11px]">{message}</GlassCard>}
