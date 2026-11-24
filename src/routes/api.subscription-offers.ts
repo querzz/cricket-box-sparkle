@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { validateTelegramInitData } from "@/server/auth/telegram";
 import { requireBotToken } from "@/server/config";
 import { query, withTransaction } from "@/server/db";
-import { getTelegramChannelMembership } from "@/server/telegram-channel";
+import { checkTelegramChatMembership, getTelegramChannelMembership } from "@/server/telegram-channel";
 import { enforceRateLimit, RateLimitError } from "@/server/rate-limit";
 
 type OfferRow = {
@@ -48,11 +48,10 @@ export const Route = createFileRoute("/api/subscription-offers")({
     },
     POST: async ({ request }) => {
       try {
-        const body = await request.json() as { initData?: unknown; offerId?: unknown; confirmedSubscription?: unknown };
+        const body = await request.json() as { initData?: unknown; offerId?: unknown };
         const initData = typeof body.initData === "string" ? body.initData.trim() : "";
         const offerId = String(body.offerId ?? "").trim();
         if (!initData || !offerId) return Response.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
-        if (body.confirmedSubscription !== true) throw new Error("SUBSCRIPTION_CONFIRMATION_REQUIRED");
         const validated = await validateTelegramInitData(initData, requireBotToken());
         const telegramId = validated.user?.id;
         if (!telegramId) throw new Error("TELEGRAM_USER_MISSING");
@@ -86,6 +85,10 @@ export const Route = createFileRoute("/api/subscription-offers")({
 
         const mainMembership = await getTelegramChannelMembership(telegramId);
         if (mainMembership === false) throw new Error("NOT_SUBSCRIBED");
+
+        const offerMembership = await checkTelegramChatMembership(telegramId, "@" + offer.channel_username);
+        if (!offerMembership.available) throw new Error("OFFER_MEMBERSHIP_CHECK_UNAVAILABLE");
+        if (!offerMembership.isMember) throw new Error("NOT_SUBSCRIBED_TO_OFFER");
 
         const result = await withTransaction(async (client) => {
           const lockedUser = await client.query<{ id: string }>(
@@ -143,7 +146,8 @@ export const Route = createFileRoute("/api/subscription-offers")({
       } catch (error) {
         const code = error instanceof Error ? error.message : "OFFER_CLAIM_FAILED";
         const status = error instanceof RateLimitError ? 429
-          : ["NOT_SUBSCRIBED", "NOT_PARTICIPANT"].includes(code) ? 403
+          : ["NOT_SUBSCRIBED", "NOT_SUBSCRIBED_TO_OFFER", "NOT_PARTICIPANT"].includes(code) ? 403
+          : code === "OFFER_MEMBERSHIP_CHECK_UNAVAILABLE" ? 503
           : ["OFFER_NOT_AVAILABLE", "ALREADY_CLAIMED", "BONUS_SPIN_CAP_REACHED"].includes(code) ? 409
           : code === "USER_NOT_FOUND" ? 404
           : 400;
