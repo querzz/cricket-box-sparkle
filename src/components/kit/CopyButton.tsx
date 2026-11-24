@@ -7,7 +7,9 @@ async function copyToClipboard(value:string){
       await navigator.clipboard.writeText(value);
       return true;
     }
-  }catch{}
+  }catch{
+    // Clipboard API can be unavailable in restricted Telegram WebViews; use the fallback below.
+  }
   try{
     const textarea=document.createElement("textarea");
     textarea.value=value;
