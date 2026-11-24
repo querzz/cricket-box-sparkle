@@ -33,5 +33,10 @@ export async function getTelegramChatMembership(telegramId: number, chatId: stri
 }
 
 export async function getTelegramChannelMembership(telegramId: number): Promise<boolean | null> {
-  return getTelegramChatMembership(telegramId, requireTelegramChannelId());
+  try {
+    return await getTelegramChatMembership(telegramId, requireTelegramChannelId());
+  } catch (error) {
+    console.warn("[CRICKET BOX] Primary channel membership check unavailable", error instanceof Error ? error.message : error);
+    return isProductionApp() ? false : null;
+  }
 }

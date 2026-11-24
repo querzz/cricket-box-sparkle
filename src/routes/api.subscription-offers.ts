@@ -37,11 +37,11 @@ export const Route = createFileRoute("/api/subscription-offers")({
         if (!liveSeason.rows[0]) return Response.json({ ok: true, offers: [] });
 
         const result = await query(
-          \`SELECT o.id::text,o.title,o.description,o.channel_username,o.channel_url,o.reward_spins,o.ends_at::text,
+          `SELECT o.id::text,o.title,o.description,o.channel_username,o.channel_url,o.reward_spins,o.ends_at::text,
                   EXISTS(SELECT 1 FROM subscription_spin_offer_claims c WHERE c.offer_id=o.id AND c.user_id=$1::uuid) AS claimed
              FROM subscription_spin_offers o
             WHERE o.enabled=TRUE AND o.starts_at<=now() AND (o.ends_at IS NULL OR o.ends_at>now())
-            ORDER BY o.created_at ASC\`,
+            ORDER BY o.created_at ASC`,
           [user.id],
         );
         return Response.json({ ok: true, offers: result.rows }, { headers: { "cache-control": "no-store" } });
@@ -68,9 +68,9 @@ export const Route = createFileRoute("/api/subscription-offers")({
         if (!user || user.is_test) throw new Error("USER_NOT_FOUND");
 
         const offerResult = await query<OfferRow>(
-          \`SELECT id::text,title,description,channel_username,channel_url,reward_spins,ends_at::text
+          `SELECT id::text,title,description,channel_username,channel_url,reward_spins,ends_at::text
              FROM subscription_spin_offers
-            WHERE id=$1::uuid AND enabled=TRUE AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())\`,
+            WHERE id=$1::uuid AND enabled=TRUE AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())`,
           [offerId],
         );
         const offer = offerResult.rows[0];

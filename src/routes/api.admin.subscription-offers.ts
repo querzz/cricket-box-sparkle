@@ -7,7 +7,7 @@ const USERNAME_PATTERN = /^@?[A-Za-z0-9_]{5,32}$/;
 
 async function listOffers() {
   const result = await query(
-    \`SELECT o.id::text,o.title,o.description,o.channel_username,o.channel_url,
+    `SELECT o.id::text,o.title,o.description,o.channel_username,o.channel_url,
             o.reward_spins,o.enabled,o.starts_at::text,o.ends_at::text,o.created_at::text,
             (o.ends_at IS NOT NULL AND o.ends_at<=now()) AS is_expired,
             COUNT(DISTINCT c.user_id)::int AS claimed_users,
@@ -16,7 +16,7 @@ async function listOffers() {
        LEFT JOIN subscription_spin_offer_claims c ON c.offer_id=o.id
       GROUP BY o.id
       ORDER BY o.created_at DESC
-      LIMIT 100\`,
+      LIMIT 100`,
   );
   return result.rows;
 }
@@ -66,9 +66,9 @@ export const Route = createFileRoute("/api/admin/subscription-offers")({
           if (duplicate.rows[0]) throw new Error("CHANNEL_ALREADY_PROMOTED");
 
           const inserted = await client.query<{ id: string }>(
-            \`INSERT INTO subscription_spin_offers(title,description,channel_username,channel_url,reward_spins,enabled,starts_at,ends_at,created_by)
+            `INSERT INTO subscription_spin_offers(title,description,channel_username,channel_url,reward_spins,enabled,starts_at,ends_at,created_by)
              VALUES($1,$2,$3,$4,$5,TRUE,now(),$6,$7::uuid)
-             RETURNING id::text\`,
+             RETURNING id::text`,
             [title, description, username, "https://t.me/" + username, rewardSpins, endsAt?.toISOString() ?? null, admin.id],
           );
           await client.query(
