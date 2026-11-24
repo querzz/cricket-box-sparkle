@@ -147,7 +147,30 @@ CREATE TABLE IF NOT EXISTS subscription_spin_offers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  channel_username TEXT NOT NULL CHECK (channel_username ~ '^[A-Za-z0-9_]{5,32}INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
+  channel_username TEXT NOT NULL CHECK (channel_username ~ '^[A-Za-z0-9_]{5,32}$'),
+  channel_url TEXT NOT NULL,
+  reward_spins INTEGER NOT NULL DEFAULT 1 CHECK (reward_spins >= 1 AND reward_spins <= 20),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ends_at TIMESTAMPTZ,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at IS NULL OR ends_at > starts_at)
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_spin_offers_live ON subscription_spin_offers(enabled,starts_at,ends_at);
+CREATE INDEX IF NOT EXISTS idx_subscription_spin_offers_channel ON subscription_spin_offers(lower(channel_username));
+CREATE TABLE IF NOT EXISTS subscription_spin_offer_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  offer_id UUID NOT NULL REFERENCES subscription_spin_offers(id) ON DELETE RESTRICT,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount INTEGER NOT NULL CHECK (amount >= 1),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (offer_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_spin_offer_claims_user ON subscription_spin_offer_claims(user_id,created_at DESC);
+
+INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
 INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb) ON CONFLICT(key) DO NOTHING;
 UPDATE app_settings SET value='{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb,updated_at=now() WHERE key='daily_gift' AND value IN ('{"rewardChanceByTier":{"ROOKIE":1,"VETERAN":3,"ELITE":5}}'::jsonb,'{"rewardChanceByTier":{"ROOKIE":60,"VETERAN":70,"ELITE":80}}'::jsonb);
 INSERT INTO app_settings(key,value) VALUES('channel_activity','{"enabled":true}'::jsonb) ON CONFLICT(key) DO NOTHING;
@@ -277,28 +300,6 @@ SET closed_at = COALESCE(
   END
 )
 WHERE s.state IN ('CLOSED','PAYOUT','ARCHIVED') AND s.closed_at IS NULL;
-),
-  channel_url TEXT NOT NULL,
-  reward_spins INTEGER NOT NULL DEFAULT 1 CHECK (reward_spins >= 1 AND reward_spins <= 20),
-  enabled BOOLEAN NOT NULL DEFAULT TRUE,
-  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  ends_at TIMESTAMPTZ,
-  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CHECK (ends_at IS NULL OR ends_at > starts_at)
-);
-CREATE INDEX IF NOT EXISTS idx_subscription_spin_offers_live ON subscription_spin_offers(enabled,starts_at,ends_at);
-CREATE INDEX IF NOT EXISTS idx_subscription_spin_offers_channel ON subscription_spin_offers(lower(channel_username));
-CREATE TABLE IF NOT EXISTS subscription_spin_offer_claims (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  offer_id UUID NOT NULL REFERENCES subscription_spin_offers(id) ON DELETE RESTRICT,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  amount INTEGER NOT NULL CHECK (amount >= 1),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (offer_id,user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_subscription_spin_offer_claims_user ON subscription_spin_offer_claims(user_id,created_at DESC);
 
 INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
 INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb) ON CONFLICT(key) DO NOTHING;
