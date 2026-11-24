@@ -32,11 +32,6 @@ export const Route = createFileRoute("/api/subscription-offers")({
         const user = userResult.rows[0];
         if (!user || user.is_test) return Response.json({ ok: true, offers: [] });
 
-        const liveSeason = await query(
-          "SELECT id FROM seasons WHERE state IN ('ACTIVE','ENDING') AND is_paused=FALSE ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1",
-        );
-        if (!liveSeason.rows[0]) return Response.json({ ok: true, offers: [] });
-
         const result = await query(
           `SELECT o.id::text,o.title,o.description,o.channel_username,o.channel_url,o.reward_spins,o.ends_at::text,
                   EXISTS(SELECT 1 FROM subscription_spin_offer_claims c WHERE c.offer_id=o.id AND c.user_id=$1::uuid) AS claimed
@@ -79,7 +74,7 @@ export const Route = createFileRoute("/api/subscription-offers")({
         const offer = offerResult.rows[0];
         if (!offer) throw new Error("OFFER_NOT_AVAILABLE");
 
-        // Return the permanent claimed state before checking live subscriptions or season state.
+        // Return the permanent claimed state before checking the main channel membership.
         // This keeps the "already claimed" response stable after an unsubscribe/resubscribe.
         const previousClaim = await query(
           "SELECT 1 FROM subscription_spin_offer_claims WHERE offer_id=$1::uuid AND user_id=$2::uuid LIMIT 1",
@@ -115,12 +110,6 @@ export const Route = createFileRoute("/api/subscription-offers")({
           if (!state || !state.is_participant) throw new Error("NOT_PARTICIPANT");
           if (mainMembership === null && !state.is_subscribed) throw new Error("NOT_SUBSCRIBED");
 
-          const season = await client.query<{ id: string; is_paused: boolean }>(
-            "SELECT id::text,is_paused FROM seasons WHERE state IN ('ACTIVE','ENDING') ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END,created_at DESC LIMIT 1 FOR UPDATE",
-          );
-          if (!season.rows[0]) throw new Error("SEASON_NOT_ACTIVE");
-          if (season.rows[0].is_paused) throw new Error("SEASON_PAUSED");
-
           const currentOffer = await client.query<{ reward_spins: number }>(
             "SELECT reward_spins FROM subscription_spin_offers WHERE id=$1::uuid AND enabled=TRUE AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now()) FOR UPDATE",
             [offerId],
@@ -155,7 +144,7 @@ export const Route = createFileRoute("/api/subscription-offers")({
         const code = error instanceof Error ? error.message : "OFFER_CLAIM_FAILED";
         const status = error instanceof RateLimitError ? 429
           : ["NOT_SUBSCRIBED", "NOT_PARTICIPANT"].includes(code) ? 403
-          : ["OFFER_NOT_AVAILABLE", "SEASON_NOT_ACTIVE", "SEASON_PAUSED", "ALREADY_CLAIMED", "BONUS_SPIN_CAP_REACHED"].includes(code) ? 409
+          : ["OFFER_NOT_AVAILABLE", "ALREADY_CLAIMED", "BONUS_SPIN_CAP_REACHED"].includes(code) ? 409
           : code === "USER_NOT_FOUND" ? 404
           : 400;
         const headers = error instanceof RateLimitError ? { "Retry-After": String(error.retryAfterSeconds) } : undefined;
