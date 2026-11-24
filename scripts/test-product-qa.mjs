@@ -200,7 +200,7 @@ assert(subscriptionAdminApi.includes("MAX_ACTIVE_OFFERS = 3") && subscriptionAdm
 assert(subscriptionUserApi.includes("getTelegramChatMembership") && subscriptionUserApi.includes("ON CONFLICT(offer_id,user_id) DO NOTHING"), "subscription promo claims verify Telegram membership and are one-time per user and offer");
 assert(subscriptionUserApi.includes("bonus_free_spins=bonus_free_spins+$2") && subscriptionUserApi.includes("BONUS_SPIN_CAP_REACHED"), "subscription promo rewards are credited to the real bonus spin balance without exceeding its cap");
 assert(subscriptionUi.includes("Проверить и забрать") && subscriptionUi.includes("Подписаться") && subscriptionUi.includes("Награда получена"), "home screen exposes subscribe, verify and claimed states for promo tasks");
-assert(subscriptionAdminUi.includes("Бот CRICKET BOX должен быть администратором") && subscriptionAdminUi.includes("Активные задания"), "admin promo UI explains channel permissions and active offer limit");
+assert(subscriptionAdminUi.includes("бот CRICKET BOX должен быть администратором") && subscriptionAdminUi.includes("Активные задания"), "admin promo UI explains channel permissions and active offer limit");
 assert(dbSchema.includes("CREATE TABLE IF NOT EXISTS subscription_spin_offers") && dbSchema.includes("CREATE TABLE IF NOT EXISTS subscription_spin_offer_claims"), "subscription promo offers and one-time claims have persistent database tables");
 assert(home.includes("<SubscriptionOffers primarySubscribed={snapshot.user.isSubscribed}"), "home screen renders subscription promo offers beside the main channel area");
 
