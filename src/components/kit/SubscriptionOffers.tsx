@@ -64,8 +64,6 @@ export function SubscriptionOffers({ primarySubscribed, onClaimed }: { primarySu
         NOT_PARTICIPANT: "Сначала заверши регистрацию участника.",
         OFFER_NOT_AVAILABLE: "Это рекламное задание уже завершено.",
         BONUS_SPIN_CAP_REACHED: "У тебя слишком много накопленных бонусных прокруток. Используй часть и попробуй снова.",
-        SEASON_NOT_ACTIVE: "Сейчас нет активного сезона.",
-        SEASON_PAUSED: "Сезон временно на паузе.",
       };
       setMessage(messages[code] ?? "Не удалось получить бонус: " + code);
     } finally {
