@@ -11,6 +11,7 @@ import { CricketBox } from "@/components/kit/CricketBox";
 import { GiftButton } from "@/components/kit/GiftCard";
 import { GlassCard } from "@/components/kit/GlassCard";
 import { OwnerGiftCard } from "@/components/kit/OwnerGiftCard";
+import { SubscriptionOffers } from "@/components/kit/SubscriptionOffers";
 import { PrimaryButton } from "@/components/kit/PrimaryButton";
 import { PrizeStrip } from "@/components/kit/PrizePool";
 import { Avatar } from "@/components/kit/ProfileHeader";
@@ -94,6 +95,7 @@ function HomeScreen() {
       <GlassCard className="mt-5 flex items-center gap-3 px-3.5 py-3"><p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">{t("home.played", { spins: snapshot.spin.totalSpins })}</p><span className="press grid size-9 shrink-0 place-items-center rounded-full [background-image:var(--gradient-primary)]"><Heart className="size-4 text-primary-foreground" /></span></GlassCard>
 
       {channel?.url && <button type="button" onClick={() => openTelegramLink(channel.url!)} className="mt-4 block w-full text-left"><GlassCard className="press flex items-center gap-3 px-3.5 py-3.5"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{snapshot.user.isSubscribed ? t("home.channelSubscribed") : t("home.channelUnsubscribed")}</p><p className="mt-1 text-[11px] text-muted-foreground">{channel.username ? `@${channel.username}` : channel.title}{snapshot.user.isSubscribed ? ` ${t("home.openInTelegram")}` : ` ${t("home.needForParticipation")}`}</p></div><span className="shrink-0 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[10px] font-semibold">{snapshot.user.isSubscribed ? t("home.open") : t("home.subscribe")}</span></GlassCard></button>}
+      <SubscriptionOffers primarySubscribed={snapshot.user.isSubscribed} onClaimed={() => void refresh()} />
     </AppShell>
   );
 }

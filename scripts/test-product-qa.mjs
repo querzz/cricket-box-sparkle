@@ -35,6 +35,7 @@ const adminRoutes = [
   "src/routes/admin.settings.tsx",
   "src/routes/admin.owner-gifts.tsx",
   "src/routes/admin.daily-streak.tsx",
+  "src/routes/admin.subscription-offers.tsx",
 ];
 
 const adminApis = [
@@ -57,6 +58,8 @@ const adminApis = [
   "src/routes/api.admin.daily-gift.ts",
   "src/routes/api.admin.free-spin-campaigns.ts",
   "src/routes/api.admin.daily-streak.ts",
+  "src/routes/api.admin.subscription-offers.ts",
+  "src/routes/api.subscription-offers.ts",
 ];
 
 for (const file of [...userRoutes, ...adminRoutes, ...adminApis]) {
@@ -69,6 +72,11 @@ const session = await read("src/routes/api.session.ts");
 const selector = await read("src/server/dynamic-prize-selection.ts");
 const veteranApi = await read("src/routes/api.admin.veteran.ts");
 const dailyGiftApi = await read("src/routes/api.admin.daily-gift.ts");
+const subscriptionAdminApi = await read("src/routes/api.admin.subscription-offers.ts");
+const subscriptionUserApi = await read("src/routes/api.subscription-offers.ts");
+const subscriptionAdminUi = await read("src/routes/admin.subscription-offers.tsx");
+const subscriptionUi = await read("src/components/kit/SubscriptionOffers.tsx");
+const dbSchema = await read("db/schema.sql");
 const freeSpinCampaignApi = await read("src/routes/api.admin.free-spin-campaigns.ts");
 const veteranUi = await read("src/routes/admin.veteran.tsx");
 const seasonService = await read("src/server/season-service.ts");
@@ -188,6 +196,14 @@ assert(prizeAdmin.includes('p.kind === "STARS" || p.kind === "NFT"'), "NFT value
 assert(economics.includes("Всё в норме") && economics.includes("Риск убытка") && !economics.includes("dry-run"), "economics admin is localized for non-technical admins");
 assert(ownerGiftApi.includes("sendTelegramNotification") && ownerGiftApi.includes("Открой CRICKET BOX и забери свой подарок"), "owner gift creation notifies the recipient through the bot");
 assert(ownerGiftCard.includes("Тебе что-то дали") && ownerGiftCard.includes("Забрать подарок") && ownerGiftCard.includes("showPopup"), "owner gift shows an in-app popup when a new gift appears");
+assert(subscriptionAdminApi.includes("MAX_ACTIVE_OFFERS = 3") && subscriptionAdminApi.includes("authenticateAdmin"), "subscription promo admin limits active campaigns and requires admin access");
+assert(subscriptionUserApi.includes("getTelegramChatMembership") && subscriptionUserApi.includes("ON CONFLICT(offer_id,user_id) DO NOTHING"), "subscription promo claims verify Telegram membership and are one-time per user and offer");
+assert(subscriptionUserApi.includes("bonus_free_spins=bonus_free_spins+$2") && subscriptionUserApi.includes("BONUS_SPIN_CAP_REACHED"), "subscription promo rewards are credited to the real bonus spin balance without exceeding its cap");
+assert(subscriptionUi.includes("Проверить и забрать") && subscriptionUi.includes("Подписаться") && subscriptionUi.includes("Награда получена"), "home screen exposes subscribe, verify and claimed states for promo tasks");
+assert(subscriptionAdminUi.includes("Бот CRICKET BOX должен быть администратором") && subscriptionAdminUi.includes("Активные задания"), "admin promo UI explains channel permissions and active offer limit");
+assert(dbSchema.includes("CREATE TABLE IF NOT EXISTS subscription_spin_offers") && dbSchema.includes("CREATE TABLE IF NOT EXISTS subscription_spin_offer_claims"), "subscription promo offers and one-time claims have persistent database tables");
+assert(home.includes("<SubscriptionOffers primarySubscribed={snapshot.user.isSubscribed}"), "home screen renders subscription promo offers beside the main channel area");
+
 
 console.log("✅ Product UX/Admin/Bot static QA passed");
 console.log(`Checked user routes: ${userRoutes.length}, admin views: ${adminRoutes.length}, admin APIs: ${adminApis.length}`);

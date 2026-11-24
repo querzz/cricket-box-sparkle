@@ -143,6 +143,163 @@ CREATE TABLE IF NOT EXISTS free_spin_campaign_claims (
 );
 CREATE INDEX IF NOT EXISTS idx_free_spin_campaign_claims_user ON free_spin_campaign_claims(user_id,created_at DESC);
 
+CREATE TABLE IF NOT EXISTS subscription_spin_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  channel_username TEXT NOT NULL CHECK (channel_username ~ '^[A-Za-z0-9_]{5,32}INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
+INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb) ON CONFLICT(key) DO NOTHING;
+UPDATE app_settings SET value='{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb,updated_at=now() WHERE key='daily_gift' AND value IN ('{"rewardChanceByTier":{"ROOKIE":1,"VETERAN":3,"ELITE":5}}'::jsonb,'{"rewardChanceByTier":{"ROOKIE":60,"VETERAN":70,"ELITE":80}}'::jsonb);
+INSERT INTO app_settings(key,value) VALUES('channel_activity','{"enabled":true}'::jsonb) ON CONFLICT(key) DO NOTHING;
+
+UPDATE users SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
+UPDATE admins SET is_test=TRUE WHERE COALESCE(username,'') LIKE 'ci_%' OR COALESCE(username,'') LIKE 'payment_security_%';
+CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_spins_user_season ON spins(user_id,season_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_spins_season_time ON spins(season_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts(status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payouts_fulfillment_provider_status ON payouts(fulfillment_provider,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_activity_user_time ON channel_activity(telegram_user_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_activity_channel_event_time ON channel_activity(channel_id,event_type,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_star_transactions_charge ON star_transactions(telegram_charge_id);
+CREATE OR REPLACE VIEW season_leaderboard AS
+WITH spin_stats AS (SELECT season_id,user_id,COUNT(*)::int spins_count FROM spins WHERE status='COMPLETED' GROUP BY season_id,user_id),
+win_stats AS (SELECT s.season_id,s.user_id,COUNT(*)::int wins_count,COALESCE(SUM(sl.amount) FILTER (WHERE sl.type='REWARD' AND sl.spin_id=s.id),0)::numeric stars_won FROM spins s LEFT JOIN stars_ledger sl ON sl.spin_id=s.id AND sl.type='REWARD' JOIN prizes p ON p.id=s.prize_id WHERE s.status='COMPLETED' AND p.kind<>'EMPTY' GROUP BY s.season_id,s.user_id),
+base AS (SELECT ss.season_id,ss.user_id,ss.spins_count,COALESCE(ws.wins_count,0)::int wins_count,COALESCE(ws.stars_won,0)::numeric stars_won FROM spin_stats ss LEFT JOIN win_stats ws ON ws.season_id=ss.season_id AND ws.user_id=ss.user_id)
+SELECT season_id,user_id,spins_count,wins_count,stars_won,RANK() OVER(PARTITION BY season_id ORDER BY spins_count DESC,wins_count DESC,stars_won DESC,user_id)::int rank FROM base;
+
+ALTER TABLE star_transactions DROP CONSTRAINT IF EXISTS star_transactions_status_check;
+ALTER TABLE star_transactions ADD CONSTRAINT star_transactions_status_check CHECK (status IN ('PENDING','REFUND_PENDING','SUCCESS','REFUNDED','FAILED'));
+
+
+-- 2026-10-05 historical Stars reward backfill
+DO $$
+DECLARE r RECORD; current_balance INTEGER; requested INTEGER; credited INTEGER; overflow INTEGER;
+BEGIN
+  FOR r IN
+    SELECT s.id AS spin_id,s.user_id,s.season_id,LEAST(500,GREATEST(0,FLOOR(p.amount)))::int AS reward
+    FROM spins s
+    JOIN prizes p ON p.id=s.prize_id AND p.kind='STARS'
+    WHERE s.status='COMPLETED'
+      AND NOT EXISTS (SELECT 1 FROM stars_ledger sl WHERE sl.spin_id=s.id AND sl.type='REWARD')
+      AND EXISTS (
+        SELECT 1 FROM payouts py
+        WHERE py.spin_id=s.id AND py.kind='STARS' AND py.status IN ('PENDING','REVIEW')
+      )
+  LOOP
+    requested := r.reward;
+    INSERT INTO user_state(user_id) VALUES(r.user_id) ON CONFLICT(user_id) DO NOTHING;
+    SELECT stars_balance INTO current_balance FROM user_state WHERE user_id=r.user_id FOR UPDATE;
+    credited := LEAST(requested,GREATEST(0,500-current_balance));
+    overflow := requested-credited;
+    INSERT INTO stars_ledger(user_id,season_id,spin_id,type,amount,reference_id,idempotency_key,metadata)
+    VALUES(r.user_id,r.season_id,r.spin_id,'REWARD',requested,r.spin_id::text,'historical-spin-stars:'||r.spin_id::text,
+           jsonb_build_object('source','HISTORICAL_BACKFILL','requestedAmount',requested,'creditedAmount',credited,'overflowAmount',overflow))
+    ON CONFLICT(idempotency_key) DO NOTHING;
+    IF credited>0 THEN
+      UPDATE user_state SET stars_balance=current_balance+credited,updated_at=now() WHERE user_id=r.user_id;
+    ELSE
+      UPDATE user_state SET updated_at=now() WHERE user_id=r.user_id;
+    END IF;
+    IF overflow>0 THEN
+      INSERT INTO stars_ledger(user_id,season_id,spin_id,type,amount,reference_id,idempotency_key,metadata)
+      VALUES(r.user_id,r.season_id,r.spin_id,'CAPPED_OVERFLOW_BURNED',-overflow,r.spin_id::text,'historical-spin-stars-overflow:'||r.spin_id::text,
+             jsonb_build_object('source','HISTORICAL_BACKFILL','requestedAmount',requested,'creditedAmount',credited,'overflowAmount',overflow))
+      ON CONFLICT(idempotency_key) DO NOTHING;
+    END IF;
+  END LOOP;
+END $$;
+
+
+-- Migrate legacy owner gifts JSON into relational owner_gifts
+DO $$
+DECLARE g JSONB; uid UUID; aid UUID; reward_type TEXT; reward_amount INTEGER; status_text TEXT;
+BEGIN
+  FOR g IN
+    SELECT value FROM app_settings WHERE key='owner_gifts' AND jsonb_typeof(value)='array'
+  LOOP
+    -- Legacy records are migrated only when a matching relational row is not already present.
+    IF jsonb_typeof(g)='array' THEN
+      PERFORM 1;
+    END IF;
+  END LOOP;
+  FOR g IN SELECT jsonb_array_elements(value) FROM app_settings WHERE key='owner_gifts' AND jsonb_typeof(value)='array'
+  LOOP
+    SELECT id INTO uid FROM users WHERE telegram_id::text=(g->>'telegramId') AND is_test=FALSE LIMIT 1;
+    IF uid IS NULL THEN CONTINUE; END IF;
+    IF EXISTS (SELECT 1 FROM owner_gifts WHERE user_id=uid AND title=COALESCE(g->>'gift','Личный подарок') AND created_at BETWEEN COALESCE((g->>'createdAt')::timestamptz,now())-interval '1 minute' AND COALESCE((g->>'createdAt')::timestamptz,now())+interval '1 minute') THEN CONTINUE; END IF;
+    reward_type:=COALESCE(g->>'rewardType','NOTE');
+    reward_amount:=GREATEST(0,COALESCE((g->>'amount')::int,0));
+    status_text:=CASE WHEN g->>'status'='Выдан' THEN 'CLAIMED' WHEN g->>'status'='Отменён' THEN 'CANCELLED' ELSE 'SENT' END;
+    INSERT INTO owner_gifts(user_id,title,message,status,rewards,created_at,claimed_at)
+      VALUES(uid,COALESCE(g->>'gift','Личный подарок'),NULLIF(g->>'message',''),status_text,
+             CASE WHEN reward_type='NOTE' THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object('type',reward_type,'amount',reward_amount)) END,
+             COALESCE((g->>'createdAt')::timestamptz,now()),CASE WHEN status_text='CLAIMED' THEN COALESCE((g->>'issuedAt')::timestamptz,now()) ELSE NULL END);
+  END LOOP;
+END $$;
+
+ALTER TABLE owner_gifts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+
+CREATE TABLE IF NOT EXISTS entertainment_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season_id UUID REFERENCES seasons(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('GIFT_OR_PASS','GOOD_OR_BAD','OWNER_SPECIAL')),
+  status TEXT NOT NULL DEFAULT 'OFFERED' CHECK (status IN ('OFFERED','CLAIMED','PASSED','CANCELLED','EXPIRED')),
+  pass_remaining INTEGER NOT NULL DEFAULT 0 CHECK (pass_remaining >= 0 AND pass_remaining <= 20),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  acted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_entertainment_events_user ON entertainment_events(user_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entertainment_events_season ON entertainment_events(season_id,type,status,created_at DESC);
+
+
+-- Backfill actual close times for already closed seasons
+UPDATE seasons s
+SET closed_at = COALESCE(
+  (
+    SELECT a.created_at
+    FROM audit_logs a
+    WHERE a.entity_type='season'
+      AND a.entity_id=s.id::text
+      AND a.action IN ('SEASON_STATE_AUTO_TRANSITION','SEASON_UPDATED')
+      AND a.after_data->>'state'='CLOSED'
+    ORDER BY a.created_at ASC
+    LIMIT 1
+  ),
+  CASE
+    WHEN s.state IN ('CLOSED','PAYOUT','ARCHIVED') AND s.updated_at < COALESCE(s.ends_at, s.updated_at) THEN s.updated_at
+    ELSE NULL
+  END
+)
+WHERE s.state IN ('CLOSED','PAYOUT','ARCHIVED') AND s.closed_at IS NULL;
+),
+  channel_url TEXT NOT NULL,
+  reward_spins INTEGER NOT NULL DEFAULT 1 CHECK (reward_spins >= 1 AND reward_spins <= 20),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ends_at TIMESTAMPTZ,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at IS NULL OR ends_at > starts_at)
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_spin_offers_live ON subscription_spin_offers(enabled,starts_at,ends_at);
+CREATE INDEX IF NOT EXISTS idx_subscription_spin_offers_channel ON subscription_spin_offers(lower(channel_username));
+CREATE TABLE IF NOT EXISTS subscription_spin_offer_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  offer_id UUID NOT NULL REFERENCES subscription_spin_offers(id) ON DELETE RESTRICT,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount INTEGER NOT NULL CHECK (amount >= 1),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (offer_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_spin_offer_claims_user ON subscription_spin_offer_claims(user_id,created_at DESC);
+
 INSERT INTO app_settings(key,value) VALUES('veteran_bonus','{"enabled":false}'::jsonb) ON CONFLICT(key) DO NOTHING;
 INSERT INTO app_settings(key,value) VALUES('daily_gift','{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb) ON CONFLICT(key) DO NOTHING;
 UPDATE app_settings SET value='{"rewardChanceByTier":{"ROOKIE":8,"VETERAN":10,"ELITE":15}}'::jsonb,updated_at=now() WHERE key='daily_gift' AND value IN ('{"rewardChanceByTier":{"ROOKIE":1,"VETERAN":3,"ELITE":5}}'::jsonb,'{"rewardChanceByTier":{"ROOKIE":60,"VETERAN":70,"ELITE":80}}'::jsonb);
