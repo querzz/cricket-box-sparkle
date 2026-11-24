@@ -7,7 +7,11 @@ type TelegramMembershipResponse = {
   description?: string;
 };
 
-export async function getTelegramChatMembership(telegramId: number, chatId: string): Promise<boolean | null> {
+export type TelegramChatMembershipCheck =
+  | { available: true; isMember: boolean }
+  | { available: false };
+
+export async function checkTelegramChatMembership(telegramId: number, chatId: string): Promise<TelegramChatMembershipCheck> {
   try {
     const response = await fetch("https://api.telegram.org/bot" + requireBotToken() + "/getChatMember", {
       method: "POST",
@@ -22,14 +26,23 @@ export async function getTelegramChatMembership(telegramId: number, chatId: stri
         httpStatus: response.status,
         description: data.description ?? "unknown",
       });
-      return isProductionApp() ? false : null;
+      return { available: false };
     }
-    return MEMBER_STATUSES.has(data.result.status ?? "")
-      || (data.result.status === "restricted" && data.result.is_member === true);
+    return {
+      available: true,
+      isMember: MEMBER_STATUSES.has(data.result.status ?? "")
+        || (data.result.status === "restricted" && data.result.is_member === true),
+    };
   } catch (error) {
     console.warn("[CRICKET BOX] Telegram membership check unavailable", error instanceof Error ? error.message : error);
-    return isProductionApp() ? false : null;
+    return { available: false };
   }
+}
+
+export async function getTelegramChatMembership(telegramId: number, chatId: string): Promise<boolean | null> {
+  const result = await checkTelegramChatMembership(telegramId, chatId);
+  if (!result.available) return isProductionApp() ? false : null;
+  return result.isMember;
 }
 
 export async function getTelegramChannelMembership(telegramId: number): Promise<boolean | null> {
